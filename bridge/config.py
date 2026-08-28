@@ -74,11 +74,11 @@ EMOJI_LEARN_ENABLED = bool(config.get("emoji_learn_enabled", True))
 EMOJI_LEARN_THRESHOLD = int(config.get("emoji_learn_threshold", 15) or 15)  # 积累多少条样本触发一次蒸馏
 MAIBOT_WEBUI_URL = config.get("maibot_webui_url", "http://127.0.0.1:8001")  # 麦麦 WebUI 地址（投喂表达方式用）
 
-# AstrBot OneBot 连接配置（bridge 作为 WebSocket 客户端连 AstrBot 的 aiocqhttp 服务端）
+# 早期对接 AstrBot 的客户端 URL（已弃用，保留兼容）
 ASTRBOT_OB_URL = config.get("astrbot_ob_url", "ws://127.0.0.1:19777")
 
-# ====== 对接 MaiBot napcat-adapter：bridge 作为 OneBot v11 WS 服务端 ======
-# MaiBot napcat-adapter 是 WS 客户端，会连接到这里（模拟 NapCat 服务端）
+# ====== 对接 MaiBot 微信适配器：bridge 作为 OneBot v11 WS 服务端 ======
+# MaiBot 微信适配器是 WS 客户端，会连接到这里
 OB_SERVER_HOST = config.get("ob_server_host", "127.0.0.1")
 OB_SERVER_PORT = config.get("ob_server_port", 7998)
 OB_SERVER_TOKEN = config.get("ob_server_token", "")

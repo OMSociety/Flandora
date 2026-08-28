@@ -1,14 +1,14 @@
 """
-微信 ↔ AstrBot 桥接（OneBot v11 版）
+微信 ↔ MaiBot 桥接（OneBot v11 版）
 =====================================
 消息接收：WeFlow SSE 推送
-AI 服务：AstrBot 通过 aiocqhttp (OneBot v11) 接入
-消息发送：bridge 接收 AstrBot 的 API 调用 → WeFlow API / UIA
+AI 服务：MaiBot 通过微信适配器（OneBot v11 WS 客户端）接入
+消息发送：bridge 接收 MaiBot 的 API 调用 → WeFlow API / UIA
 
 架构：
-  WeFlow ──SSE──→ bridge.py ──WS 客户端──→ AstrBot (aiocqhttp 服务端)
-                   ↑ 连接 ws://127.0.0.1:19777  ↑ 监听端口，等待客户端连入
-                   发送 OneBot 事件             返回 API 响应
+  WeFlow ──SSE──→ bridge.py ──WS 服务端(7999)──→ MaiBot 微信适配器
+                    ↑ 监听端口，等待客户端连入
+                    发送 OneBot 事件            返回 API 响应
 """
 
 # 共享状态：所有模块通过 import state 访问这些变量

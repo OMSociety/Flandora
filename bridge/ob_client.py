@@ -1,8 +1,9 @@
 """
-OneBot WebSocket 客户端模块。
+OneBot WebSocket 客户端模块（已弃用）。
 
-维护到 AstrBot aiocqhttp 服务端的 WebSocket 长连接，
-推送事件并从 AstrBot 接收 API 请求。
+这是早期对接 AstrBot aiocqhttp 服务端的客户端模式，本项目现改用
+ob_server.py 作为 OneBot v11 **服务端**（监听 7999），不再需要此模块。
+保留仅供历史参考，不会被 main.py 引用。
 """
 
 import asyncio

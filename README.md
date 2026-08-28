@@ -1,7 +1,7 @@
 # WeChatOneBotBridge
 
 > **微信 ↔ OneBot v11 桥接**，让 MaiBot 直接接管微信收发消息。
-> 本项目是 [Akasha-WeChat](https://github.com/) 的衍生分支，改为对接 MaiBot 的 napcat-adapter（OneBot v11 WS 服务端），并附桌面管理器。
+> 本项目是 [Akasha-WeChat](https://github.com/) 的衍生分支，改为对接 MaiBot 的微信适配器（OneBot v11 WS 服务端），并附桌面管理器。
 
 ---
 
@@ -24,7 +24,7 @@
 
 - 📡 **双向桥接**：微信消息 → MaiBot、MaiBot 回复 → 微信
 - 🎙️ **UIA 自动化**：基于 uiautomation 的原生键盘模拟发消息，零 hook、零注入
-- 🔌 **OneBot v11 标准**：MaiBot 通过 微信适配器 直连（WS Server on `0.0.0.0:7999`）
+- 🔌 **OneBot v11 标准**：MaiBot 通过微信适配器直连（WS Server on `0.0.0.0:7999`）
 - 🌐 **WebUI 控制面板**：`http://127.0.0.1:8766` 看实时消息 / 改窗口绑定 / 发测试消息
 - 🎨 **桌面管理器**（QQ 风格）：实时日志、端口状态、一键启停、最小化到托盘
 - 🔁 **自动领养**：管理器启动时若发现已运行的 bridge，自动接管（不重复启动）
@@ -80,9 +80,9 @@ python manager/bridge_manager.py  # 启动桌面管理器
 
 > 如果 WeFlow 端口不是 5031，改 `config.json` 里的 `weflow_base_url`。
 
-### 第 2 步：启动 MaiBot（napcat-adapter 模式）
+### 第 2 步：启动 MaiBot（微信适配器模式）
 
-MaiBot 社区已有 WeChat相关 插件，让它作为 **WS 客户端**连到本 bridge（不是 server）。
+让 MaiBot 的微信适配器作为 **WS 客户端**连到本 bridge（不是 server）。
 
 - 默认连入地址：`ws://127.0.0.1:7999`
 - 鉴权 token：`config.json` 里的 `ob_server_token`（两端必须一致）
@@ -94,7 +94,7 @@ MaiBot 社区已有 WeChat相关 插件，让它作为 **WS 客户端**连到本
 ```jsonc
 {
     "access_token": "你的 WeFlow access_token",
-    "ob_server_token": "自己生成一个随机字符串（MaiBot napcat-adapter 也填这个）",
+    "ob_server_token": "自己生成一个随机字符串（MaiBot 微信适配器也填这个）",
     "bot_nicknames": ["机器人微信昵称"],
     "bot_wxid": "机器人自己的 wxid",
     "astrbot_attachments": "C:\\path\\to\\maibot\\attachments",
@@ -208,7 +208,7 @@ bridge 占用 3 个端口：`5031`（连 WeFlow）、`7999`（OB11 WS 服务端�
   ```bash
   netstat -ano | findstr :7999
   ```
-- 若 7999 被其他程序占用，改 `ob_server_port`，同时改 MaiBot napcat-adapter 连入端口。
+- 若 7999 被其他程序占用，改 `ob_server_port`，同时改 MaiBot 微信适配器连入端口。
 
 ### 2. wechat_hwnd（微信窗口句柄）——最容易踩的坑
 
@@ -283,7 +283,7 @@ A: 依次排查：
 1. WeFlow 是否正常推送（WebUI 消息流有没有新消息）
 2. `ob_server_token` 两端是否一致
 3. 用浏览器打开 `http://127.0.0.1:7999`，能收到 OB11 协议说明说明服务正常
-4. MaiBot napcat-adapter 是否能连上 `ws://127.0.0.1:7999`
+4. MaiBot 微信适配器是否能连上 `ws://127.0.0.1:7999`
 
 **Q: 发送消息失败 / 发到错误的微信？**
 A: 检查 `wechat_hwnd` 是否正确绑定机器人窗口；微信窗口是否在前台可激活；是否有弹窗打断。
@@ -313,8 +313,8 @@ A: 语音转写依赖 DashScope Fun-ASR，需填 `fun_asr_workspace_id` + `fun_a
 ```
 ┌────────────┐    SSE (5031)     ┌──────────────┐    WS (7999)    ┌────────────┐
 │   WeFlow   │ ────────────────→ │    bridge    │ ←─────────────── │   MaiBot   │
-│  (微信hook) │  ←─────────────── │  (本项目)    │ ───────────────→│napcat-     │
-└────────────┘    UIA 发送       └──────┬───────┘    OneBot v11    │ adapter    │
+│  (微信hook) │  ←─────────────── │  (本项目)    │ ───────────────→│微信适配器   │
+└────────────┘    UIA 发送       └──────┬───────┘    OneBot v11    │ (客户端)   │
                                         │                           └────────────┘
                                         │
                                     WebUI (8766)
@@ -387,7 +387,7 @@ MIT License（见 [LICENSE](LICENSE)）。
 
 ### 致谢
 
-- **原作者**：Akasha-WeChat（[原仓库](https://github.com/)）——本项目是基于它的衍生分支，改动为对接 MaiBot napcat-adapter 并附赠桌面管理器。
+- **原作者**：Akasha-WeChat（[原仓库](https://github.com/)）——本项目是基于它的衍生分支，改动为对接 MaiBot 微信适配器并附赠桌面管理器。
 - [MaiBot](https://github.com/) —— 主项目。
 - [WeFlow](https://weflow.top) —— 微信 hook 框架。
 - [uiautomation](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows) —— 跨进程窗口自动化。

@@ -1,5 +1,5 @@
 """
-OneBot v11 协议处理模块（对接 MaiBot napcat-adapter）。
+OneBot v11 协议处理模块（对接 MaiBot 微信适配器）。
 
 - make_message_event() — 构造 OneBot 消息事件 JSON
 - push_event() — 广播事件给所有连接的 MaiBot 客户端
@@ -65,7 +65,7 @@ async def _send_resp_to(ws, resp_data: dict):
 
 
 async def _handle_ob_api(data: dict):
-    """处理 MaiBot napcat-adapter 发来的 API 请求。
+    """处理 MaiBot 微信适配器发来的 API 请求。
 
     返回响应 dict（由服务端 handler 负责发送）；返回 None 表示无需响应。
     """

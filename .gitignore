@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行产物
+bridge.pid
+bridge.log
+*.log
+
+# 前端依赖
+node_modules/
+*.local
+
+# 构建产物
+build/
+dist/
+*.spec
+
+# 本地配置（含密钥，勿提交）
+config.json
+*.user.json
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db

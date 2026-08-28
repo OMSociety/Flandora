@@ -1,0 +1,19 @@
+{
+  "name": "maibot-bridge-webui",
+  "version": "1.0.0",
+  "description": "MaiBot Bridge 控制台 - 微信 ↔ 麦麦 桥接 WebUI",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.7"
+  }
+}

@@ -1,0 +1,39 @@
+{
+    "_comment": "WeChatOneBotBridge 配置示例。复制为 config.json 后填入你的真实值。",
+    "weflow_base_url": "http://127.0.0.1:5031",
+    "access_token": "你的WeFlow_Access_Token",
+    "bot_nicknames": [
+        "机器人微信昵称"
+    ],
+    "bot_wxid": "机器人自己的wxid_xxx",
+    "self_name": "wechat-bot",
+    "astrbot_attachments": "C:/path/to/maibot/attachments",
+    "maibot_emoji_dir": "",
+    "buffer_seconds": 9,
+    "web_port": 8766,
+    "webui_auto_open": true,
+    "group_reply_mode": "mention",
+    "context_messages": 5,
+    "group_name_map": {
+        "47622228067@chatroom": "群名示例"
+    },
+    "ob_server_host": "127.0.0.1",
+    "ob_server_port": 7999,
+    "ob_server_token": "请生成一个随机字符串作为鉴权token",
+    "astrbot_ob_url": "ws://127.0.0.1:7999",
+    "wechat_hwnd": 0,
+    "emoji_learn_enabled": true,
+    "emoji_learn_threshold": 15,
+    "maibot_webui_url": "http://127.0.0.1:8001",
+    "image_caption_provider": "openai",
+    "image_caption_model": "gpt-4o-mini",
+    "image_caption_api_key": "你的OpenAI兼容API key",
+    "image_caption_api_base": "https://api.deepseek.com/v1",
+    "image_caption_prompt": "请用中文简短描述这张图片的内容",
+    "ollama_base_url": "http://127.0.0.1:61000",
+    "ollama_timeout": 60,
+    "fun_asr_workspace_id": "",
+    "fun_asr_region": "cn",
+    "fun_asr_api_key": "",
+    "fun_asr_model": "fun-asr-flash-2026-06-15"
+}

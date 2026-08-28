@@ -1,7 +1,7 @@
 # WeChatOneBotBridge
 
 > **微信 ↔ OneBot v11 桥接**，让 MaiBot 直接接管微信收发消息。
-> 本项目是 [Akasha-WeChat](https://github.com/) 的衍生分支，改为对接 MaiBot 的 napcat-adapter（OneBot v11 WS 服务端），并附赠一个 QQ 风格的桌面管理器。
+> 本项目是 [Akasha-WeChat](https://github.com/) 的衍生分支，改为对接 MaiBot 的 napcat-adapter（OneBot v11 WS 服务端），并附桌面管理器。
 
 ---
 

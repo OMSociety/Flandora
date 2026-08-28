@@ -82,7 +82,7 @@ python manager/bridge_manager.py  # 启动桌面管理器
 
 ### 第 2 步：启动 MaiBot（napcat-adapter 模式）
 
-MaiBot 社区已有 napcat-adapter 插件，让它作为 **WS 客户端**连到本 bridge（不是 server）。
+MaiBot 社区已有 WeChat相关 插件，让它作为 **WS 客户端**连到本 bridge（不是 server）。
 
 - 默认连入地址：`ws://127.0.0.1:7999`
 - 鉴权 token：`config.json` 里的 `ob_server_token`（两端必须一致）

@@ -653,6 +653,96 @@ class UiaSender(BaseSender):
                 log.error(f"[UIA✗] 图片 → {contact}: {e}")
                 return False
 
+    def send_file(self, contact: str, file_path: str) -> bool:
+        """发送文件（mp3 等任意文件）。
+
+        由于微信 PC 客户端不支持发送"语音消息气泡"（只能按住麦克风按钮录制），
+        mp3 只能以"文件卡片"形式发送：双击文件即可播放。适用于把麦麦的 TTS 语音
+        发到微信场景。
+
+        实现方式：用 PowerShell 把文件路径放到剪贴板的 CF_HDROP 格式（即
+        "拖入文件"语义），再到聊天窗口 Ctrl+V，微信会识别为文件并显示文件名，
+        按 Enter 发送。
+        """
+        try:
+            return self._send_file_impl(contact, file_path)
+        except Exception as e:
+            log.error(f"[UIA✗] 文件 → {contact}: 发送异常（窗口可能已失效）: {e}")
+            with self._lock:
+                self._invalidate_window()
+            return False
+
+    def _send_file_impl(self, contact: str, file_path: str) -> bool:
+        """发送文件（CF_HDROP 剪贴板 + 粘贴 + Enter）。"""
+        with self._lock:
+            if not os.path.isfile(file_path):
+                log.error(f"文件不存在: {file_path}")
+                return False
+
+            try:
+                if not self._ensure_window():
+                    return False
+
+                self._activate()
+                if self.search_enabled and contact and contact != self._last_contact:
+                    self._switch_contact(contact)
+                    self._last_contact = contact
+
+                auto = self._auto
+                time.sleep(random.uniform(0.3, 0.8))
+
+                # 再次强制激活微信到前台，确保粘贴目标正确
+                self._activate()
+                time.sleep(0.3)
+
+                # 把文件路径放到 CF_HDROP 剪贴板（拖入文件的语义）
+                self._copy_file_to_clipboard(file_path)
+                time.sleep(0.3)
+
+                # Ctrl+V 粘贴
+                try:
+                    auto.SendKeys('{Ctrl}v')
+                except Exception:
+                    self._post_key(VK_V, VK_CONTROL)
+                time.sleep(random.uniform(0.8, 1.5))
+
+                # Enter 发送（PostMessage 定向微信句柄，不依赖前台）
+                try:
+                    self._post_key(VK_RETURN)
+                except Exception:
+                    auto.SendKeys('{Enter}')
+
+                self._restore_foreground()
+
+                log.info(f"[UIA✓] 文件 → {contact}: {os.path.basename(file_path)}")
+                return True
+
+            except Exception as e:
+                log.error(f"[UIA✗] 文件 → {contact}: {e}")
+                return False
+
+    def _copy_file_to_clipboard(self, path: str):
+        """复制文件到剪贴板 CF_HDROP 格式（通过 PowerShell）。
+
+        CF_HDROP 是 Windows 拖放文件时使用的剪贴板格式。微信收到 Ctrl+V 后
+        会把文件识别为"附件"而非"文本"。
+
+        路径必须先 Resolve-Path 转成绝对路径，否则拖放格式无效。
+        """
+        abs_path = os.path.abspath(path)
+        try:
+            subprocess.run([
+                "powershell", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command",
+                "Add-Type -AssemblyName System.Windows.Forms;"
+                "$abs = Resolve-Path -LiteralPath '" + abs_path.replace("'", "''") + "';"
+                "$col = New-Object System.Collections.Specialized.StringCollection;"
+                "$col.Add($abs.Path);"
+                "[System.Windows.Forms.Clipboard]::SetFileDropList($col)"
+            ], check=True, timeout=10)
+        except Exception as e:
+            log.error(f"复制文件到剪贴板失败: {e}")
+            raise
+
     def _copy_image_to_clipboard(self, path: str):
         """复制图片到剪贴板（通过 PowerShell）。
 

@@ -11,6 +11,7 @@ import base64
 import json
 import logging
 import os
+import tempfile
 import time
 
 import requests
@@ -194,6 +195,56 @@ async def _handle_ob_api(data: dict):
                                 os.unlink(face_path)
                             except Exception:
                                 pass
+
+            elif seg_type == "voice":
+                # 语音消息段。
+                #
+                # 微信 PC 客户端**没有"上传 mp3 当语音消息"的接口**——语音消息
+                # 必须按住麦克风按钮录制。bridge 因此把 voice 段以"文件"形式
+                # 发到聊天窗口（mp3 文件卡片，双击可播放）。
+                #
+                # 接受两种 data 格式：
+                #   1. {"file": "base64://<mp3 base64>"} — MaiBot voice segment（base64 内联）
+                #   2. {"file": "/abs/path/to/xxx.mp3"}   — 已落盘的本地文件
+                file_val = seg_data.get("file", "") or seg_data.get("data", "")
+                if not file_val:
+                    log.warning(f"[OB11] 跳过 voice 段：无 file 字段: {seg_data}")
+                    continue
+                voice_path = None
+                try:
+                    if isinstance(file_val, str) and file_val.startswith("base64://"):
+                        b64_data = file_val[9:]
+                        try:
+                            audio_bytes = base64.b64decode(b64_data)
+                        except Exception as e:
+                            log.warning(f"[OB11] voice base64 解码失败: {e}")
+                            continue
+                        # 写到临时文件，让 sender 走 send_file 链路
+                        with tempfile.NamedTemporaryFile(
+                            prefix="bridge_voice_", suffix=".mp3", delete=False
+                        ) as tmp:
+                            tmp.write(audio_bytes)
+                            voice_path = tmp.name
+                        log.info(f"[OB11] voice 已解码: {os.path.basename(voice_path)} ({len(audio_bytes)} bytes)")
+                    else:
+                        # 已经是本地路径（兼容场景：bridge 之前做过 ASR 等）
+                        if os.path.isfile(file_val):
+                            voice_path = file_val
+                        else:
+                            log.warning(f"[OB11] voice 文件未找到: {file_val}")
+                            continue
+
+                    if voice_path:
+                        await asyncio.to_thread(state.sender_instance.send_file, contact, voice_path)
+                        log.info(f"[OB11] 语音（文件形式）已发送至 {contact}")
+                        _record_out(contact, is_group, "[语音]")
+                finally:
+                    # 清理我们写出的临时 mp3（bridge_voice_ 前缀的才是我们的）
+                    if voice_path and "bridge_voice_" in voice_path:
+                        try:
+                            os.unlink(voice_path)
+                        except Exception:
+                            pass
 
         resp_data["data"] = {"message_id": int(time.time() * 1000) % 1000000000}
 

@@ -25,6 +25,7 @@
 - 📡 **双向桥接**：微信消息 → MaiBot、MaiBot 回复 → 微信
 - 🎙️ **UIA 自动化**：基于 uiautomation 的原生键盘模拟发消息，零 hook、零注入
 - 🔌 **OneBot v11 标准**：MaiBot 通过微信适配器直连（WS Server on `0.0.0.0:7999`）
+- 🎵 **语音支持**：MaiBot 的 OneBot v11 `voice` segment 会以「mp3 文件卡片」形式发到微信（双击可播放；非"按住说话"式语音气泡）
 - 🌐 **WebUI 控制面板**：`http://127.0.0.1:8766` 看实时消息 / 改窗口绑定 / 发测试消息
 - 🎨 **桌面管理器**（QQ 风格）：实时日志、端口状态、一键启停、最小化到托盘
 - 🔁 **自动领养**：管理器启动时若发现已运行的 bridge，自动接管（不重复启动）
@@ -270,6 +271,20 @@ bridge 占用 3 个端口：`5031`（连 WeFlow）、`7999`（OB11 WS 服务端�
 
 - **仓库里不含 `config.json`**（含密钥）。你 clone 后自己从 `config.example.json` 复制并填真实值。
 - 不要把真实的 `access_token` / `fun_asr_api_key` / `image_caption_api_key` 提交到 GitHub（会泄露），也不要发到群里。
+
+### 11. 语音消息（OneBot v11 `voice` segment）
+
+当 MaiBot 侧发出 OneBot v11 `voice` 段（典型场景：配合 [mai-voice-sender](https://github.com/jessiongod/mai-voice-sender) 之类 TTS 插件），bridge 会按以下规则发送：
+
+- **QQ 侧（napcat-adapter + NapCat）**：发的是「语音消息气泡」（带波形、可读时长，QQ 个人号原生支持）—— 这是真正的"语音消息"。
+- **微信侧（本 bridge）**：**微信 PC 客户端没有"上传 mp3 当语音消息"的接口**，语音消息必须按住麦克风按钮录制。bridge 因此把 mp3 以「文件卡片」形式发到聊天窗口，对方双击可播放音频，但**不是"按住说话"那种带波形的语音气泡**。在 UIA 层面能做的已经做到最像。
+
+如果你希望微信侧发出的是"语音气泡"（带波形、可拖动进度条），目前唯一可行路径是 hook 微信进程底层发 protobuf（不在本项目范围内，且违反微信协议），所以本桥接选择"文件卡片"这一上限。
+
+实现细节：
+
+- `uia_sender.send_file()`：用 PowerShell 把文件路径放到剪贴板 `CF_HDROP` 格式，再到聊天窗口 Ctrl+V，微信会识别为附件 → Enter 发送。
+- `ob_protocol._handle_ob_api`：收到 `voice` 段 → 解 `base64://...` mp3 → 落临时文件 → `send_file` → 清理临时文件。
 
 ---
 

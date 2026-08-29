@@ -25,7 +25,7 @@ DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 PYTHON = Path(sys.executable)
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 PKG_NAME = f"WeChatOneBotBridge-v{VERSION}"
 
 

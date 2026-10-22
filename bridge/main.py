@@ -13,6 +13,14 @@ import time
 
 import requests
 
+# webui 包位于仓库根（bridge/ 的同级），不在 bridge/ 内。以脚本方式运行时
+# （start.bat 与 MaiBotBridgeManager 都用 bridge/ 作工作目录），sys.path[0] 是 bridge/，
+# 仓库根不在搜索路径里，`import webui` 会抛 ModuleNotFoundError。这里补上仓库根；
+# 打包成 exe 时 __file__ 在 _MEIPASS 下，该目录已在 sys.path 中，这段是幂等的。
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.append(_REPO_ROOT)
+
 import state
 import config
 from senders import create_sender
@@ -220,6 +228,25 @@ if __name__ == "__main__":
         if getattr(config, "WEBUI_AUTO_OPEN", True):
             threading.Thread(target=_auto_open_webui, daemon=True).start()
         start_web()
+    except (Exception, SystemExit) as e:
+        # 主线程靠 uvicorn 常驻。WebUI 起不来（端口被占、发布包缺少 webui 模块等）时
+        # 不能让进程退出：OneBot 服务端跑在后台线程里，主线程一退，桥梁就断了。
+        # 注意 uvicorn 绑定端口失败时走的是 sys.exit()，SystemExit 不是 Exception 的子类，
+        # 必须显式接住。
+        code = getattr(e, "code", None)
+        if code is not None:
+            log.error(f"[WebUI] 启动失败: uvicorn 中止进程（exit code {code}）")
+        else:
+            log.error(f"[WebUI] 启动失败: {type(e).__name__}: {e}")
+        log.error(
+            f"[WebUI] WebUI 不可用，但 OneBot 服务仍在监听 "
+            f"{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT}，MaiBot 侧不受影响"
+        )
+        log.error(
+            f"[WebUI] 请检查端口 {config.WEB_PORT} 是否被占用；"
+            f"若报缺少 webui 模块，说明发布包不完整，请用 build.py 从源码重新打包"
+        )
+        threading.Event().wait()
     finally:
         try:
             os.remove(PID_FILE)

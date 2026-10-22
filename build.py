@@ -21,11 +21,16 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 BRIDGE_SRC = ROOT / "bridge"
 MANAGER_SRC = ROOT / "manager"
+# WebUI 是仓库根下的独立包（webui/），不在 bridge/ 内；
+# bridge.exe 的入口在 bridge/main.py，因此打包时必须显式把 ROOT 加进分析路径。
+WEBUI_SRC = ROOT / "webui"
+WEBUI_FRONTEND = WEBUI_SRC / "frontend"
+WEBUI_DIST = WEBUI_SRC / "dist"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 PYTHON = Path(sys.executable)
 
-VERSION = "1.1.0"
+VERSION = "1.1.1"
 PKG_NAME = f"WeChatOneBotBridge-v{VERSION}"
 
 
@@ -37,7 +42,7 @@ def clean() -> None:
     for p in [DIST, BUILD]:
         if p.exists():
             shutil.rmtree(p, ignore_errors=True)
-    for sub in [BRIDGE_SRC, MANAGER_SRC]:
+    for sub in [BRIDGE_SRC, MANAGER_SRC, WEBUI_SRC]:
         for d in sub.glob("__pycache__"):
             shutil.rmtree(d, ignore_errors=True)
         for f in sub.glob("*.spec"):
@@ -78,15 +83,58 @@ def pyi(src: Path, name: str, workdir: Path, onefile: bool = True, windowed: boo
     run(cmd, cwd=workdir)
 
 
+def ensure_webui_dist() -> None:
+    """确保 webui/dist 存在（WebUI 前端静态产物）。
+
+    dist 不在仓库里，必须由 vite 现场构建；缺了它 bridge.exe 能跑但 WebUI 只返回
+    503「前端尚未构建」。发布包不该缺这一块，所以这里直接构建，失败就中止。
+    """
+    if (WEBUI_DIST / "index.html").is_file():
+        print(f"webui/dist 已存在：{WEBUI_DIST}")
+        return
+    step("构建 WebUI 前端")
+    npm = shutil.which("npm")
+    if npm is None:
+        raise SystemExit(
+            "找不到 npm，无法构建 WebUI 前端。\n"
+            f"请自行执行：cd {WEBUI_FRONTEND} && npm install && npm run build"
+        )
+    try:
+        if not (WEBUI_FRONTEND / "node_modules").is_dir():
+            run([npm, "install"], cwd=WEBUI_FRONTEND)
+        run([npm, "run", "build"], cwd=WEBUI_FRONTEND)
+    except subprocess.CalledProcessError as exc:
+        raise SystemExit(
+            f"WebUI 前端构建失败（退出码 {exc.returncode}）。\n"
+            f"请自行排查：cd {WEBUI_FRONTEND} && npm install && npm run build"
+        ) from exc
+    if not (WEBUI_DIST / "index.html").is_file():
+        raise SystemExit(f"前端构建后仍未生成 {WEBUI_DIST / 'index.html'}，请检查 vite 配置。")
+
+
 def build_bridge() -> None:
     step("打包 bridge.exe")
     extras = [
+        # webui 包在仓库根，不在 bridge/ 内，PyInstaller 默认分析路径找不到它
+        "--paths", str(ROOT),
         "--add-data", f"{BRIDGE_SRC / 'config.example.json'};.",
+        "--add-data", f"{WEBUI_DIST};webui/dist",
         # 隐藏 import（PyInstaller 默认按 import 追踪，一些动态加载需要手动加）
         "--hidden-import", "websockets",
         "--hidden-import", "comtypes.gen",
         "--hidden-import", "uiautomation",
         "--hidden-import", "PIL._tkinter_finder",
+        "--hidden-import", "webui",
+        "--hidden-import", "webui.app",
+        "--hidden-import", "webui.monitor",
+        # uvicorn 用字符串动态选择事件循环、HTTP 与 WebSocket 实现，静态追踪不到
+        "--hidden-import", "uvicorn.logging",
+        "--hidden-import", "uvicorn.loops.auto",
+        "--hidden-import", "uvicorn.protocols.http.auto",
+        "--hidden-import", "uvicorn.protocols.http.h11_impl",
+        "--hidden-import", "uvicorn.protocols.websockets.auto",
+        "--hidden-import", "uvicorn.protocols.websockets.websockets_impl",
+        "--hidden-import", "uvicorn.lifespan.on",
     ]
     pyi(BRIDGE_SRC / "main.py", "bridge", BRIDGE_SRC, onefile=True, windowed=False, extra_args=extras)
 
@@ -158,12 +206,14 @@ def main() -> int:
     t0 = time.time()
     DIST.mkdir(exist_ok=True)
     clean()
+    ensure_webui_dist()
     install_pyinstaller()
     build_bridge()
     build_log_tail()
     build_manager()
     zip_path = assemble_zip()
-    print(f"\n✅ 打包完成，耗时 {time.time() - t0:.1f}s")
+    # 这里不要用 emoji：Windows 控制台默认 GBK 编码，编码失败会让打包成功却以退出码 1 结束
+    print(f"\n[完成] 打包完成，耗时 {time.time() - t0:.1f}s")
     print(f"   发布包：{zip_path}")
     return 0
 

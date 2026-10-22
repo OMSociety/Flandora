@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import threading
+from urllib.parse import parse_qs, urlparse
 
 import websockets
 from websockets.asyncio.server import serve
@@ -39,8 +40,22 @@ def _run_ob_server():
         _ws_ready.clear()
 
 
+def _request_query(request) -> dict:
+    """取出握手请求的 query 参数。
+
+    websockets 13 起的新版协议栈（websockets.asyncio）里，Request 只有 path 与 headers
+    两个字段，没有 query；query 必须自己从 path 上解析。旧版 legacy 协议栈才提供 query
+    映射，这里一并兼容，避免依赖具体版本。
+    """
+    legacy = getattr(request, "query", None)
+    if legacy:
+        return {str(k): str(v) for k, v in dict(legacy).items()}
+    path = getattr(request, "path", "") or ""
+    return {k: v[0] for k, v in parse_qs(urlparse(path).query).items() if v}
+
+
 def _token_ok(connection, request):
-    """校验 Authorization: Bearer <token> 请求头。"""
+    """校验 Authorization: Bearer <token> 请求头，或 ?access_token= 查询参数。"""
     if not config.OB_SERVER_TOKEN:
         return None
     auth = request.headers.get("Authorization", "")
@@ -48,8 +63,7 @@ def _token_ok(connection, request):
     if auth == expected:
         return None
     # 也兼容 ?access_token= 形式
-    qs = request.query
-    if qs and qs.get("access_token") == config.OB_SERVER_TOKEN:
+    if _request_query(request).get("access_token") == config.OB_SERVER_TOKEN:
         return None
     log.warning(f"[OB11] 鉴权失败: Authorization={auth!r}")
     from websockets.http11 import Response

@@ -4,6 +4,7 @@ pyperclip>=1.8.2
 pygetwindow>=0.0.9
 uiautomation>=2.0.17
 Pillow>=10.0.0
-websockets>=12.0
+# websockets.asyncio（新版 asyncio 协议栈）自 13.0 起提供，ob_server.py 依赖它
+websockets>=13.0,<17
 fastapi>=0.110.0
 uvicorn>=0.29.0

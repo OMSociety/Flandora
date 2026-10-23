@@ -207,6 +207,7 @@ def _rebuild_for_account(old, new):
     log.warning("[账号] 已作废 OneBot 会话映射（联系人 / 群名缓存）")
     log.warning(f"[账号] 机器人身份已切换为 {new.wxid}（self_id={state._self_id_int}）")
     log.warning("[账号] 本地库密钥只对上一个账号有效，新账号的库需重新提取密钥后才能读取")
+    log.warning("[账号] 图片密钥同样是账号级的，需对新账号重取；在此之前图片消息只给占位符")
     log.warning("[账号] 给新账号发消息前请重新确认目标，映射已清空的会话会如实报失败")
     log.warning("=" * 64)
 

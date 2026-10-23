@@ -195,7 +195,7 @@ class WxLocalSource:
         return dict(self.names)
 
 
-def load_image_key() -> tuple[bytes, int]:
+def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
     """读图片解码用的两把密钥。拿不到时返回 (b"", -1)，图片退回占位符。
 
     与数据库口令分开存：口令丢了整条通道都不能用，而图片密钥缺失只影响图片。
@@ -203,6 +203,10 @@ def load_image_key() -> tuple[bytes, int]:
 
     AES 密钥在落盘时可能有两种写法：32 位十六进制（16 字节二进制），或直接
     16 个 ASCII 字符。实测微信用的是后者，但两种都接受，避免手工填错就静默失效。
+
+    **密钥是账号级的**：文件里记了取钥时的账号，与当前登录账号不一致时按「没有
+    密钥」处理。否则切号后会拿旧密钥去解新账号的图，解出一堆随机字节再报解码
+    失败——那既看不出真正原因，也白费每张图的解密开销。
     """
     path = config.WX_IMAGE_KEY_FILE or default_image_key_file()
     if not os.path.isfile(path):
@@ -215,6 +219,13 @@ def load_image_key() -> tuple[bytes, int]:
         log.warning("图片密钥文件读不出来（%s）：%s", path, exc)
         return b"", -1
 
+    owner = (payload.get("wxid") or "").strip()
+    if owner and current_wxid and owner != current_wxid:
+        log.warning(
+            "图片密钥属于账号 %s，当前登录的是 %s：先按无密钥处理。"
+            "要显示图片，请对新账号执行一次「取图片密钥」。", owner, current_wxid)
+        return b"", -1
+
     aes = _parse_aes_key(payload.get("aes_key") or "")
     if not aes:
         return b"", -1
@@ -223,7 +234,7 @@ def load_image_key() -> tuple[bytes, int]:
     except (TypeError, ValueError):
         xor_int = -1
     log.info("已加载图片密钥（账号 %s），XOR 密钥 %s",
-             payload.get("wxid") or "未知",
+             owner or "未知",
              f"0x{xor_int:02x}" if xor_int >= 0 else "未配置（将自动反推）")
     return aes, xor_int
 
@@ -253,7 +264,7 @@ def build_source(key_file: str = None) -> WxLocalSource:
         raise WxSourceError(f"账号 {account.wxid} 的数据目录不存在（可能还没登录完成）")
 
     passphrase = load_passphrase(key_file)
-    image_key, image_xor = load_image_key()
+    image_key, image_xor = load_image_key(account.wxid)
     work_root = config.WX_WORK_DIR or default_work_dir()
     work_dir = os.path.join(work_root, account.wxid)
 

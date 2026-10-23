@@ -107,9 +107,8 @@ def _sniff(buf: bytes) -> str:
 def decode(raw: bytes, aes_key: bytes, xor_key: int) -> DecodedImage:
     """把一个 V2 `.dat` 的原始字节解成图片。
 
-    `aes_key` 16 字节、`xor_key` 0-255。密钥不对时不会抛错，而是解出随机字节，
-    由调用方用 `looks_like_image()` 判定——这样批量处理时能区分「不是图片」
-    与「密钥错了」。
+    `aes_key` 16 字节、`xor_key` 0-255。密钥不对时解出来的头不会是已知图片格式，
+    此时抛 `ImageDecodeError`——批量处理时据异常就能区分「不是图片」与「密钥错了」。
     """
     if len(raw) < 15 + AES_BLOCK + 1:
         raise ImageDecodeError(f"文件太短（{len(raw)} 字节）")

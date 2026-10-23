@@ -17,7 +17,9 @@ from . import __version__
 
 log = logging.getLogger("ob11-bridge")
 
-REPO = "OMSociety/WeBot-Bridge"
+# 仓库 slug 与项目名是两回事：这里必须指向真实存在的 slug，
+# 否则订阅会一直 404、检查更新形同静默失败。
+REPO = "OMSociety/Flandora"
 FEED_API = f"https://github.com/{REPO}/releases.atom"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 TIMEOUT = 5.0
@@ -82,7 +84,7 @@ def _latest_tag(body: bytes):
 def check(timeout: float = TIMEOUT):
     """查一次。有新版本返回 (版本号, 页面链接)，否则 None。不抛异常。"""
     request = urllib.request.Request(FEED_API, headers={
-        "User-Agent": f"WeBot-Bridge/{__version__}",
+        "User-Agent": f"Flandora/{__version__}",
         "Accept": "application/atom+xml",
     })
     try:

@@ -1,6 +1,6 @@
 """取图片解码密钥：独立命令行入口。
 
-真正的扫描逻辑在 ``webot_bridge/wx_image_key.py``——取钥向导要在 bridge 进程里
+真正的扫描逻辑在 ``flandora/wx_image_key.py``——取钥向导要在 bridge 进程里
 后台跑同一套代码，所以这里只负责命令行参数与人看的输出。
 
 用法：
@@ -24,7 +24,7 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-from webot_bridge import wx_image_key  # noqa: E402
+from flandora import wx_image_key  # noqa: E402
 
 EXIT_OK = 0
 EXIT_NOT_FOUND = 2

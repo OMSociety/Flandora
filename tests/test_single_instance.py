@@ -14,7 +14,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from webot_bridge import single_instance  # noqa: E402
+from flandora import single_instance  # noqa: E402
 
 
 def main() -> int:
@@ -27,7 +27,7 @@ def main() -> int:
     checks += 1
 
     # 用随机名字，免得和真正在跑的 bridge 撞上
-    name = "Global\\WeBotBridge_Test_" + uuid.uuid4().hex
+    name = "Global\\Flandora_Test_" + uuid.uuid4().hex
 
     h1, running1 = single_instance.acquire_mutex(name)
     if sys.platform != "win32":
@@ -50,7 +50,7 @@ def main() -> int:
     # 跨进程：子进程拿同一个名字——这才是真正的使用场景
     code = (
         "import sys; sys.path.insert(0, %r);"
-        "from webot_bridge.single_instance import acquire_mutex;"
+        "from flandora.single_instance import acquire_mutex;"
         "h, running = acquire_mutex(%r);"
         "print('ALREADY' if running else 'FIRST')"
     ) % (REPO_ROOT, name)

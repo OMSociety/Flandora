@@ -1,18 +1,18 @@
 # -*- coding: utf-8 -*-
-"""WeBot-Bridge 一键打包脚本
+"""Flandora 一键打包脚本
 
 打包四个组件：
-  - WeBotBridge.exe            来自 run_bridge.py（webot_bridge 包的入口）
-  - WeBotBridge-Manager.exe    来自 manager/bridge_manager.py
-  - WeBotBridge-LogTail.exe    来自 manager/log_tail.py
-  - WeBotBridge-KeyTool.exe    来自 tools/keytool.py（唯一带 frida 的 exe）
+  - Flandora.exe            来自 run_bridge.py（flandora 包的入口）
+  - Flandora-Manager.exe    来自 manager/bridge_manager.py
+  - Flandora-LogTail.exe    来自 manager/log_tail.py
+  - Flandora-KeyTool.exe    来自 tools/keytool.py（唯一带 frida 的 exe）
 
 前三个是运行必需；取钥器只在首次取钥与换号时用，单独成一个 exe 是为了不让
 frida 的几十 MB 拖进主程序。
 
 产物：
-  dist/WeBot-Bridge-v1.0.0.zip              portable 包
-  dist/WeBot-Bridge-v1.0.0-setup.exe        安装程序（需要 Inno Setup）
+  dist/Flandora-v1.0.0.zip              portable 包
+  dist/Flandora-v1.0.0-setup.exe        安装程序（需要 Inno Setup）
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-PKG_SRC = ROOT / "webot_bridge"
+PKG_SRC = ROOT / "flandora"
 MANAGER_SRC = ROOT / "manager"
 TOOLS_SRC = ROOT / "tools"
 WEBUI_SRC = PKG_SRC / "webui"
@@ -37,15 +37,15 @@ BUILD = ROOT / "build"
 PYTHON = Path(sys.executable)
 
 VERSION = "1.0.0"
-PKG_NAME = f"WeBot-Bridge-v{VERSION}"
+PKG_NAME = f"Flandora-v{VERSION}"
 
 # pip 走清华源，国内直连 PyPI 常常超时
 PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
-EXE_BRIDGE = "WeBotBridge"
-EXE_MANAGER = "WeBotBridge-Manager"
-EXE_LOGTAIL = "WeBotBridge-LogTail"
-EXE_KEYTOOL = "WeBotBridge-KeyTool"
+EXE_BRIDGE = "Flandora"
+EXE_MANAGER = "Flandora-Manager"
+EXE_LOGTAIL = "Flandora-LogTail"
+EXE_KEYTOOL = "Flandora-KeyTool"
 
 EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
 
@@ -99,7 +99,7 @@ def pyi(src: Path, name: str, workdir: Path, onefile: bool = True,
 
 
 def ensure_webui_dist() -> None:
-    """确保 webot_bridge/webui/dist 存在（WebUI 前端静态产物）。
+    """确保 flandora/webui/dist 存在（WebUI 前端静态产物）。
 
     dist 不在仓库里，必须由 vite 现场构建；缺了它 exe 能跑但 WebUI 只返回
     503「前端尚未构建」。发布包不该缺这一块，所以这里直接构建，失败就中止。
@@ -130,18 +130,18 @@ def ensure_webui_dist() -> None:
 def build_bridge() -> None:
     step(f"打包 {EXE_BRIDGE}{EXE_SUFFIX}")
     extras = [
-        # 入口脚本放在仓库根，webot_bridge 才会被完整收集
+        # 入口脚本放在仓库根，flandora 才会被完整收集
         "--paths", str(ROOT),
         "--add-data", f"{PKG_SRC / 'config.example.json'};.",
-        "--add-data", f"{WEBUI_DIST};webot_bridge/webui/dist",
+        "--add-data", f"{WEBUI_DIST};flandora/webui/dist",
         # 隐藏 import（PyInstaller 默认按 import 追踪，一些动态加载需要手动加）
         "--hidden-import", "websockets",
         "--hidden-import", "comtypes.gen",
         "--hidden-import", "uiautomation",
         "--hidden-import", "PIL._tkinter_finder",
-        "--hidden-import", "webot_bridge.webui",
-        "--hidden-import", "webot_bridge.webui.app",
-        "--hidden-import", "webot_bridge.webui.monitor",
+        "--hidden-import", "flandora.webui",
+        "--hidden-import", "flandora.webui.app",
+        "--hidden-import", "flandora.webui.monitor",
         # uvicorn 用字符串动态选择事件循环、HTTP 与 WebSocket 实现，静态追踪不到
         "--hidden-import", "uvicorn.logging",
         "--hidden-import", "uvicorn.loops.auto",
@@ -267,7 +267,7 @@ def build_installer() -> Path | None:
             "  下载地址：https://jrsoftware.org/isdl.php"
         )
         return None
-    iss = ROOT / "installer" / "WeBot-Bridge.iss"
+    iss = ROOT / "installer" / "Flandora.iss"
     if not iss.is_file():
         raise SystemExit(f"缺少安装脚本 {iss}")
     run([str(iscc), str(iss)], cwd=iss.parent)

@@ -20,11 +20,11 @@ import sys
 def _default_data_dir() -> str:
     """还没确定 config.json 位置时的默认可写目录：程序目录下的 data/。
 
-    环境变量 ``WEBOT_BRIDGE_DATA_DIR`` 可以把这个位置指到别处——数据与程序分开放，
+    环境变量 ``FLANDORA_DATA_DIR`` 可以把这个位置指到别处——数据与程序分开放，
     或者同一台机器上跑多份互不干扰。它只决定「去哪里找、去哪里生成 config.json」；
     找到之后，日志、口令、游标一律以 config.json 所在的目录为准。
     """
-    override = os.environ.get("WEBOT_BRIDGE_DATA_DIR", "")
+    override = os.environ.get("FLANDORA_DATA_DIR", "")
     if override:
         return os.path.abspath(override)
     if getattr(sys, "frozen", False):
@@ -141,9 +141,6 @@ BUFFER_SECONDS = config.get("buffer_seconds", 5)
 WEB_PORT = config.get("web_port", 8766)
 # 启动 bridge 时自动用默认浏览器打开 WebUI（false 关闭）
 WEBUI_AUTO_OPEN = bool(config.get("webui_auto_open", True))
-GROUP_REPLY_MODE = config.get("group_reply_mode", "mention")  # "mention" / "all" / "batch"
-# 上下文附带：mention 模式下，@ 触发时把最近 N 条群聊记录一并附上（0 = 关闭）
-CONTEXT_MESSAGES = int(config.get("context_messages", 5) or 0)
 
 # 早期对接 AstrBot 的客户端 URL（已弃用，保留兼容）
 ASTRBOT_OB_URL = config.get("astrbot_ob_url", "ws://127.0.0.1:19777")
@@ -182,7 +179,7 @@ FUN_ASR_MODEL = config.get("fun_asr_model", "fun-asr-flash-2026-06-15")
 
 # ============ 日志 ============
 
-LOG_FILE = os.path.join(data_dir(), "webot_bridge.log")
+LOG_FILE = os.path.join(data_dir(), "flandora.log")
 os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
 
 logging.basicConfig(

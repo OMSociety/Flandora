@@ -1,20 +1,20 @@
-; WeBot-Bridge 安装脚本（Inno Setup）
+; Flandora 安装脚本（Inno Setup）
 ;
-; 由 build.py 调用 ISCC.exe 编译，载荷取自 dist\WeBot-Bridge-v<版本>\（与
+; 由 build.py 调用 ISCC.exe 编译，载荷取自 dist\Flandora-v<版本>\（与
 ; portable zip 同一份内容）。装到 %LOCALAPPDATA%，全程不需要管理员。
 ;
 ; 两处与运行期约定的耦合，改动时要一起改：
-;   1. 开机自启在 Startup 目录建 WeBotBridge-Manager.lnk；管理器认这个名字
+;   1. 开机自启在 Startup 目录建 Flandora-Manager.lnk；管理器认这个名字
 ;      （manager/bridge_manager.py 的 _is_autostart_enabled 同时看 .lnk 与 .bat），
 ;      「开机自启动」勾选状态才认得出安装器建的这一份。
 ;   2. data\ 下的文件一律 uninsneveruninstall，卸载时是否删除由
 ;      InitializeUninstall() 里的对话框决定（默认删除）。
 
-#define AppName "WeBot-Bridge"
+#define AppName "Flandora"
 #define AppVersion "1.0.0"
 #define AppPublisher "OMSociety"
-#define ManagerExe "WeBotBridge-Manager.exe"
-#define PayloadDir "..\dist\WeBot-Bridge-v1.0.0"
+#define ManagerExe "Flandora-Manager.exe"
+#define PayloadDir "..\dist\Flandora-v1.0.0"
 
 [Setup]
 AppId={{80f185a4-624d-40dc-bb9f-59a793ff3859}
@@ -22,12 +22,12 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
-DefaultDirName={localappdata}\Programs\WeBot-Bridge
+DefaultDirName={localappdata}\Programs\Flandora
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
 OutputDir=..\dist
-OutputBaseFilename=WeBot-Bridge-v{#AppVersion}-setup
+OutputBaseFilename=Flandora-v{#AppVersion}-setup
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -47,10 +47,10 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; Flags: unchecked
 
 [Files]
 ; 程序与文档：每次安装都覆盖，写死的路径与随包资源必须跟着版本走
-Source: "{#PayloadDir}\WeBotBridge.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\WeBotBridge-Manager.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\WeBotBridge-LogTail.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\WeBotBridge-KeyTool.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\Flandora.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\Flandora-Manager.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\Flandora-LogTail.exe"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\Flandora-KeyTool.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\启动.bat"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
@@ -65,7 +65,7 @@ Name: "{group}\卸载 {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName} 管理器"; Filename: "{app}\{#ManagerExe}"; Tasks: desktopicon
 ; 开机自启用快捷方式而不是脚本：Inno 自己的 Icons 机制创建，
 ; 管理器认这个 .lnk（bridge_manager._is_autostart_enabled 同时看 .lnk 和 .bat）
-Name: "{userstartup}\WeBotBridge-Manager"; Filename: "{app}\{#ManagerExe}"; Tasks: autostart
+Name: "{userstartup}\Flandora-Manager"; Filename: "{app}\{#ManagerExe}"; Tasks: autostart
 
 [Run]
 Filename: "{app}\{#ManagerExe}"; Description: "立即运行 {#AppName} 管理器"; Flags: postinstall nowait skipifsilent
@@ -78,7 +78,7 @@ Type: dirifempty; Name: "{app}"
 
 [Code]
 const
-  AutostartName = 'WeBotBridge-Manager';
+  AutostartName = 'Flandora-Manager';
 
 function StartupBatPath: String;
 begin

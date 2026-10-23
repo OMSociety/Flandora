@@ -1,4 +1,4 @@
-"""支持 `python -m webot_bridge`。"""
+"""支持 `python -m flandora`。"""
 from .main import main
 
 if __name__ == "__main__":

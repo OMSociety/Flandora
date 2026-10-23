@@ -7,13 +7,13 @@ import os
 import sys
 import tempfile
 
-# 仓库根 = 本文件的上一级；包在仓库根的 webot_bridge/ 下。
+# 仓库根 = 本文件的上一级；包在仓库根的 flandora/ 下。
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKG = os.path.join(REPO_ROOT, "webot_bridge")
+PKG = os.path.join(REPO_ROOT, "flandora")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from webot_bridge.wxkey import recover
+from flandora.wxkey import recover
 
 
 def test_candidates_prioritise_deref_head():

@@ -25,7 +25,7 @@ function download() {
   const link = document.createElement('a')
   const date = new Date()
   link.href = url
-  link.download = `webot-bridge-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.log`
+  link.download = `flandora-${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.log`
   document.body.appendChild(link)
   link.click()
   link.remove()

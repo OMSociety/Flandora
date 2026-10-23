@@ -27,11 +27,6 @@ export function fmt(n) {
   return Number(n || 0).toLocaleString('zh-CN')
 }
 
-export function modeLabel(mode) {
-  const map = { mention: '仅@回复', all: '全部回复', batch: '批处理' }
-  return map[mode] || mode || '--'
-}
-
 export function kindLabel(kind) {
   const map = { private: '私聊', group: '群聊', manual: '手动' }
   return map[kind] || kind || '--'

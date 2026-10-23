@@ -7,11 +7,11 @@ import sys
 import struct
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKG = os.path.join(REPO_ROOT, "webot_bridge")
+PKG = os.path.join(REPO_ROOT, "flandora")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from webot_bridge import wx_image
+from flandora import wx_image
 
 
 def _encrypt(key: bytes, data: bytes) -> bytes:

@@ -13,11 +13,11 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from webot_bridge import state, update_check  # noqa: E402
+from flandora import state, update_check  # noqa: E402
 
 _FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>Release notes from WeBot-Bridge</title>
+  <title>Release notes from Flandora</title>
   <entry>
     <title>{tag}</title>
     <link rel="alternate" type="text/html" href="{url}"/>
@@ -27,7 +27,7 @@ _FEED = """<?xml version="1.0" encoding="UTF-8"?>
 
 _EMPTY_FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
-  <title>Release notes from WeBot-Bridge</title>
+  <title>Release notes from Flandora</title>
 </feed>
 """
 

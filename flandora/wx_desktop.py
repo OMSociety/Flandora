@@ -106,8 +106,41 @@ def weixin_pids() -> list[int]:
 
 
 def default_desktop_has_wechat() -> bool:
-    """默认桌面上是否有微信在跑（有的话隔离实例进不去）。"""
-    return bool(weixin_pids())
+    """默认桌面上是否真有微信窗口（有的话隔离实例进不去）。
+
+    按**窗口**判断，不按进程名：`weixin_pids()` 是全系统扫描，会把本程序上次
+    留在隔离桌面上的微信也算进来，重启时就会误判成「用户的微信开着」而拒绝启动。
+    """
+    try:
+        from .uia_sender import enum_wechat_windows
+        return bool(enum_wechat_windows())
+    except Exception as exc:  # noqa: BLE001
+        log.warning("检查默认桌面上的微信窗口失败：%s", exc)
+        return False
+
+
+def quit_default_desktop_wechat() -> int:
+    """结束默认桌面上的微信，返回结束掉的进程数。
+
+    只由用户在 WebUI 上显式点击触发。用户自己开的微信不参与启动/退出流程，
+    不会被静默杀掉——要腾出隔离实例的位置，必须由人来按这个按钮。
+    """
+    try:
+        from .uia_sender import enum_wechat_windows
+        pids = [w["pid"] for w in enum_wechat_windows()]
+    except Exception as exc:  # noqa: BLE001
+        log.warning("查找默认桌面上的微信失败：%s", exc)
+        return 0
+    killed = 0
+    for pid in pids:
+        try:
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                           capture_output=True, creationflags=0x08000000)
+            killed += 1
+            log.info("已按用户要求结束默认桌面上的微信（pid=%d）", pid)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("结束默认桌面上的微信失败（pid=%d）：%s", pid, exc)
+    return killed
 
 
 class IsolatedDesktop:
@@ -132,13 +165,28 @@ class IsolatedDesktop:
         self.handle = h
         log.info("已创建隔离桌面 %s", self.name)
 
+    def open_existing(self) -> bool:
+        """打开同名桌面，但不启动任何程序——用于接管上一次运行留下的微信。"""
+        if self.handle:
+            return True
+        h = _user32.OpenDesktopW(self.name, 0, False, DESKTOP_ALL_ACCESS)
+        if not h:
+            return False
+        self.handle = h
+        return True
+
+    @property
+    def is_open(self) -> bool:
+        """桌面句柄是否已就绪（含接管来的桌面，此时 pid 为 0）。"""
+        return bool(self.handle)
+
     def launch(self, exe: str) -> int:
         """在该桌面上启动程序，返回 pid。"""
         self.open()
         if default_desktop_has_wechat():
             raise WeChatAlreadyRunning(
                 "默认桌面上已有微信在运行。隔离模式要求由本程序启动微信，"
-                "请先完全退出微信再启动 bridge。")
+                "可以在「微信画面」页点「结束桌面上的微信」把它关掉后重试。")
         si = _STARTUPINFOW()
         si.cb = ctypes.sizeof(si)
         si.lpDesktop = f"WinSta0\\{self.name}"
@@ -157,10 +205,19 @@ class IsolatedDesktop:
         return self.pid
 
     def close(self) -> None:
-        """结束本次启动的进程并关闭桌面。只动自己启动的。"""
+        """结束本桌面上的微信并关闭桌面句柄。
+
+        接管来的实例没有 `_proc`，按该桌面上枚举到的微信窗口取 pid 再结束，
+        否则「结束微信」只会关掉句柄、微信继续在后台跑。
+        """
+        pids: set[int] = set()
         if self._started and self.pid:
+            pids = {self.pid}
+        elif self.handle:
+            pids = self._pids()
+        for pid in pids:
             try:
-                subprocess.run(["taskkill", "/PID", str(self.pid), "/T", "/F"],
+                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
                                capture_output=True, creationflags=0x08000000)
             except Exception as exc:  # noqa: BLE001
                 log.warning("结束隔离实例失败：%s", exc)
@@ -180,11 +237,33 @@ class IsolatedDesktop:
         self._started = False
         self.pid = 0
 
+    def close_quietly(self) -> None:
+        """只放掉桌面句柄，不动上面的进程（接管探测失败时用）。"""
+        if self.handle:
+            try:
+                _user32.CloseDesktop(self.handle)
+            except Exception:
+                pass
+            self.handle = None
+
     # ---------- 窗口 ----------
 
     def _pids(self) -> set[int]:
-        """本次启动的微信及其子进程。"""
-        return {self.pid} if self.pid else set()
+        """该桌面上微信的进程号。
+
+        自己启动的知道 pid；接管来的不知道，就从该桌面上真实的微信窗口反推
+        ——只取这个桌面上的，默认桌面上如果有别的微信也不会被算进来。
+        """
+        if self.pid:
+            return {self.pid}
+        if not self.handle:
+            return set()
+        try:
+            from .uia_sender import enum_wechat_windows
+            return {w["pid"] for w in enum_wechat_windows(self.name)}
+        except Exception as exc:  # noqa: BLE001
+            log.warning("枚举 %s 上的微信窗口失败：%s", self.name, exc)
+            return set()
 
     def windows(self) -> list[dict]:
         """该桌面上的窗口清单（只含本次启动的进程）。"""
@@ -383,6 +462,21 @@ def find_weixin_exe(configured: str = "") -> str:
     return ""
 
 
+_EXE_CACHE: dict[str, str] = {}
+
+
+def cached_weixin_exe(configured: str = "") -> str:
+    """带缓存的 `find_weixin_exe`，供 WebUI 频繁查询「本机到底有没有微信」。
+
+    搜索要扫注册表与各盘 Program Files，单次要几百毫秒到数秒；状态查询每 2 秒
+    一次，不能每次重扫。按配置值分键缓存——`wechat_exe` 改了立刻重新找。
+    """
+    key = configured or ""
+    if key not in _EXE_CACHE:
+        _EXE_CACHE[key] = find_weixin_exe(key)
+    return _EXE_CACHE[key]
+
+
 # ====================================================================
 # 进程级管理器（供 bridge 主流程与 WebUI 共用）
 # ====================================================================
@@ -423,35 +517,62 @@ class DesktopManager:
         返回时窗口已经出现（或已等满 60 秒）——调用方紧接着就要找窗口。
         """
         with self._lock:
-            if self._desk and self._desk.pid:
+            if self._desk and self._desk.is_open:
                 desk = self._desk
             else:
-                try:
-                    from . import config
-                    exe = find_weixin_exe(getattr(config, "WECHAT_EXE", ""))
-                except Exception:
-                    exe = find_weixin_exe()
-                if not exe:
-                    self._error = ("找不到微信可执行文件。请在 config.json 里把 "
-                                   "wechat_exe 填成 Weixin.exe 的完整路径。")
-                    log.error(self._error)
-                    return False
-                self._exe = exe
-                try:
-                    desk = IsolatedDesktop(self.desktop_name())
-                    desk.launch(exe)
-                except DesktopError as exc:
-                    # WeChatAlreadyRunning 是它的子类，消息已面向终端用户写好
-                    self._error = str(exc)
-                    log.error("隔离桌面启动失败：%s", exc)
-                    return False
-                self._desk = desk
-                self._error = ""
-                log.info("隔离桌面已就绪（%s，pid=%d）", self.desktop_name(), desk.pid)
+                desk = self._adopt_existing()
+                if desk is None:
+                    try:
+                        from . import config
+                        exe = find_weixin_exe(getattr(config, "WECHAT_EXE", ""))
+                    except Exception:
+                        exe = find_weixin_exe()
+                    if not exe:
+                        self._error = ("找不到微信可执行文件。请在 config.json 里把 "
+                                       "wechat_exe 填成 Weixin.exe 的完整路径。")
+                        log.error(self._error)
+                        return False
+                    self._exe = exe
+                    try:
+                        desk = IsolatedDesktop(self.desktop_name())
+                        desk.launch(exe)
+                    except DesktopError as exc:
+                        # WeChatAlreadyRunning 是它的子类，消息已面向终端用户写好
+                        self._error = str(exc)
+                        log.error("隔离桌面启动失败：%s", exc)
+                        return False
+                    self._desk = desk
+                    self._error = ""
+                    log.info("隔离桌面已就绪（%s，pid=%d）", self.desktop_name(), desk.pid)
         # 在锁外等窗口：start() 可能要等几十秒，持锁会把 WebUI 的状态查询卡住
         if desk.main_window(timeout=60.0) is None:
             log.warning("隔离桌面上 60 秒内没等到微信窗口，微信可能启动失败")
         return True
+
+    def _adopt_existing(self) -> IsolatedDesktop | None:
+        """接管上一次运行留在隔离桌面上的微信。
+
+        桥接退出时不结束微信（否则每次重启都要重新扫码登录，微信会重新生成
+        数据库口令，已存的密钥随之作废），所以启动时先看同名桌面上有没有现成的
+        窗口；有就直接用，登录状态与密钥继续有效。
+        """
+        desk = IsolatedDesktop(self.desktop_name())
+        try:
+            if not desk.open_existing():
+                return None
+            win = desk.main_window(timeout=0.5)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("检查隔离桌面上是否已有微信失败：%s", exc)
+            return None
+        if not win:
+            # 桌面开着但上面没有微信：只放掉句柄，别动桌面
+            desk.close_quietly()
+            return None
+        self._desk = desk
+        self._error = ""
+        log.info("已接管隔离桌面上正在运行的微信（hwnd=%d），无需重新登录",
+                 win["hwnd"])
+        return desk
 
     def stop(self) -> None:
         with self._lock:
@@ -469,7 +590,7 @@ class DesktopManager:
         """
         with self._lock:
             desk = self._desk
-        if desk and desk.pid:
+        if desk and desk.is_open:
             try:
                 return desk.main_window(timeout=0.1)
             except Exception:
@@ -507,17 +628,25 @@ class DesktopManager:
             "error": self._error,
             "desktop": self.desktop_name(),
             "exe": self._exe,
+            "exe_found": False,
         }
         try:
             from . import config
+            found = cached_weixin_exe(getattr(config, "WECHAT_EXE", ""))
+            info["exe_found"] = bool(found)
+            info["exe"] = info["exe"] or found
+        except Exception:
+            pass
+        try:
+            from . import config
             if getattr(config, "ISOLATED_DESKTOP", False):
-                info["running"] = bool(desk and desk.pid)
+                info["running"] = bool(desk and desk.is_open)
             else:
                 # 非隔离模式：微信由用户自己开，看默认桌面上有没有
                 info["running"] = bool(weixin_pids())
         except Exception:
             info["running"] = bool(weixin_pids())
-        win = self.window() if (desk and desk.pid) else None
+        win = self.window() if (desk and desk.is_open) else None
         if win:
             info["width"] = win["width"]
             info["height"] = win["height"]

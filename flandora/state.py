@@ -6,7 +6,7 @@ AI 服务：MaiBot 通过微信适配器（OneBot v11 WS 客户端）接入
 消息发送：bridge 接收 MaiBot 的 API 调用 → 隔离桌面上的微信窗口（UIA）
 
 架构：
-  微信本地库 ──轮询──→ webot_bridge/main.py ──WS 服务端(7999)──→ MaiBot 微信适配器
+  微信本地库 ──轮询──→ flandora/main.py ──WS 服务端(7999)──→ MaiBot 微信适配器
                     ↑ 监听端口，等待客户端连入
                     发送 OneBot 事件            返回 API 响应
 """
@@ -51,9 +51,6 @@ bridge_lock = threading.Lock()
 sender_instance = None
 _ob_id_to_contact: dict[int, str] = {}  # OneBot user_id/group_id → 微信联系名
 ob_server_started = False
-
-# 群聊回复模式（运行时可变，启动时从 config 初始化）
-group_reply_mode = "mention"
 
 # 新版本提示：update_check 查到有新版时填 {"latest","current","url"}，否则 None
 update_available: Optional[dict] = None

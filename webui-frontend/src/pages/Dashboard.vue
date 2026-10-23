@@ -2,7 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { get, post } from '../api'
 import { status, refreshStatus, toast } from '../store'
-import { formatUptime, fmt, modeLabel, hexHwnd, formatClock } from '../utils/format'
+import { formatUptime, fmt, hexHwnd, formatClock } from '../utils/format'
 import HourlyBarChart from '../components/HourlyBarChart.vue'
 import Modal from '../components/Modal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
@@ -42,7 +42,6 @@ async function selectWin(hwnd) {
   } else toast('绑定失败：' + ((res.data && res.data.error) || '未知错误'), 'error')
 }
 
-const modeOptions = [{ value: 'mention', label: '仅 @ 回复' }, { value: 'all', label: '全部回复' }, { value: 'batch', label: '批处理' }]
 const bridgeCard = computed(() => !status.running ? { text: '未运行', cls: 'gray' } : status.paused ? { text: '已暂停', cls: 'amber' } : { text: '运行中', cls: 'green' })
 const obCard = computed(() => status.ob?.connected ? { text: `${fmt(status.ob.clients)} 个客户端`, cls: 'green' } : { text: '未连接', cls: 'gray' })
 const inboundCard = computed(() => status.inbound?.ready ? { text: '本地库就绪', cls: 'green' } : { text: '等待数据', cls: 'gray' })
@@ -62,12 +61,6 @@ async function applyControl(action) {
   if (res.ok && res.data && res.data.ok !== false) toast('操作成功', 'success')
   else toast('操作失败' + (res.data?.error ? ': ' + res.data.error : ''), 'error')
   refreshStatus(true)
-}
-async function changeMode(mode) {
-  if (mode === status.group_reply_mode) return
-  const res = await post('/api/mode', { mode })
-  if (res.ok && res.data) { toast(`群聊回复模式已切换为：${modeLabel(mode)}`, 'success'); refreshStatus(true) }
-  else toast('切换模式失败', 'error')
 }
 async function loadStats() {
   const res = await get('/api/stats')
@@ -117,7 +110,6 @@ onMounted(() => { loadStats() })
         <section class="card chart-card"><div class="section-head"><h3 class="card-title">24 小时消息量</h3><span class="section-note">按小时统计</span></div><HourlyBarChart :data="stats.hourly" /><div v-if="!stats.hourly?.length" class="chart-empty">暂无可展示的消息统计</div></section>
       </div>
       <aside class="side-column">
-        <section class="card mode-card"><h3 class="card-title">群聊回复</h3><p class="card-description">选择机器人响应群聊消息的方式</p><div class="seg mode-seg" role="group" aria-label="群聊回复模式"><button v-for="opt in modeOptions" :key="opt.value" :class="{ active: status.group_reply_mode === opt.value }" :aria-pressed="status.group_reply_mode === opt.value" @click="changeMode(opt.value)">{{ opt.label }}</button></div><p class="hint mode-hint">{{ { mention: '仅在群内 @ 机器人昵称时响应。', all: '群内所有消息都会参与回复。', batch: '将连续消息按缓冲时间批量处理。' }[status.group_reply_mode] }}</p></section>
         <section class="card contacts-card"><div class="section-head"><h3 class="card-title">活跃联系人</h3><AppIcon name="MoreHorizontal" :size="17" /></div><div v-if="stats.top_contacts?.length" class="contacts"><div v-for="(c, i) in stats.top_contacts" :key="i" class="contact-row"><span class="rank">{{ String(i + 1).padStart(2, '0') }}</span><span class="cname">{{ c.contact }}</span><span class="ccount">{{ fmt(c.count) }}</span></div></div><div v-else class="empty"><AppIcon name="MessagesSquare" :size="24" /><span>开始对话后，活跃联系人会显示在这里。</span></div></section>
       </aside>
     </div>
@@ -171,7 +163,7 @@ onMounted(() => { loadStats() })
 .text-action:hover { color:var(--primary-deep); }
 .dashboard-grid { display:grid; grid-template-columns:minmax(0,1.75fr) minmax(260px,1fr); gap:18px; align-items:start; }
 .main-column, .side-column { display:flex; flex-direction:column; gap:18px; min-width:0; }
-.activity-card, .chart-card, .mode-card, .contacts-card { box-shadow:none; }
+.activity-card, .chart-card, .contacts-card { box-shadow:none; }
 .metric-grid { display:grid; grid-template-columns:repeat(3,1fr); }
 .metric-grid > div { padding:4px 18px; border-right:1px solid var(--border); }
 .metric-grid > div:first-child { padding-left:0; }
@@ -184,9 +176,6 @@ onMounted(() => { loadStats() })
 .drop-note { display:flex; align-items:center; gap:5px; margin-top:10px; font-size:11px; color:var(--warning); }
 .chart-card { padding-bottom:14px; }
 .chart-empty { text-align:center; color:var(--muted); font-size:11px; margin-top:-20px; padding-bottom:12px; }
-.mode-seg { display:flex; width:100%; }
-.mode-seg button { flex:1; padding-inline:6px; }
-.mode-hint { margin-top:11px; }
 .contacts { display:flex; flex-direction:column; }
 .contact-row { display:flex; align-items:center; gap:12px; padding:10px 0; border-bottom:1px solid var(--border); }
 .contact-row:last-child { border-bottom:0; }

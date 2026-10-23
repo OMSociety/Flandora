@@ -21,7 +21,8 @@ const drawerOverlayId = Symbol('drawer')
 
 const tab = ref(pageFromHash(window.location.hash))
 const drawerOpen = ref(false)
-const sidebarCollapsed = ref(localStorage.getItem('webot-sidebar') === 'collapsed')
+const SIDEBAR_KEY = 'flandora-sidebar'
+const sidebarCollapsed = ref((localStorage.getItem(SIDEBAR_KEY) || localStorage.getItem('webot-sidebar')) === 'collapsed')
 const { theme, toggleTheme } = useTheme()
 const page = computed(() => PAGE_MAP[tab.value])
 const wsLabel = computed(() => ({ connected: '实时连接正常', reconnecting: '正在重新连接', closed: '实时连接已断开' }[wsState.state] || '正在连接服务'))
@@ -40,7 +41,7 @@ function onHashChange(event) {
 }
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
-  localStorage.setItem('webot-sidebar', sidebarCollapsed.value ? 'collapsed' : 'expanded')
+  localStorage.setItem(SIDEBAR_KEY, sidebarCollapsed.value ? 'collapsed' : 'expanded')
 }
 const drawerEl = ref(null)
 function closeDrawer() { drawerOpen.value = false }

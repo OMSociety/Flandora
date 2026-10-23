@@ -9,7 +9,7 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKG = os.path.join(REPO_ROOT, "webot_bridge")
+PKG = os.path.join(REPO_ROOT, "flandora")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
@@ -17,29 +17,29 @@ if REPO_ROOT not in sys.path:
 def with_cfg(fn):
     """在临时目录里造 config.json，让 config 只认这一份，跑完还原。
 
-    用 ``WEBOT_BRIDGE_DATA_DIR`` 把默认数据目录钉到临时目录：否则源码目录里一旦
+    用 ``FLANDORA_DATA_DIR`` 把默认数据目录钉到临时目录：否则源码目录里一旦
     真的存在 ``data/config.json``（从源码跑过一次就会有），它会被优先选中。
     """
     d = tempfile.mkdtemp(prefix="wwb-idx-")
     import shutil
     shutil.copy(os.path.join(PKG, "config.example.json"), os.path.join(d, "config.json"))
-    old_env = os.environ.get("WEBOT_BRIDGE_DATA_DIR")
-    os.environ["WEBOT_BRIDGE_DATA_DIR"] = d
+    old_env = os.environ.get("FLANDORA_DATA_DIR")
+    os.environ["FLANDORA_DATA_DIR"] = d
     try:
         return fn(d)
     finally:
         if old_env is None:
-            os.environ.pop("WEBOT_BRIDGE_DATA_DIR", None)
+            os.environ.pop("FLANDORA_DATA_DIR", None)
         else:
-            os.environ["WEBOT_BRIDGE_DATA_DIR"] = old_env
+            os.environ["FLANDORA_DATA_DIR"] = old_env
 
 
 def main() -> int:
     os.environ.pop("WX_IMAGE_KEY_FILE", None)
 
     def run(d):
-        from webot_bridge import config  # noqa: F401  触发配置加载
-        from webot_bridge import wx_source
+        from flandora import config  # noqa: F401  触发配置加载
+        from flandora import wx_source
         # 写一份属于账号 other 的密钥
         with open(os.path.join(d, "wx_image_key.json"), "w", encoding="utf-8") as fh:
             json.dump({"wxid": "wxid_someone_else", "aes_key": "0123456789abcdef",

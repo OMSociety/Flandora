@@ -19,7 +19,7 @@ from . import wechat_account
 from .single_instance import acquire_mutex
 from .senders import create_sender
 from .ob_server import _run_ob_server
-from .bridge_core import WeBotBridge
+from .bridge_core import Flandora
 from . import __version__
 
 log = logging.getLogger("ob11-bridge")
@@ -101,7 +101,7 @@ def _bridge_loop():
 
     log.info(f"Bridge | 收件: local | OB11: {config.ASTRBOT_OB_URL} | 发送: uia")
 
-    bridge = WeBotBridge(state.sender_instance)
+    bridge = Flandora(state.sender_instance)
     with state.bridge_lock:
         state.bridge_instance = bridge
 
@@ -191,7 +191,6 @@ def main() -> int:
     # 从 config 初始化 state 中需要计算的值
     state._self_id_int = state._wxid_demouser10001(config.BOT_WXID or "wechat_bot")
     state._self_name = config.SELF_NAME
-    state.group_reply_mode = config.GROUP_REPLY_MODE
 
     # 初始化运行时可变的 FunASR 配置
     state.fun_asr_workspace_id = config.FUN_ASR_WORKSPACE_ID
@@ -199,7 +198,7 @@ def main() -> int:
     state.fun_asr_api_key = config.FUN_ASR_API_KEY
     state.fun_asr_model = config.FUN_ASR_MODEL
 
-    PID_FILE = os.path.join(config.data_dir(), "webot_bridge.pid")
+    PID_FILE = os.path.join(config.data_dir(), "flandora.pid")
 
     # 判重交给内核对象；句柄存模块级变量，进程活着期间不能释放
     _instance_mutex, _already_running = acquire_mutex()
@@ -220,7 +219,7 @@ def main() -> int:
 
     try:
         log.info("=" * 50)
-        log.info(" WeBot-Bridge 微信桥接 (OneBot v11)")
+        log.info(" Flandora 微信桥接 (OneBot v11)")
         log.info("=" * 50)
         log.info("Bridge 版本: %s", __version__)
         if config.CONFIG_GENERATED:

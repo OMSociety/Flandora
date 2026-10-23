@@ -23,6 +23,9 @@ log = logging.getLogger("wxkey.store")
 
 FORMAT_VERSION = 1
 #: DPAPI 的「额外熵」：与密文一起参与派生，文件被换到别的用途会解不开。
+#:
+#: 这个值属于落盘格式的一部分，不是品牌文案：改动它会让所有已保存的密文失效，
+#: 用户必须重新取钥。项目改名时刻意保持原值，就是为了不让既有安装丢口令。
 ENTROPY = b"WeBot-Bridge/wxkey/v1"
 
 
@@ -67,7 +70,7 @@ def protect(secret: bytes) -> bytes:
     entropy = _blob(ENTROPY)
     out = _Blob()
     ok = crypt32.CryptProtectData(
-        ctypes.byref(data_in), "WeBot-Bridge 微信口令", ctypes.byref(entropy),
+        ctypes.byref(data_in), "微信口令", ctypes.byref(entropy),
         None, None, 0, ctypes.byref(out))
     if not ok:
         raise KeyStoreError(

@@ -1,5 +1,5 @@
 """
-桥接核心模块：WeBotBridge 类。
+桥接核心模块：Flandora 类。
 
 职责：
 1. 从微信本地库收件（WxLocalSource 轮询，见 wx_source）
@@ -16,7 +16,7 @@ import queue
 import re
 import threading
 import time
-from collections import defaultdict, deque
+from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
@@ -66,7 +66,7 @@ def _image_segment(image_path: str) -> dict | None:
 # ============ 桥接核心 ============
 
 
-class WeBotBridge:
+class Flandora:
     """微信 ↔ OneBot v11 桥接器。"""
 
     def __init__(self, sender):
@@ -81,10 +81,6 @@ class WeBotBridge:
         self._recent_seen = {}
         self._sent_recently = {}
         self._pending_image = {}  # talkerId → {"caption": None|str, "event": threading.Event()}
-        self._pending_mention_images = {}  # session_id → {"data": data, "time": timestamp} 先图后文暂存
-        # 会话滚动历史（含未推送的消息，供上下文附带功能使用）
-        self.session_history = defaultdict(lambda: deque(maxlen=80))
-        self._history_backfilled = set()  # 已回填过历史的会话（每会话只回填一次）
         self._member_cache = {}  # session_id → (缓存时间, {wxid: 显示名})
 
     def should_ignore(self, data):
@@ -123,7 +119,7 @@ class WeBotBridge:
         return False
 
     def add_to_buffer(self, data):
-        """将消息加入缓冲区，等待合并后统一推送给 AstrBot。"""
+        """将消息加入缓冲区，等待合并后统一推送给 OneBot 客户端。"""
         content = data.get("content", "")
         source_name = data.get("sourceName", "") or data.get("talkerName", "") or "未知"
 
@@ -132,7 +128,7 @@ class WeBotBridge:
         group_name_raw = data.get("groupName", "")
         is_group = (data.get("sessionType", "") == "group") or bool(group_name_raw) or "@chatroom" in session_id_data
 
-        # WebUI 监控：记录收到的消息（含图片/表情，含 mention 模式将跳过的群消息）
+        # WebUI 监控：记录收到的消息（含图片/表情）
         if monitor is not None:
             monitor.record_inbound(
                 contact=(group_name_raw or source_name) if is_group else source_name,
@@ -141,44 +137,22 @@ class WeBotBridge:
                 text=content,
             )
 
-        # 会话滚动历史：所有通过过滤的消息都记录（mention 模式下未 @ 的消息
-        # 不会推给麦麦，但会作为上下文附带的历史来源）
-        sender_for_history = data.get("senderName", "") or data.get("sender", "") or source_name
-        self.session_history[session_id_data].append({
-            "name": sender_for_history,
-            "text": content,
-            "ts": time.time(),
-        })
-
         # 本地库收件会把解出的图片路径接在占位符后面，因此按前缀判断。
         if content == "[图片]" or content.startswith("[图片] "):
-            # 图片消息（mention 模式下需 @ 才处理）
-            if is_group and state.group_reply_mode == "mention" and not self._is_mentioned(data):
-                # 先图后文：暂存图片，等后续同人发 @ 文字时合并
-                self._pending_mention_images[session_id_data] = {"data": data, "time": time.time()}
-                log.info(f"收到图片，暂存等待关联的 @ 文字 (session={session_id_data})")
-                return
+            # 图片消息：异步下载并描述后推送
             threading.Thread(target=self.process_image_message,
                            args=(data,), daemon=True).start()
             return
 
         if (content in ("[动画表情]", "[表情]")
                 or content.startswith("[表情] ")):
-            # 表情包消息（mention 模式下需 @ 才处理）
-            if is_group and state.group_reply_mode == "mention" and not self._is_mentioned(data):
-                # 先图后文：暂存表情，等后续同人发 @ 文字时合并
-                self._pending_mention_images[session_id_data] = {"data": data, "time": time.time()}
-                log.info(f"收到表情，暂存等待关联的 @ 文字 (session={session_id_data})")
-                return
+            # 表情包消息：异步解析后推送
             threading.Thread(target=self.process_emoji_message,
                            args=(data,), daemon=True).start()
             return
 
         if content == "[语音]":
-            # 语音消息：先 ASR 转文字，再走 buffer（mention 模式下同样需要 @ 才处理）
-            if is_group and state.group_reply_mode == "mention" and not self._is_mentioned(data):
-                log.debug(f"mention 模式跳过未 @ 的语音 (session={session_id_data})")
-                return
+            # 语音消息：先 ASR 转文字，再走 buffer
             threading.Thread(target=self.process_audio_message,
                            args=(data,), daemon=True).start()
             return
@@ -191,9 +165,6 @@ class WeBotBridge:
         sender_in_group = data.get("senderName", "") or data.get("sender", "") or data.get("sourceName", "")
 
         if is_group:
-            if state.group_reply_mode == "mention" and not self._is_mentioned(data):
-                log.debug(f"mention 模式跳过（未检测到 @）: data keys={list(data.keys())} nickname={config.BOT_NICKNAMES} content={content[:40]}")
-                return
             group_raw = group_name_raw or source_name
             base_name = re.sub(r'\s*\(\d+\)\s*$', '', group_raw).strip()
             contact = base_name
@@ -204,9 +175,8 @@ class WeBotBridge:
         else:
             contact = source_name
 
-        if is_group and state.group_reply_mode == "batch":
-            buffer_key = f"__batch__{base_name}"
-        elif is_group and sender_in_group:
+        # 同一会话内按发言人分缓冲：同一人连发合并成一条，不同人互不干扰
+        if is_group and sender_in_group:
             buffer_key = f"{session_id_data}_{sender_in_group}"
         else:
             buffer_key = session_id_data
@@ -227,10 +197,7 @@ class WeBotBridge:
                     "raw_data": data,  # 原始 SSE 数据，供 @ 检测等使用
                 }
             entry = self.pending_buffers[buffer_key]
-            if is_group and state.group_reply_mode == "batch" and sender_in_group:
-                entry["messages"].append(f'成员"{sender_in_group}"在群"{base_name}"中对你说：{content}')
-            else:
-                entry["messages"].append(content)
+            entry["messages"].append(content)
 
             if not entry["processing"]:
                 if entry["timer"]:
@@ -238,102 +205,18 @@ class WeBotBridge:
                 entry["timer_version"] += 1
                 version = entry["timer_version"]
 
-                # 检查是否有暂存的图片（先图后文场景）
-                has_pending_image = False
-                if is_group and state.group_reply_mode == "mention":
-                    cached = self._pending_mention_images.pop(session_id_data, None)
-                    if cached and time.time() - cached["time"] < 15:
-                        has_pending_image = True
-                        log.info(f"检测到关联图片，延长缓冲等待处理")
-                        # 异步下载并描述图片，完成后注入 buffer
-                        threading.Thread(
-                            target=self._inject_cached_image,
-                            args=(cached["data"].get("imagePath") or "",
-                                  buffer_key, version),
-                            daemon=True,
-                        ).start()
-
-                buffer_delay = 15 if has_pending_image else config.BUFFER_SECONDS
+                buffer_delay = config.BUFFER_SECONDS
                 log.info(f"收到来自 {contact} 的消息，等待 {buffer_delay}s 后统一推送")
                 timer = threading.Timer(buffer_delay, lambda v=version, sid=buffer_key: self.process_sender(sid, v))
                 timer.daemon = True
                 timer.start()
                 entry["timer"] = timer
 
-    # ================================================================
-    # 上下文附带（mention 模式专用）
-    # ================================================================
-
-    def _build_context_block(self, session_id: str, current_msgs: list) -> str:
-        """构造上下文文本块：该群最近 N 条消息（不含本次正推送的）。
-
-        数据源：本地库滚动历史；本次启动后攒的条数不够时，从库里回填一次
-        （覆盖 bridge 重启前、麦麦不在线期间的聊天记录）。
-        """
-        try:
-            n = int(getattr(config, "CONTEXT_MESSAGES", 0) or 0)
-        except (TypeError, ValueError):
-            n = 0
-        if n <= 0 or not session_id:
-            return ""
-
-        hist = list(self.session_history.get(session_id, ()))
-        if len(hist) < n and session_id not in self._history_backfilled:
-            self._backfill_history(session_id, n)
-            hist = list(self.session_history.get(session_id, ()))
-
-        current_texts = set(t.strip() for t in current_msgs if t and t.strip())
-        entries = [h for h in hist if h["text"].strip() not in current_texts]
-        entries = entries[-n:]
-        if not entries:
-            return ""
-
-        lines = ["[最近群聊记录]"]
-        for e in entries:
-            lines.append(f'{e["name"]}：{e["text"]}')
-        lines.append("——— 以上是该群最近的聊天记录，供你了解上下文 ———")
-        log.info(f"上下文 附带上文 {len(entries)} 条 (session={session_id})")
-        return "\n".join(lines) + "\n"
-
-    def _backfill_history(self, session_id: str, limit: int):
-        """从本地库回填会话历史（每会话一次性，失败不阻塞）。"""
-        self._history_backfilled.add(session_id)
-        store = getattr(self._source, "store", None) if self._source else None
-        if store is None:
-            return
-        try:
-            names = self._resolve_names(session_id)
-            existing = set(h["text"] for h in self.session_history.get(session_id, ()))
-            rows = store.recent_messages(session_id, limit=max(limit * 2, 10))
-            if not rows:
-                return
-
-            count = 0
-            for m in rows:
-                text = (m.get("text") or "").strip()
-                if not text or text in existing:
-                    continue
-                if m.get("outgoing"):
-                    name = config.SELF_NAME or "我"
-                else:
-                    wxid = m.get("sender") or ""
-                    name = names.get(wxid) or wxid or "未知"
-                self.session_history[session_id].append({
-                    "name": name, "text": text,
-                    "ts": m.get("create_time") or time.time(),
-                })
-                existing.add(text)
-                count += 1
-            if count:
-                log.info(f"上下文 已回填 {session_id} 历史 {count} 条")
-        except Exception as e:  # noqa: BLE001
-            log.warning(f"上下文 历史回填失败 (session={session_id}): {e}")
-
     def _resolve_names(self, session_id: str) -> dict:
         """解析会话成员 wxid → 显示名（带 10 分钟缓存）。
 
         名字统一取自本地库的 contact 表（备注名优先）。群里发言的人只要在联系人
-        表里就能查到，查不到就退回 wxid。
+        表里就能查到，查不到就退回 wxid。get_group_msg_history 用它还原历史发言人。
         """
         now = time.time()
         cached = self._member_cache.get(session_id)
@@ -346,10 +229,9 @@ class WeBotBridge:
             try:
                 names = dict(store.display_names())
             except Exception as e:  # noqa: BLE001
-                log.warning(f"上下文 读取联系人失败 (session={session_id}): {e}")
+                log.warning(f"读取联系人失败 (session={session_id}): {e}")
         self._member_cache[session_id] = (now, names)
         return names
-
 
     def process_sender(self, sender_id, version=None):
         """缓冲到期：通过 OneBot 事件推送。"""
@@ -381,7 +263,7 @@ class WeBotBridge:
                 sender_wxid = entry.get("session_id_data", "") + "_" + (entry.get("sender_in_group", "") or entry.get("source_name", ""))
             else:
                 sender_wxid = entry.get("session_id_data", sender_id)
-            # 用原文做 user_id（wemai-adapter 与 bridge 同进程内不再 hash，保证回传一致）
+            # 用原文做 user_id（Flandora 与客户端同进程内不再 hash，保证回传一致）
             user_id = sender_wxid
             state._ob_id_to_contact[sender_wxid] = contact
 
@@ -389,47 +271,20 @@ class WeBotBridge:
                 group_id = entry.get("session_id_data", "")  # 群 sessionId 原文
                 sender_name = entry.get("sender_in_group", "") or entry.get("source_name", "未知")
 
-                if state.group_reply_mode == "batch":
-                    # 批处理模式：消息已预格式化好，直接使用
-                    formatted = combined
-                else:
-                    # 保留 @昵称 文本（MaiBot planner 需要看到 @ 才知道被点名）
-                    # 只去掉零宽空格等不可见字符
-                    clean_text = combined
-                    for nick in config.BOT_NICKNAMES:
-                        at_pattern = f"@{nick}"
-                        if at_pattern in clean_text:
-                            # 保留 @昵称，仅去掉 @ 后的零宽空格
-                            clean_text = clean_text.replace(f"@{nick}\u2005", f"@{nick}")
-                            clean_text = clean_text.replace(f"@{nick}\u200b", f"@{nick}")
+                # 正文保持原样：发言人、群名由事件的 sender/group 字段承载，
+                # 是否 @ 了机器人由 is_mentioned 标记，内容不做改写
+                formatted = combined
+                for nick in config.BOT_NICKNAMES:
+                    formatted = formatted.replace(f"@{nick}\u2005", f"@{nick}")
+                    formatted = formatted.replace(f"@{nick}\u200b", f"@{nick}")
 
-                    formatted = clean_text
-                    if sender_name:
-                        formatted = f'{sender_name}在群{entry.get("group_name", contact)}中说：{clean_text}'
-
-                    # 上下文附带：mention 模式下麦麦平时收不到群消息，
-                    # @ 触发时把最近的群聊记录一并附上，让麦麦能读到上下文
-                    if state.group_reply_mode == "mention":
-                        ctx_block = self._build_context_block(entry.get("session_id_data", ""), msgs)
-                        if ctx_block:
-                            formatted = ctx_block + formatted
-
-                # 消息段：mention 模式带 at 机器人标记，all/batch 不带
-                if state.group_reply_mode == "mention":
-                    msg_segments = [
-                        {"type": "at", "data": {"qq": str(state._self_id_int)}},
-                        {"type": "text", "data": {"text": f" {formatted}"}},
-                    ]
-                else:
-                    msg_segments = [
-                        {"type": "text", "data": {"text": formatted}},
-                    ]
+                msg_segments = [{"type": "text", "data": {"text": formatted}}]
                 msg_segments.extend(image_segments)
                 event = make_message_event("group", user_id, msg_segments,
                                            group_id=group_id,
                                            group_name=entry.get("group_name", contact),
                                            nickname=sender_name)
-                # 标记该群消息是否真实 @ 了机器人（wemai-adapter 据此判断 is_mentioned）
+                # 标记该群消息是否真实 @ 了机器人，由客户端决定是否响应
                 event["is_mentioned"] = bool(self._is_mentioned(entry.get("raw_data", {})))
             else:
                 sender_name = entry.get("source_name", contact)
@@ -492,9 +347,7 @@ class WeBotBridge:
         if data.get("sessionType", "") == "group" or "@chatroom" in data.get("sessionId", ""):
             content = data.get("content", "")
             log.info(f"收到群消息 [{data.get('sourceName','')}]: {content[:60]}")
-            if state.group_reply_mode == "mention":
-                mentioned = any(f"@{n}" in content for n in config.BOT_NICKNAMES)
-                log.info(f"   @={mentioned}")
+            log.info(f"   @={self._is_mentioned(data)}")
         else:
             log.info(f"收到: {data.get('sourceName','')}: {data.get('content','')[:50]}")
         self.add_to_buffer(data)
@@ -544,12 +397,15 @@ class WeBotBridge:
 
         talker_id = data.get("talkerId", "") or data.get("sessionId", "")
         is_group = bool(group_name) or "@chatroom" in session_id
+        sender_display = data.get("senderName", "") or source_name
+        # 群内按发言人分键，与文本消息的缓冲键一致：同人的图文能合并，
+        # 不同人的图片不会串到同一条事件里
+        buffer_key = f"{session_id}_{sender_display}" if is_group else talker_id
 
         img_event = threading.Event()
         self._pending_image[talker_id] = {"caption": None, "event": img_event}
 
         try:
-            # 图片在收件侧就已解出，路径随消息带下来；解不出时只保留占位文本。
             image_path = data.get("imagePath") or ""
             segment = _image_segment(image_path)
             placeholder = "[图片]"
@@ -557,46 +413,15 @@ class WeBotBridge:
             with self.buffer_lock:
                 self._pending_image[talker_id] = {"caption": placeholder, "event": img_event}
 
-                # 批处理模式用群共享 key
-                if is_group and state.group_reply_mode == "batch" and group_name:
-                    g_base = re.sub(r'\s*\(\d+\)\s*$', '', group_name).strip()
-                    batch_key = f"__batch__{g_base}"
-                    if batch_key in self.pending_buffers:
-                        entry = self.pending_buffers[batch_key]
-                        entry["messages"].insert(
-                            0, f'成员"{source_name}"在群"{group_name}"中对你说：{placeholder}')
-                        if segment:
-                            entry.setdefault("image_segments", []).append(segment)
-                        entry["image_ready"] = True
-                        return
-                    self.pending_buffers[batch_key] = {
-                        "messages": [f'成员"{source_name}"在群"{group_name}"中对你说：{placeholder}'],
-                        "image_segments": [segment] if segment else [],
-                        "timer": None,
-                        "timer_version": 0,
-                        "processing": False,
-                        "contact": group_name,
-                        "is_group": True,
-                        "source_name": source_name,
-                        "session_id_data": session_id,
-                        "group_name": group_name,
-                        "sender_in_group": source_name,
-                    }
-                    version = 1
-                    timer = threading.Timer(5, lambda v=version, sid=batch_key: self.process_sender(sid, v))
-                    timer.daemon = True
-                    timer.start()
-                    self.pending_buffers[batch_key]["timer"] = timer
-                    self.pending_buffers[batch_key]["timer_version"] = version
-                elif talker_id in self.pending_buffers:
-                    entry = self.pending_buffers[talker_id]
+                if buffer_key in self.pending_buffers:
+                    entry = self.pending_buffers[buffer_key]
                     entry["messages"].insert(0, placeholder)
                     if segment:
                         entry.setdefault("image_segments", []).append(segment)
                     entry["image_ready"] = True
                 else:
                     # 没有文本排队，创建单条图片消息处理
-                    self.pending_buffers[talker_id] = {
+                    self.pending_buffers[buffer_key] = {
                         "messages": [placeholder],
                         "image_segments": [segment] if segment else [],
                         "timer": None,
@@ -607,14 +432,14 @@ class WeBotBridge:
                         "source_name": source_name,
                         "session_id_data": session_id,
                         "group_name": group_name if is_group else "",
-                        "sender_in_group": "",
+                        "sender_in_group": sender_display if is_group else "",
                     }
                     version = 1
-                    timer = threading.Timer(2, lambda v=version, sid=talker_id: self.process_sender(sid, v))
+                    timer = threading.Timer(2, lambda v=version, sid=buffer_key: self.process_sender(sid, v))
                     timer.daemon = True
                     timer.start()
-                    self.pending_buffers[talker_id]["timer"] = timer
-                    self.pending_buffers[talker_id]["timer_version"] = version
+                    self.pending_buffers[buffer_key]["timer"] = timer
+                    self.pending_buffers[buffer_key]["timer_version"] = version
         finally:
             # 确保 Event 被设置
             img_event.set()
@@ -680,44 +505,29 @@ class WeBotBridge:
 
         talker_id = data.get("talkerId", "") or data.get("sessionId", "")
         is_group = bool(group_name) or "@chatroom" in session_id
+        sender_display = data.get("senderName", "") or source_name
+        buffer_key = f"{session_id}_{sender_display}" if is_group else talker_id
 
         try:
             image_path = data.get("imagePath") or ""
             segment = _image_segment(image_path)
 
             # 直接注入缓冲区（不等待，立即推送），图片段随事件一并下发
-            self.add_text_to_buffer(talker_id, source_name, group_name,
-                                    session_id, content, is_group, talker_id,
-                                    image_segment=segment)
+            self.add_text_to_buffer(buffer_key, source_name, group_name,
+                                    session_id, content, is_group, buffer_key,
+                                    image_segment=segment, sender_display=sender_display)
         except Exception as e:
             log.warning(f"表情包处理异常: {e}")
             # 异常时也保底发送原文
-            self.add_text_to_buffer(talker_id, source_name, group_name,
-                                    session_id, content, is_group, talker_id)
-
-    def _inject_cached_image(self, image_path, buffer_key, version):
-        """把暂存的图片以 image 段注入 buffer 条目（在缓冲计时器到期前完成）"""
-        try:
-            segment = _image_segment(image_path)
-            if not segment:
-                return
-            with self.buffer_lock:
-                if buffer_key in self.pending_buffers:
-                    entry = self.pending_buffers[buffer_key]
-                    # 版本匹配才注入（版本变了说明被新消息重置过）
-                    if entry.get("timer_version") == version:
-                        entry.setdefault("image_segments", []).append(segment)
-                        entry["messages"].insert(0, "[图片]")
-                        log.info("关联图片已注入缓冲")
-                    else:
-                        log.info("关联图片跳过（缓冲版本已变更）")
-        except Exception as e:
-            log.warning(f"关联图片处理异常: {e}")
+            self.add_text_to_buffer(buffer_key, source_name, group_name,
+                                    session_id, content, is_group, buffer_key,
+                                    sender_display=sender_display)
 
     def add_text_to_buffer(self, session_id_data, source_name, group_name,
                            session_id, content, is_group, sender_key,
-                           image_segment: dict | None = None):
+                           image_segment: dict | None = None, sender_display: str | None = None):
         """通用：将一段文本（可选附带图片段）加入缓冲队列。"""
+        sender_display = sender_display or source_name
         with self.buffer_lock:
             buffer_key = sender_key
             if buffer_key not in self.pending_buffers:
@@ -732,7 +542,7 @@ class WeBotBridge:
                     "source_name": source_name,
                     "session_id_data": session_id,
                     "group_name": group_name if is_group else "",
-                    "sender_in_group": source_name if is_group else "",
+                    "sender_in_group": sender_display if is_group else "",
                 }
             entry = self.pending_buffers[buffer_key]
             entry["messages"].append(content)

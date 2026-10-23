@@ -1,7 +1,7 @@
 {
-  "name": "webot-bridge-webui",
+  "name": "flandora-webui",
   "version": "1.0.0",
-  "description": "WeBot-Bridge 控制台 - 微信 ↔ 麦麦 桥接 WebUI",
+  "description": "Flandora 控制台 - 微信 ↔ 麦麦 桥接 WebUI",
   "private": true,
   "type": "module",
   "scripts": {

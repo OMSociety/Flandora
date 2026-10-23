@@ -1,4 +1,4 @@
-"""WeBot-Bridge：把微信个人号接入 OneBot v11（MaiBot / AstrBot 等）。
+"""Flandora：把微信个人号接入 OneBot v11（MaiBot / AstrBot 等）。
 
 入口是顶层 `run_bridge.py`，不要直接跑包内模块——包内一律用相对导入。
 

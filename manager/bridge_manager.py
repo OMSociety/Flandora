@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""WeBot-Bridge 管理器 — 图形界面
+"""Flandora 管理器 — 图形界面
 
 双击 启动.bat 即可运行；关闭窗口时最小化到托盘，右键托盘图标可彻底退出。
 
@@ -24,7 +24,7 @@ import tkinter as tk
 # 单实例锁（Windows 具名互斥量）
 try:
     import ctypes
-    _mutex_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\WeBotBridge_SingleInstance")
+    _mutex_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\Flandora_SingleInstance")
     _already_running = ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
 except Exception:  # noqa: BLE001
     _mutex_handle = None
@@ -50,14 +50,14 @@ if getattr(sys, "frozen", False):
 else:
     BRIDGE_DIR = HERE.parent
 
-# 可写数据（配置、日志、pid）在程序目录的 data/ 下，与 webot_bridge/config.py 的
+# 可写数据（配置、日志、pid）在程序目录的 data/ 下，与 flandora/config.py 的
 # data_dir() 取值一致：打包 = exe 同级，源码 = 仓库根。
 DATA_DIR = BRIDGE_DIR / "data"
-BRIDGE_LOG = DATA_DIR / "webot_bridge.log"
+BRIDGE_LOG = DATA_DIR / "flandora.log"
 
-# 找 bridge 主程序：优先 WeBotBridge.exe（打包后），回退 webot_bridge/main.py（源码）
-BRIDGE_EXE = BRIDGE_DIR / ("WeBotBridge.exe" if sys.platform == "win32" else "WeBotBridge")
-BRIDGE_MAIN = BRIDGE_EXE if BRIDGE_EXE.exists() else (BRIDGE_DIR / "webot_bridge" / "main.py")
+# 找 bridge 主程序：优先 Flandora.exe（打包后），回退 flandora/main.py（源码）
+BRIDGE_EXE = BRIDGE_DIR / ("Flandora.exe" if sys.platform == "win32" else "Flandora")
+BRIDGE_MAIN = BRIDGE_EXE if BRIDGE_EXE.exists() else (BRIDGE_DIR / "flandora" / "main.py")
 
 # Python 解释器：打包后用 sys.executable（同目录 Python）；源码用系统 Python（自动探测）
 if getattr(sys, "frozen", False):
@@ -73,13 +73,13 @@ else:
     ]
     PYTHON_EXE = next((c for c in _cand if c.exists()), _cand[0])
 
-# log_tail：优先 WeBotBridge-LogTail.exe（打包后），回退 log_tail.py
-LOG_TAIL_EXE = HERE / ("WeBotBridge-LogTail.exe" if sys.platform == "win32" else "WeBotBridge-LogTail")
+# log_tail：优先 Flandora-LogTail.exe（打包后），回退 log_tail.py
+LOG_TAIL_EXE = HERE / ("Flandora-LogTail.exe" if sys.platform == "win32" else "Flandora-LogTail")
 LOG_TAIL_PY = HERE / "log_tail.py"
 LOG_TAIL_PATH = LOG_TAIL_EXE if LOG_TAIL_EXE.exists() else LOG_TAIL_PY
 
 LOG_DIR = DATA_DIR
-AUTOSTART_NAME = "WeBotBridge-Manager"
+AUTOSTART_NAME = "Flandora-Manager"
 
 # Windows
 IS_WINDOWS = sys.platform == "win32"
@@ -88,6 +88,10 @@ if IS_WINDOWS:
     STARTUP_DIR = Path(os.environ["APPDATA"]) / r"Microsoft\Windows\Start Menu\Programs\Startup"
     AUTOSTART_LNK = STARTUP_DIR / f"{AUTOSTART_NAME}.lnk"
     APPDATA_AUTOSTART_BAT = STARTUP_DIR / f"{AUTOSTART_NAME}.bat"
+    # 项目旧名留下的自启项：改名后它们指向已不存在的程序，开机时会静默失败。
+    # 启动时顺手清掉，避免用户在启动项里看到一个没有用的条目。
+    LEGACY_AUTOSTART = (STARTUP_DIR / "WeBotBridge-Manager.lnk",
+                        STARTUP_DIR / "WeBotBridge-Manager.bat")
 
 # 防止子进程弹出终端窗口（打包成 GUI exe 后没有控制台可继承）
 CREATE_NO_WINDOW_FLAG = 0x08000000 if IS_WINDOWS else 0
@@ -239,7 +243,7 @@ class BridgeController:
                 env = os.environ.copy()
                 env["PYTHONIOENCODING"] = "utf-8"
                 env["PYTHONUTF8"] = "1"
-                # 打包后：直接调 WeBotBridge.exe；源码：调 python webot_bridge/main.py
+                # 打包后：直接调 Flandora.exe；源码：调 python flandora/main.py
                 if BRIDGE_EXE.exists():
                     cmd = [str(BRIDGE_EXE)]
                 else:
@@ -356,7 +360,7 @@ class BridgeManagerApp:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("WeBot-Bridge 管理器")
+        self.root.title("Flandora 管理器")
         self.root.geometry("720x560")
         self.root.minsize(620, 460)
 
@@ -381,6 +385,7 @@ class BridgeManagerApp:
         self._last_log_flush_ms: int = 0  # 日志节流刷新时间戳
 
         self._build_ui()
+        self._cleanup_legacy_autostart()
         self._poll_status()
         # 窗口关闭 = 最小化到托盘（由 _on_close 处理）
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -526,7 +531,7 @@ class BridgeManagerApp:
             pystray.MenuSeparator(),
             pystray.MenuItem("❌ 退出", lambda _: self.root.after(0, self._quit)),
         )
-        self._tray_icon = pystray.Icon("WeBotBridge", icon_img, "WeBot-Bridge 管理器", menu)
+        self._tray_icon = pystray.Icon("Flandora", icon_img, "Flandora 管理器", menu)
         self._tray_thread = threading.Thread(target=self._tray_icon.run, daemon=True)
         self._tray_thread.start()
 
@@ -554,6 +559,18 @@ class BridgeManagerApp:
         self.root.after(50, self.root.destroy)
 
     # ---------- 自启动 ----------
+    def _cleanup_legacy_autostart(self) -> None:
+        """删除旧项目名残留的自启项。只动这两个已知文件名，不扫描整个目录。"""
+        if not IS_WINDOWS:
+            return
+        for path in LEGACY_AUTOSTART:
+            try:
+                if path.exists():
+                    path.unlink()
+            except OSError:
+                # 删不掉不影响使用，下次启动再试；不让它拦住管理器启动
+                pass
+
     def _is_autostart_enabled(self) -> bool:
         if not IS_WINDOWS:
             return False
@@ -576,7 +593,7 @@ class BridgeManagerApp:
             body = (
                 f'@echo off\r\n'
                 f'cd /d "{HERE}"\r\n'
-                f'start "" "{HERE / "WeBotBridge-Manager.exe"}"\r\n'
+                f'start "" "{HERE / "Flandora-Manager.exe"}"\r\n'
             )
         else:
             body = (
@@ -741,7 +758,7 @@ def main() -> None:
     if _already_running:
         try:
             import tkinter.messagebox as mb
-            mb.showwarning("WeBot-Bridge", "管理器已在运行，请到系统托盘查看。")
+            mb.showwarning("Flandora", "管理器已在运行，请到系统托盘查看。")
         except Exception:  # noqa: BLE001
             pass
         return

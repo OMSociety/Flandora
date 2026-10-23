@@ -281,6 +281,8 @@ class UiaSender(BaseSender):
         self._last_contact = ""
         # 本次发送开始时的前台窗口（0 = 无需还原）
         self._fg_before = 0
+        # 最近一次发送失败的原因（供 WebUI 回显，不只是留在日志里）
+        self._last_error = ""
 
         self.search_enabled = search_enabled
         # 是否允许发送时把微信窗口提到前台。关闭时发送通道整体不可用。
@@ -1091,14 +1093,17 @@ class UiaSender(BaseSender):
         顶层防护：通道未启用时直接拒绝；微信重启/COM 失效时安全失败并自动重绑；
         发送结束后把前台还给发送前的前台窗口。
         """
+        self._last_error = ""
         if not self._foreground_gate(contact):
+            self._last_error = self._last_error or "发送通道未启用或被前台占用"
             return False
         with self._send_lock:
             self._fg_before = self._foreground_window()
             try:
                 return self._send_text_impl(contact, text)
             except Exception as e:
-                log.error(f"[UIA失败] {contact}: 发送异常（窗口可能已失效）: {e}")
+                self._last_error = f"发送异常，窗口可能已失效: {e}"
+                log.error(f"[UIA失败] {contact}: {self._last_error}")
                 with self._lock:
                     self._invalidate_window()
                 return False
@@ -1107,11 +1112,24 @@ class UiaSender(BaseSender):
                 self._fg_before = 0
 
     def _clear_input(self) -> bool:
-        """清空输入框（先把插入点移到末尾，再退格逐字符删），并回读确认。
+        """清空输入框并回读确认。
 
-        插入点不一定在末尾——输入框里的内容可能是别的程序写进去的，此时退格删不到
-        任何东西，输入框看着「清不掉」。所以每轮先投一次 VK_END。
+        两条路依次走：先显式把焦点给输入控件，再投 VK_END + 退格逐字符删；退格
+        没生效（输入框里的内容可能是别的程序写进去的，也可能根本收不到投递的
+        按键，此时看起来「清不掉」）就退回 UIA 的 ValuePattern 直接置空。
+        清空前由调用方确保已切到目标会话，失败时把原因写进 self._last_error。
         """
+        box = self._input_box()
+        if box is not None:
+            try:
+                box.SetFocus()
+                time.sleep(0.05)
+            except Exception as e:  # noqa: BLE001
+                log.debug(f"输入框聚焦失败（继续尝试投递按键）: {e}")
+
+        if not self._input_text():
+            return True
+
         user32 = self._user32_inst()
         for _ in range(8):
             current = self._input_text()
@@ -1125,11 +1143,26 @@ class UiaSender(BaseSender):
                 user32.PostMessageW(self._hwnd, WM_KEYUP, VK_BACK, KEYUP_LPARAM)
                 time.sleep(0.01)
             time.sleep(0.2)
+
         left = self._input_text()
-        if left:
-            log.warning(f"输入框未能清空，残留 {left[:40]!r}")
-            return False
-        return True
+        if not left:
+            return True
+
+        # 退格路径没删掉：改用 UIA 直接把值置空
+        if box is not None:
+            try:
+                box.GetValuePattern().SetValue("")
+                time.sleep(0.2)
+            except Exception as e:  # noqa: BLE001
+                log.warning(f"ValuePattern 清空输入框失败: {e}")
+            if not self._input_text():
+                log.info("输入框由 ValuePattern 清空（退格路径未生效）")
+                return True
+
+        left = self._input_text()
+        log.warning(f"输入框未能清空，残留 {left[:40]!r}")
+        self._last_error = f"输入框有清不掉的残留（{left[:20]}），本次发送已取消"
+        return False
 
     def _type_text(self, text: str) -> bool:
         """逐字符投递 WM_CHAR 并回读校验。
@@ -1217,17 +1250,19 @@ class UiaSender(BaseSender):
             try:
                 summary_before = self._session_summary(contact) or ""
                 if not self._clear_input():
-                    log.error(f"[UIA失败] {contact}: 输入框有清不掉的残留，本次发送已取消")
+                    log.error(f"[UIA失败] {contact}: {self._last_error or '输入框未能清空'}")
                     return False
                 self._release_foreground()
                 if not self._type_text(text):
                     self._clear_input()
-                    log.error(f"[UIA失败] {contact}: 文字未能完整进到输入框，本次发送已取消")
+                    self._last_error = "文字未能完整进到输入框，本次发送已取消"
+                    log.error(f"[UIA失败] {contact}: {self._last_error}")
                     return False
                 self._release_foreground()
                 if self._open_chat_title() != contact:
                     self._clear_input()
-                    log.error(f"[UIA失败] {contact}: 输入期间会话已改变，本次发送已取消")
+                    self._last_error = "输入期间会话已改变，本次发送已取消"
+                    log.error(f"[UIA失败] {contact}: {self._last_error}")
                     return False
 
                 self._post_key(VK_RETURN)
@@ -1235,7 +1270,8 @@ class UiaSender(BaseSender):
                 time.sleep(0.6)
 
                 if not self._confirm_sent(contact, text, summary_before):
-                    log.error(f"[UIA失败] {contact}: 回车后摘要未更新，消息可能没发出去")
+                    self._last_error = "回车后摘要未更新，消息可能没发出去"
+                    log.error(f"[UIA失败] {contact}: {self._last_error}")
                     return False
                 log.info(f"[UIA成功] {contact}: {text[:50]}")
                 return True

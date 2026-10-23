@@ -222,12 +222,12 @@ class Wizard:
         """取钥器的命令行：打包后是同目录的 KeyTool exe，源码里是 tools/keytool.py。"""
         if getattr(sys, "frozen", False):
             here = os.path.dirname(os.path.abspath(sys.executable))
-            for name in ("WeBotBridge-KeyTool.exe", "WeBotBridge-KeyTool"):
+            for name in ("Flandora-KeyTool.exe", "Flandora-KeyTool"):
                 path = os.path.join(here, name)
                 if os.path.isfile(path):
                     return [path]
             raise WizardError(
-                "同目录下找不到 WeBotBridge-KeyTool.exe。请确认发布包已完整解压，"
+                "同目录下找不到 Flandora-KeyTool.exe。请确认发布包已完整解压，"
                 "或改用下面的「手动填入口令」。")
 
         script = os.path.join(_repo_root(), "tools", "keytool.py")

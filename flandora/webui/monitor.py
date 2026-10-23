@@ -101,12 +101,12 @@ _relay_attached = False
 def attach_log_relay():
     """给桥接相关 logger 挂上实时转发（幂等）。
 
-    ob11-bridge：桥接主逻辑；webot-bridge：UIA 发送器（uia_sender）。
+    ob11-bridge：桥接主逻辑；flandora-uia：UIA 发送器（uia_sender）。
     """
     global _relay_attached
     if _relay_attached:
         return
-    for name in ("ob11-bridge", "webot-bridge"):
+    for name in ("ob11-bridge", "flandora-uia"):
         target = logging.getLogger(name)
         if not any(isinstance(h, LogRelay) for h in target.handlers):
             target.addHandler(LogRelay())

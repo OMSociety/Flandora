@@ -12,7 +12,7 @@ const emit = defineEmits(['change'])
     <div class="brand">
       <BrandMark :size="36" />
       <div class="brand-copy">
-        <strong>WeBot-Bridge</strong>
+        <strong>Flandora</strong>
         <span>OneBot v11 适配器</span>
       </div>
     </div>

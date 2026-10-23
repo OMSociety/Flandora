@@ -8,7 +8,6 @@ export const statusFixture = {
   send_method: 'uia',
   ob: { host: '127.0.0.1', port: 7999, connected: true, clients: 1 },
   inbound: { source: 'local', ready: true },
-  group_reply_mode: 'mention',
   counters: { recv: 128, pushed: 116, sent: 42, dropped: 0 },
   window: { title: '微信', pid: 6132, hwnd: 123456 },
   window_locked: false,
@@ -20,9 +19,7 @@ export const configFixture = {
   self_name: '小麦',
   send_method: 'uia',
   buffer_seconds: 5,
-  context_messages: 5,
   web_port: 8766,
-  group_reply_mode: 'mention',
   ob_server_host: '127.0.0.1',
   ob_server_port: 7999,
   ob_server_token: '',
@@ -48,8 +45,13 @@ export const wizardFixture = {
   },
 }
 
-export async function mockApi(page) {
+export async function mockApi(page, options = {}) {
   const requests = []
+  const desktopStatus = {
+    ok: true, enabled: true, running: false, logged_in: false,
+    state: 'absent', desktop: 'WeBotSandbox', exe_found: true, error: '',
+    ...(options.desktopStatus || {}),
+  }
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -75,7 +77,7 @@ export async function mockApi(page) {
       { ts: 4, level: 'ERROR', text: '2026-10-24 09:30:12 [ERROR] Example recoverable connection error' },
     ] })
     if (url.pathname === '/api/wizard/status') return json(wizardFixture)
-    if (url.pathname === '/api/desktop/status') return json({ ok: true, enabled: true, running: false, logged_in: false, state: 'absent', desktop: 'WeBotSandbox' })
+    if (url.pathname === '/api/desktop/status') return json(desktopStatus)
     if (url.pathname === '/api/contacts') return json({ contacts: [{ id: 'filehelper', name: '文件传输助手', kind: 'private' }, { id: 'example@chatroom', name: '测试群聊', kind: 'group' }] })
     if (url.pathname === '/api/send') return json({ ok: true })
     if (url.pathname === '/api/control' || url.pathname === '/api/mode' || url.pathname === '/api/windows/select') return json({ ok: true })

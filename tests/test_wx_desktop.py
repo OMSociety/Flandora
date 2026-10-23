@@ -13,7 +13,7 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKG = os.path.join(REPO_ROOT, "webot_bridge")
+PKG = os.path.join(REPO_ROOT, "flandora")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
@@ -21,7 +21,7 @@ if REPO_ROOT not in sys.path:
 def with_cfg(**overrides):
     """在临时目录里造 config.json，并让 config 只认这一份。
 
-    用 ``WEBOT_BRIDGE_DATA_DIR`` 把默认数据目录钉到临时目录上：否则源码目录里
+    用 ``FLANDORA_DATA_DIR`` 把默认数据目录钉到临时目录上：否则源码目录里
     一旦真的存在 ``data/config.json``（从源码跑过一次就会有），它会被优先选中，
     测试就会拿到真实环境那份配置。
     """
@@ -34,24 +34,24 @@ def with_cfg(**overrides):
     cfg.update(overrides)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, ensure_ascii=False, indent=4)
-    old_env = os.environ.get("WEBOT_BRIDGE_DATA_DIR")
-    os.environ["WEBOT_BRIDGE_DATA_DIR"] = d
+    old_env = os.environ.get("FLANDORA_DATA_DIR")
+    os.environ["FLANDORA_DATA_DIR"] = d
     try:
-        from webot_bridge import config
+        from flandora import config
         importlib.reload(config)   # 同一个进程里换配置必须重载，否则拿到上一份
         return d, config
     finally:
         if old_env is None:
-            os.environ.pop("WEBOT_BRIDGE_DATA_DIR", None)
+            os.environ.pop("FLANDORA_DATA_DIR", None)
         else:
-            os.environ["WEBOT_BRIDGE_DATA_DIR"] = old_env
+            os.environ["FLANDORA_DATA_DIR"] = old_env
 
 
 def main() -> int:
     checks = 0
 
     # ---------- 1. 可执行文件定位 ----------
-    from webot_bridge import wx_desktop
+    from flandora import wx_desktop
 
     configured = r"D:\Program Files\Tencent\Weixin\Weixin.exe"
     got = wx_desktop.find_weixin_exe(configured)
@@ -86,8 +86,12 @@ def main() -> int:
 
     pids = wx_desktop.weixin_pids()
     assert isinstance(pids, list), pids
-    assert wx_desktop.default_desktop_has_wechat() == bool(pids)
-    print(f"  ok   进程探测返回列表（当前 {len(pids)} 个）")
+    # 「默认桌面上有没有微信」按窗口判断，不看全系统进程：本程序留在隔离桌面上的
+    # 微信也算 Weixin.exe，按进程判断会把重启挡下来。
+    from flandora.uia_sender import enum_wechat_windows
+    assert (wx_desktop.default_desktop_has_wechat()
+            == bool(enum_wechat_windows())), "判定口径应只看默认桌面上的窗口"
+    print(f"  ok   进程探测返回列表（当前 {len(pids)} 个），默认桌面判定按窗口")
     checks += 1
 
     assert issubclass(wx_desktop.WeChatAlreadyRunning, wx_desktop.DesktopError)

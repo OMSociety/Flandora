@@ -4,7 +4,6 @@ FastAPI WebUI 应用。
 提供 REST API + WebSocket 实时推送 + 静态前端托管：
 - GET  /api/status        运行状态
 - POST /api/control       启停/重启/暂停/恢复 {"action": ...}
-- POST /api/mode          切换群聊回复模式 {"mode": mention|all|batch}
 - GET  /api/config        读取 config.json
 - PUT  /api/config        合并保存 config.json（部分字段即时生效）
 - GET  /api/messages      最近消息记录
@@ -15,6 +14,7 @@ FastAPI WebUI 应用。
 - GET  /api/desktop/status     隔离桌面运行/登录状态
 - POST /api/desktop/start      在隔离桌面上启动微信
 - POST /api/desktop/stop       结束隔离桌面上的微信
+- POST /api/desktop/quit-default-wechat 结束默认桌面上用户自己开着的微信
 - GET  /api/desktop/screenshot 隔离桌面上微信窗口的实况截图（PNG）
 - POST /api/desktop/click      把画面点击转发到隔离窗口 {"x", "y"}
 - WS   /ws                实时推送（log / msg / status 事件）
@@ -52,7 +52,6 @@ HOT_CONFIG_ATTRS = {
     "buffer_seconds": "BUFFER_SECONDS",
     "group_name_map": "GROUP_NAME_MAP",
     "self_name": "SELF_NAME",
-    "context_messages": "CONTEXT_MESSAGES",
 }
 # 需要重启桥接才生效的字段
 RESTART_KEYS = (
@@ -61,8 +60,6 @@ RESTART_KEYS = (
     # 隔离桌面相关的三个改动都要重启才成立：桌面要重建、微信要重开、窗口要重绑
     "isolated_desktop", "isolated_desktop_name", "wechat_exe",
 )
-
-VALID_MODES = ("mention", "all", "batch")
 
 
 @asynccontextmanager
@@ -74,7 +71,7 @@ async def lifespan(_app):
     bus.set_loop(None)
 
 
-app = FastAPI(title="WeBot-Bridge WebUI", lifespan=lifespan,
+app = FastAPI(title="Flandora WebUI", lifespan=lifespan,
               docs_url=None, redoc_url=None, openapi_url=None)
 
 
@@ -115,7 +112,6 @@ def get_status() -> dict:
             "source": "local",
             "ready": source_ready,
         },
-        "group_reply_mode": state.group_reply_mode,
         "counters": counters,
         "window": window,
         "window_locked": bool(getattr(config, "WECHAT_HWND", 0)),
@@ -168,23 +164,6 @@ async def api_control(payload: dict):
     return {"ok": True, **get_status()}
 
 
-@app.post("/api/mode")
-def api_mode(payload: dict):
-    mode = (payload or {}).get("mode", "")
-    if mode not in VALID_MODES:
-        return JSONResponse({"ok": False, "error": f"无效模式: {mode}"}, 400)
-    state.group_reply_mode = mode
-    try:
-        cfg = _read_config_file()
-        cfg["group_reply_mode"] = mode
-        _write_config_file(cfg)
-    except Exception as e:
-        log.error(f"[WebUI] 保存群聊模式失败: {e}")
-    log.info(f"[WebUI] 群聊模式已切换为: {mode}")
-    monitor.notify_status()
-    return {"ok": True, "group_reply_mode": mode}
-
-
 # ============ 配置 ============
 
 
@@ -204,10 +183,6 @@ def api_put_config(payload: dict):
         current = _read_config_file()
         current.update(payload)
         _write_config_file(current)
-
-        # 即时生效：群聊模式
-        if "group_reply_mode" in payload and payload["group_reply_mode"] in VALID_MODES:
-            state.group_reply_mode = payload["group_reply_mode"]
 
         # 即时生效：config 模块属性
         for key, attr in HOT_CONFIG_ATTRS.items():
@@ -331,9 +306,9 @@ async def api_send(payload: dict):
     if ok:
         monitor.record_outbound(contact, "manual", text)
         log.info(f"[WebUI] 测试发送成功 -> {contact}")
-    else:
-        log.warning(f"[WebUI] 测试发送失败 -> {contact}")
-    return {"ok": bool(ok)}
+        return {"ok": True}
+    log.warning(f"[WebUI] 测试发送失败 -> {contact}")
+    return {"ok": False, "error": getattr(sender, "_last_error", "") or "发送失败，详见运行日志"}
 
 
 # ============ 微信窗口识别（多开场景） ============
@@ -440,13 +415,31 @@ def api_desktop_start():
 
 @app.post("/api/desktop/stop")
 def api_desktop_stop():
-    """结束隔离桌面上的微信并释放桌面（只动本程序启动的那个）。"""
+    """结束隔离桌面上的微信并释放桌面（只动本程序启动或接管的那个）。"""
     try:
         from .. import wx_desktop
     except ImportError as e:
         return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
     wx_desktop.manager().stop()
     return {"ok": True, **wx_desktop.manager().status()}
+
+
+@app.post("/api/desktop/quit-default-wechat")
+def api_desktop_quit_default_wechat():
+    """结束默认桌面上（用户自己开着）的微信。
+
+    隔离模式要求微信由本程序启动，但用户桌面上那个微信不会被动——只有点了
+    这个接口才结束它，避免静默杀掉用户正在用的微信。
+    """
+    try:
+        from .. import wx_desktop
+    except ImportError as e:
+        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+    killed = wx_desktop.quit_default_desktop_wechat()
+    if not killed:
+        return JSONResponse(
+            {"ok": False, "error": "没找到默认桌面上的微信窗口"}, 404)
+    return {"ok": True, "killed": killed}
 
 
 @app.get("/api/desktop/screenshot")

@@ -167,6 +167,7 @@ a { color:var(--primary-deep); text-underline-offset:3px; }
 .empty { display:flex; flex-direction:column; justify-content:center; align-items:center; gap:10px; min-height:150px; color:var(--muted); font-size:12px; text-align:center; }
 .empty .app-icon { color:var(--faint); }
 .banner { display:flex; align-items:flex-start; gap:10px; padding:12px 14px; border:1px solid color-mix(in srgb,var(--warning) 28%,transparent); border-radius:10px; background:var(--warning-soft); color:var(--warning); font-size:12px; line-height:1.7; }
+.banner-danger { border-color:color-mix(in srgb,var(--danger) 30%,transparent); background:var(--danger-soft); color:var(--danger); }
 .banner .app-icon { margin-top:3px; }
 .err { margin-top:10px; background:var(--danger-soft); border:1px solid color-mix(in srgb,var(--danger) 25%,transparent); color:var(--danger); border-radius:8px; padding:10px 14px; font-size:12px; line-height:1.6; }
 .kv { display:flex; flex-wrap:wrap; gap:12px 28px; }

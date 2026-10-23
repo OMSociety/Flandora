@@ -16,7 +16,7 @@ import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKG = os.path.join(REPO_ROOT, "webot_bridge")
+PKG = os.path.join(REPO_ROOT, "flandora")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
@@ -167,11 +167,11 @@ def main() -> int:
     old = os.getcwd()
     os.chdir(d)
     try:
-        from webot_bridge import config
+        from flandora import config
         config.OB_SERVER_HOST = "127.0.0.1"
         config.OB_SERVER_PORT = _free_port()
         config.OB_SERVER_TOKEN = TOKEN
-        from webot_bridge import ob_server
+        from flandora import ob_server
         checks = asyncio.run(_checks(ob_server, config))
     finally:
         os.chdir(old)

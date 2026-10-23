@@ -6,7 +6,7 @@
 
 用法：
 
-    from webot_bridge.single_instance import (
+    from flandora.single_instance import (
         acquire_mutex, SINGLE_INSTANCE_NAME)
     handle, already_running = acquire_mutex(SINGLE_INSTANCE_NAME)
     if already_running:
@@ -25,7 +25,7 @@ log = logging.getLogger("ob11-bridge")
 
 # 带 Global\ 前缀 → 作用域是整个机器而不是当前登录会话，多用户切换也拦得住。
 # 名字与项目对外名一致，改名时要一起改。
-SINGLE_INSTANCE_NAME = "Global\\WeBotBridge_SingleInstance"
+SINGLE_INSTANCE_NAME = "Global\\Flandora_SingleInstance"
 
 # CreateMutexW 在互斥量已存在时返回的 last-error
 ERROR_ALREADY_EXISTS = 183

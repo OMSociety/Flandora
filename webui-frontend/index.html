@@ -4,12 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f4f6f4" />
-    <meta name="description" content="WeBot-Bridge 微信与 MaiBot 桥接控制台" />
-    <title>WeBot-Bridge 控制台</title>
+    <meta name="description" content="Flandora 控制台：微信与 OneBot v11 之间的桥接适配器" />
+    <title>Flandora 控制台</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%2307c160'/%3E%3Cpath d='M10 12.5h8.5a5.5 5.5 0 0 1 0 11H13l-3 3v-3a5.5 5.5 0 0 1-2-4.2v-1.8a5 5 0 0 1 2-5Z' fill='white'/%3E%3Cpath d='M22 16.5h5a6 6 0 0 1 6 6v1a6 6 0 0 1-3 5.2v2.8l-3.5-2.8H23a5.5 5.5 0 0 1-5.5-5.5' fill='white' fill-opacity='.72'/%3E%3C/svg%3E" />
     <script>
       try {
-        const saved = localStorage.getItem('webot-theme')
+        const saved = localStorage.getItem('flandora-theme') || localStorage.getItem('webot-theme')
         const theme = saved === 'dark' || saved === 'light' ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
         document.documentElement.dataset.theme = theme
         document.documentElement.style.colorScheme = theme

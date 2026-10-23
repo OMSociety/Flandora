@@ -4,7 +4,7 @@ import { mockApi } from './fixtures.js'
 async function openPage(page, path = 'dashboard', theme = 'light') {
   await mockApi(page)
   await page.addInitScript((selected) => {
-    if (!localStorage.getItem('webot-theme')) localStorage.setItem('webot-theme', selected)
+    if (!localStorage.getItem('flandora-theme')) localStorage.setItem('flandora-theme', selected)
   }, theme)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -171,8 +171,7 @@ test('collapsed sidebar keeps accessible names on nav items', async ({ page }) =
   await expect(page.getByRole('button', { name: '消息记录', exact: true })).toHaveCount(1)
 })
 
-test('restart asks for confirmation in an in-app dialog', async ({ page }) => {
-  const errors = await openPage(page)
+test('restart asks for confirmation in an in-app dialog', async ({ page }) => {  const errors = await openPage(page)
   const controlCalls = []
   page.on('request', (request) => {
     if (new URL(request.url()).pathname === '/api/control') controlCalls.push(request.postDataJSON())
@@ -191,4 +190,14 @@ test('restart asks for confirmation in an in-app dialog', async ({ page }) => {
   expect(controlCalls[0]).toEqual({ action: 'restart' })
   await expect(page.getByRole('dialog', { name: '重启桥接服务' })).toHaveCount(0)
   expect(errors).toEqual([])
+})
+
+test('missing WeChat install is called out instead of offering a dead start button', async ({ page }) => {
+  await mockApi(page, { desktopStatus: { exe_found: false } })
+  await page.addInitScript(() => localStorage.setItem('flandora-theme', 'light'))
+  await page.goto('/#/desktop')
+  await expect(page.locator('.page-heading h1')).toBeVisible()
+  await expect(page.getByText('这台电脑上没找到微信', { exact: false })).toBeVisible()
+  await expect(page.getByRole('button', { name: '启动微信', exact: true })).toBeDisabled()
+  await expect(page.getByText('没有可启动的微信', { exact: true })).toBeVisible()
 })

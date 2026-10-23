@@ -2,9 +2,9 @@
 #
 # 解释器：开发与打包统一用 Python 3.13（仓库根下的 .venv，已 gitignore）。
 # 终端用户不需要装 Python——发布包由 PyInstaller 打包，解释器与这些库都随包分发。
-# 其中 Frida 只打进取钥器 WeBotBridge-KeyTool.exe，主程序不含它（见 build.py）。
+# 其中 Frida 只打进取钥器 Flandora-KeyTool.exe，主程序不含它（见 build.py）。
 #
-# 安装：.venv\Scripts\python.exe -m pip install -r webot_bridge\requirements.txt
+# 安装：.venv\Scripts\python.exe -m pip install -r flandora\requirements.txt
 
 requests>=2.31.0
 Pillow>=10.0.0

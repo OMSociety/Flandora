@@ -378,6 +378,7 @@ def capture_and_recover(*, quick_s: float = QUICK_TIMEOUT,
                         login_capture_s: float = LOGIN_CAPTURE,
                         out_path: Optional[str] = None,
                         root: Optional[str] = None,
+                        manual_rva: int = 0,
                         on_status: Optional[Callable[[str], None]] = None
                         ) -> CaptureInfo:
     """取钥主流程：认账号 → 挂钩截获 → 还原 → 用真实数据库校验。
@@ -386,8 +387,10 @@ def capture_and_recover(*, quick_s: float = QUICK_TIMEOUT,
 
     校验库在截获结束之后才取：这个过程要求用户退出并重新登录，登进来的可能是
     另一个账号（实测就发生过），提前定死的库会把正确口令判成未命中。
+
+    manual_rva 非 0 时按它挂钩，不跑签名扫描（自动定位失手时的逃生口）。
     """
-    hook = locator.resolve()
+    hook = locator.resolve(manual_rva=manual_rva)
     started = time.time()
 
     pids: list[int] = []

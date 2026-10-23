@@ -424,20 +424,38 @@ def _loaded_weixin_dll() -> Optional[Path]:
     return None
 
 
-def resolve(dll_path: Optional[str] = None) -> HookPoint:
-    """完整定位流程：找 DLL → 解析 → 扫调用形态 → 返回挂钩点。"""
+def resolve(dll_path: Optional[str] = None, manual_rva: int = 0) -> HookPoint:
+    """完整定位流程：找 DLL → 解析 → 扫调用形态 → 返回挂钩点。
+
+    manual_rva 非 0 时跳过签名扫描，直接用它所在的函数。微信改版让自动定位失手时，
+    用户在配置里填一个地址就能继续用，不必等本程序适配新版本。给的地址不必正好是
+    函数开头，落在函数里即可——按 .pdata 归并到函数边界。
+    """
     dll = find_weixin_dll(dll_path)
     image = PeImage(dll)
+    digest = hashlib.sha256(image.data).hexdigest()
+    version = _file_version(dll)
+
+    if manual_rva:
+        fn = image.func_of(manual_rva)
+        if fn is None:
+            raise LocatorError(
+                f"手动指定的地址 {manual_rva:#x} 不落在 Weixin.dll 的任何函数里。"
+                f"请核对后重填，或清空该项恢复自动定位。")
+        hook = HookPoint(rva=fn[0], size=fn[1] - fn[0], dll_path=str(dll),
+                         dll_sha256=digest, file_version=version)
+        log.info("按手动指定的地址定位：%s", hook.describe())
+        return hook
+
     target, sites = scan_key_setter(image)
     fn = image.func_of(target)
     assert fn is not None
-    digest = hashlib.sha256(image.data).hexdigest()
     hook = HookPoint(
         rva=fn[0],
         size=fn[1] - fn[0],
         dll_path=str(dll),
         dll_sha256=digest,
-        file_version=_file_version(dll),
+        file_version=version,
     )
     log.info("定位成功：%s，调用点 %d 处", hook.describe(), len(sites))
     return hook

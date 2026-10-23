@@ -533,6 +533,116 @@ def api_desktop_click(payload: dict):
     return {"ok": True}
 
 
+# ============ 取钥向导（四步：免责声明 → 数据库口令 → 图片密钥 → 校验） ============
+
+
+def _wizard_or_error():
+    """取向导单例；模块缺失或不满足前置条件时返回 (None, 错误响应)。"""
+    try:
+        from .. import wizard as wizard_mod
+    except ImportError as e:
+        return None, JSONResponse(
+            {"ok": False, "error": f"取钥向导模块不可用: {e}"}, 500)
+    return wizard_mod.wizard(), None
+
+
+@app.get("/api/wizard/status")
+def api_wizard_status():
+    """向导四步的进度、口令与图片密钥的持有情况。"""
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    try:
+        return {"ok": True, **wiz.status()}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 500)
+
+
+@app.post("/api/wizard/disclaimer")
+def api_wizard_disclaimer():
+    """确认免责声明。界面上的勾选框不打勾就不该走到这里。"""
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    try:
+        return {"ok": True, **wiz.accept_disclaimer()}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 400)
+
+
+@app.post("/api/wizard/dbkey/start")
+def api_wizard_dbkey_start():
+    """调起取钥器，等用户在微信里重新登录一次。"""
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    try:
+        return {"ok": True, **wiz.start_dbkey()}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 400)
+
+
+@app.post("/api/wizard/dbkey/cancel")
+def api_wizard_dbkey_cancel():
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    return {"ok": True, **wiz.cancel_dbkey()}
+
+
+@app.post("/api/wizard/dbkey/manual")
+def api_wizard_dbkey_manual(payload: dict):
+    """手动填入口令。会先拿当前账号的真库验一遍，过了才落盘。"""
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    try:
+        return {"ok": True, **wiz.save_manual_passphrase((payload or {}).get("passphrase", ""))}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 400)
+
+
+@app.post("/api/wizard/imagekey/start")
+def api_wizard_imagekey_start():
+    """开始扫内存找图片密钥。跑起来之后要在实况画面里点开一张没看过的图。"""
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    try:
+        return {"ok": True, **wiz.start_imagekey()}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 400)
+
+
+@app.post("/api/wizard/imagekey/cancel")
+def api_wizard_imagekey_cancel():
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    return {"ok": True, **wiz.cancel_imagekey()}
+
+
+@app.post("/api/wizard/verify")
+def api_wizard_verify():
+    """拿当前口令逐个库过页 1 HMAC，结果异步写回状态里。"""
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    try:
+        return {"ok": True, **wiz.verify()}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 400)
+
+
+@app.post("/api/wizard/reset")
+def api_wizard_reset():
+    """把四步清回起点（免责声明的确认保留）。"""
+    wiz, err = _wizard_or_error()
+    if err is not None:
+        return err
+    return {"ok": True, **wiz.reset()}
+
+
 # ============ WebSocket 实时推送 ============
 
 

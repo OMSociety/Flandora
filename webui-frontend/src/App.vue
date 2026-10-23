@@ -7,6 +7,7 @@ import Messages from './pages/Messages.vue'
 import Logs from './pages/Logs.vue'
 import Config from './pages/Config.vue'
 import Desktop from './pages/Desktop.vue'
+import Wizard from './pages/Wizard.vue'
 import TestSend from './pages/TestSend.vue'
 
 import { wsState, connectWS, on } from './ws'
@@ -81,6 +82,7 @@ onBeforeUnmount(() => {
         <Logs v-else-if="tab === 'logs'" />
         <Config v-else-if="tab === 'config'" />
         <Desktop v-else-if="tab === 'desktop'" />
+        <Wizard v-else-if="tab === 'wizard'" />
         <TestSend v-else-if="tab === 'test'" />
       </main>
     </div>

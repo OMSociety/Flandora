@@ -19,7 +19,12 @@ if REPO_ROOT not in sys.path:
 
 
 def with_cfg(**overrides):
-    """在临时目录里造 config.json 并切换 cwd，返回 (目录, config 模块)。"""
+    """在临时目录里造 config.json，并让 config 只认这一份。
+
+    用 ``WEBOT_BRIDGE_DATA_DIR`` 把默认数据目录钉到临时目录上：否则源码目录里
+    一旦真的存在 ``data/config.json``（从源码跑过一次就会有），它会被优先选中，
+    测试就会拿到真实环境那份配置。
+    """
     d = tempfile.mkdtemp(prefix="wwb-desk-")
     shutil.copy(os.path.join(PKG, "config.example.json"),
                 os.path.join(d, "config.json"))
@@ -29,14 +34,17 @@ def with_cfg(**overrides):
     cfg.update(overrides)
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(cfg, fh, ensure_ascii=False, indent=4)
-    old = os.getcwd()
-    os.chdir(d)
+    old_env = os.environ.get("WEBOT_BRIDGE_DATA_DIR")
+    os.environ["WEBOT_BRIDGE_DATA_DIR"] = d
     try:
         from webot_bridge import config
         importlib.reload(config)   # 同一个进程里换配置必须重载，否则拿到上一份
         return d, config
     finally:
-        os.chdir(old)
+        if old_env is None:
+            os.environ.pop("WEBOT_BRIDGE_DATA_DIR", None)
+        else:
+            os.environ["WEBOT_BRIDGE_DATA_DIR"] = old_env
 
 
 def main() -> int:

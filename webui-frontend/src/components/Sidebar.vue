@@ -6,6 +6,7 @@ const emit = defineEmits(['change'])
 
 const tabs = [
   { id: 'dashboard', icon: '📊', label: '仪表盘' },
+  { id: 'wizard', icon: '🔑', label: '取钥向导' },
   { id: 'messages', icon: '💬', label: '消息' },
   { id: 'logs', icon: '📜', label: '日志' },
   { id: 'config', icon: '⚙️', label: '配置' },

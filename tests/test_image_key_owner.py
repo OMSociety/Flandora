@@ -15,16 +15,23 @@ if REPO_ROOT not in sys.path:
 
 
 def with_cfg(fn):
-    """在临时目录里造 config.json 并切换 cwd，跑完还原。"""
+    """在临时目录里造 config.json，让 config 只认这一份，跑完还原。
+
+    用 ``WEBOT_BRIDGE_DATA_DIR`` 把默认数据目录钉到临时目录：否则源码目录里一旦
+    真的存在 ``data/config.json``（从源码跑过一次就会有），它会被优先选中。
+    """
     d = tempfile.mkdtemp(prefix="wwb-idx-")
     import shutil
     shutil.copy(os.path.join(PKG, "config.example.json"), os.path.join(d, "config.json"))
-    old = os.getcwd()
-    os.chdir(d)
+    old_env = os.environ.get("WEBOT_BRIDGE_DATA_DIR")
+    os.environ["WEBOT_BRIDGE_DATA_DIR"] = d
     try:
         return fn(d)
     finally:
-        os.chdir(old)
+        if old_env is None:
+            os.environ.pop("WEBOT_BRIDGE_DATA_DIR", None)
+        else:
+            os.environ["WEBOT_BRIDGE_DATA_DIR"] = old_env
 
 
 def main() -> int:

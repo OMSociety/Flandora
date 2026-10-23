@@ -18,7 +18,15 @@ import sys
 
 
 def _default_data_dir() -> str:
-    """还没确定 config.json 位置时的默认可写目录：程序目录下的 data/。"""
+    """还没确定 config.json 位置时的默认可写目录：程序目录下的 data/。
+
+    环境变量 ``WEBOT_BRIDGE_DATA_DIR`` 可以把这个位置指到别处——数据与程序分开放，
+    或者同一台机器上跑多份互不干扰。它只决定「去哪里找、去哪里生成 config.json」；
+    找到之后，日志、口令、游标一律以 config.json 所在的目录为准。
+    """
+    override = os.environ.get("WEBOT_BRIDGE_DATA_DIR", "")
+    if override:
+        return os.path.abspath(override)
     if getattr(sys, "frozen", False):
         return os.path.join(os.path.dirname(sys.executable), "data")
     # 源码运行时包目录的上一级就是仓库根
@@ -126,6 +134,10 @@ WX_POLL_SECONDS = float(config.get("wx_poll_seconds", 1.0) or 1.0)
 # 图片密钥文件（JSON，含 aes_key 与 xor_key）。留空 = 配置文件同目录下的
 # wx_image_key.json。缺它时图片消息退回占位符，文本通道不受影响。
 WX_IMAGE_KEY_FILE = config.get("wx_image_key_file", "")
+# 取数据库口令时手动指定的函数地址（0 = 自动定位）。自动定位依赖微信 DLL 里的调用
+# 形态，微信改版后可能失手；那时在这里填一个地址即可继续，不必等本程序适配新版本。
+# 形式同 0x6148a0，不必正好是函数开头，落在函数里就行。
+WXKEY_MANUAL_RVA = int(config.get("wxkey_manual_rva", 0) or 0)
 # 发送方式已固定为 UIA 纯键盘模拟
 BUFFER_SECONDS = config.get("buffer_seconds", 5)
 WEB_PORT = config.get("web_port", 8766)

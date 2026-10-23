@@ -2,18 +2,18 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { get, post } from '../api'
 import { toast } from '../store'
+import { useDesktopShot } from '../useDesktopShot'
 
 const status = ref(null)
-const imgUrl = ref('')
 const busy = ref(false)
 const autoRefresh = ref(true)
-const lastError = ref('')
-const shotAt = ref('')
-const natural = ref({ w: 0, h: 0 })
+
+const {
+  imgUrl, lastError, shotAt, natural,
+  refresh: refreshShot, onImgLoad, click, clear,
+} = useDesktopShot()
 
 let timer = null
-let inflight = false
-let currentUrl = ''
 
 const enabled = computed(() => !!(status.value && status.value.enabled))
 const running = computed(() => !!(status.value && status.value.running))
@@ -42,64 +42,9 @@ async function loadStatus() {
   }
 }
 
-function revoke() {
-  if (currentUrl) {
-    URL.revokeObjectURL(currentUrl)
-    currentUrl = ''
-  }
-}
-
-async function refreshShot() {
-  if (!enabled.value || inflight) return
-  inflight = true
-  try {
-    const res = await fetch('/api/desktop/screenshot?t=' + Date.now(), {
-      cache: 'no-store',
-    })
-    if (!res.ok) {
-      let msg = `取画面失败 (${res.status})`
-      try {
-        const j = await res.json()
-        if (j && j.error) msg = j.error
-      } catch (e) {
-        /* 响应不是 JSON，用默认文案 */
-      }
-      lastError.value = msg
-      revoke()
-      imgUrl.value = ''
-      return
-    }
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    revoke()
-    currentUrl = url
-    imgUrl.value = url
-    lastError.value = ''
-    shotAt.value = new Date().toLocaleTimeString()
-  } catch (e) {
-    lastError.value = '取画面失败: ' + (e.message || e)
-  } finally {
-    inflight = false
-  }
-}
-
-function onImgLoad(e) {
-  natural.value = { w: e.target.naturalWidth, h: e.target.naturalHeight }
-}
-
 async function onClickShot(e) {
-  const img = e.target
-  if (!img.naturalWidth) return
-  // 显示尺寸与原始像素不是 1:1，按比例换算成客户区坐标
-  const rect = img.getBoundingClientRect()
-  const scale = img.naturalWidth / rect.width
-  const x = Math.round((e.clientX - rect.left) * scale)
-  const y = Math.round((e.clientY - rect.top) * scale)
-  const res = await post('/api/desktop/click', { x, y }, true)
-  if (!(res.ok && res.data && res.data.ok)) {
-    const msg = (res.data && res.data.error) || `点击失败 (${res.status})`
-    toast(msg, 'error')
-  }
+  const err = await click(e)
+  if (err) toast(err, 'error')
   setTimeout(refreshShot, 300)
 }
 
@@ -122,8 +67,7 @@ async function stopWeChat() {
   busy.value = false
   if (res.ok && res.data && res.data.ok) {
     toast('已结束隔离桌面上的微信', 'success')
-    revoke()
-    imgUrl.value = ''
+    clear()
     await loadStatus()
   } else {
     toast((res.data && res.data.error) || '停止失败', 'error')
@@ -142,7 +86,6 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
-  revoke()
 })
 </script>
 

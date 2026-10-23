@@ -6,8 +6,10 @@ WeFlow 的推送是「插件把消息转发出来」，这里换成直接读微�
 消息的新旧靠每个会话的 local_id 游标判断。首次启动时把游标推到当前值，
 不重放历史（需要重放时把 wx_backfill_seconds 设成正数）。
 """
+import json
 import logging
 import os
+import re
 import time
 
 import config
@@ -34,6 +36,16 @@ def default_key_file() -> str:
     """
     base = os.path.dirname(config.CONFIG_FILE) or "."
     return os.path.join(base, "wx_key.dat")
+
+
+def default_image_key_file() -> str:
+    """图片密钥默认位置：配置文件同目录下的 ``wx_image_key.json``。
+
+    图片 AES 密钥是账号级的，且只在微信解码图片那几秒驻留内存。它与数据库口令
+    分开存：缺它只影响图片，不影响文本通道。
+    """
+    base = os.path.dirname(config.CONFIG_FILE) or "."
+    return os.path.join(base, "wx_image_key.json")
 
 
 def default_work_dir() -> str:
@@ -138,7 +150,8 @@ class WxLocalSource:
         is_group = bool(session["is_group"])
         chat_name = self.names.get(username) or username
         who = self.names.get(msg["sender"]) or msg["sender"] or chat_name
-        return {
+
+        data = {
             "rawid": f"wxlocal:{username}:{msg['local_id']}",
             "timestamp": msg["create_time"] or int(time.time()),
             "content": msg["text"],
@@ -154,9 +167,80 @@ class WxLocalSource:
             "localId": msg["local_id"],
         }
 
+        # 图片：能解出文件就把路径带上，下游据此读图；解不出就保留占位符文本。
+        if msg["kind"] == "image":
+            path = self._image_path_for(msg)
+            if path:
+                data["imagePath"] = path
+                data["content"] = f"[图片] {path}"
+        return data
+
+    def _image_path_for(self, msg) -> str:
+        """按消息内容里的 md5 还原图片。失败返回空串。"""
+        if not self.store.image_ready():
+            return ""
+        body = msg.get("raw") or msg.get("text") or ""
+        m = re.search(r'md5="([0-9a-fA-F]{32})"', body)
+        if not m:
+            return ""
+        try:
+            return self.store.extract_image(m.group(1).lower(),
+                                            int(msg.get("local_id") or 0)) or ""
+        except Exception as exc:  # noqa: BLE001 - 单张图失败不该影响整条消息
+            log.debug("图片还原失败：%s", exc)
+            return ""
+
     def contacts(self):
         """用于日志/界面：当前会话的展示名。"""
         return dict(self.names)
+
+
+def load_image_key() -> tuple[bytes, int]:
+    """读图片解码用的两把密钥。拿不到时返回 (b"", -1)，图片退回占位符。
+
+    与数据库口令分开存：口令丢了整条通道都不能用，而图片密钥缺失只影响图片。
+    所以这里不抛错，让文本消息照常走。
+
+    AES 密钥在落盘时可能有两种写法：32 位十六进制（16 字节二进制），或直接
+    16 个 ASCII 字符。实测微信用的是后者，但两种都接受，避免手工填错就静默失效。
+    """
+    path = config.WX_IMAGE_KEY_FILE or default_image_key_file()
+    if not os.path.isfile(path):
+        log.info("未配置图片密钥（%s），图片消息将以占位符形式转发", path)
+        return b"", -1
+    try:
+        with open(path, encoding="utf-8") as fh:
+            payload = json.load(fh)
+    except (OSError, ValueError) as exc:
+        log.warning("图片密钥文件读不出来（%s）：%s", path, exc)
+        return b"", -1
+
+    aes = _parse_aes_key(payload.get("aes_key") or "")
+    if not aes:
+        return b"", -1
+    try:
+        xor_int = int(payload.get("xor_key", -1))
+    except (TypeError, ValueError):
+        xor_int = -1
+    log.info("已加载图片密钥（账号 %s），XOR 密钥 %s",
+             payload.get("wxid") or "未知",
+             f"0x{xor_int:02x}" if xor_int >= 0 else "未配置（将自动反推）")
+    return aes, xor_int
+
+
+def _parse_aes_key(raw: str) -> bytes:
+    """把密钥文本解析成 16 字节。兼容 ASCII 与十六进制两种写法。"""
+    text = raw.strip()
+    if len(text) == 32:
+        try:
+            return bytes.fromhex(text)
+        except ValueError:
+            pass
+    if len(text) == 16 and text.isascii():
+        return text.encode("ascii")
+    log.warning("图片 AES 密钥格式不对：应为 32 位十六进制或 16 个 ASCII 字符，实为 %r",
+                text[:40])
+    return b""
 
 
 def build_source(key_file: str = None) -> WxLocalSource:
@@ -169,10 +253,12 @@ def build_source(key_file: str = None) -> WxLocalSource:
         raise WxSourceError(f"账号 {account.wxid} 的数据目录不存在（可能还没登录完成）")
 
     passphrase = load_passphrase(key_file)
+    image_key, image_xor = load_image_key()
     work_root = config.WX_WORK_DIR or default_work_dir()
     work_dir = os.path.join(work_root, account.wxid)
 
-    store = wx_store.WxStore(account.data_dir, passphrase, work_dir, my_wxid=account.wxid)
+    store = wx_store.WxStore(account.data_dir, passphrase, work_dir, my_wxid=account.wxid,
+                             image_key=image_key, image_xor_key=image_xor)
     try:
         store.refresh()
     except wx_crypto.WrongKey:
@@ -182,7 +268,8 @@ def build_source(key_file: str = None) -> WxLocalSource:
     src = WxLocalSource(store, backfill_seconds=config.WX_BACKFILL_SECONDS,
                         poll_seconds=config.WX_POLL_SECONDS)
     step = ", ".join(sorted(store._decrypted))
-    log.info(f"本地库收件：账号 {account.wxid}，已解密 {step}")
+    log.info(f"本地库收件：账号 {account.wxid}，已解密 {step}，"
+             f"图片{'可用' if store.image_ready() else '不可用（缺密钥）'}")
     return src
 
 

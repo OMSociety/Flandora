@@ -79,6 +79,9 @@ WX_WORK_DIR = config.get("wx_work_dir", "")
 WX_BACKFILL_SECONDS = int(config.get("wx_backfill_seconds", 0) or 0)
 # 轮询本地库的间隔（秒）
 WX_POLL_SECONDS = float(config.get("wx_poll_seconds", 1.0) or 1.0)
+# 图片密钥文件（JSON，含 aes_key 与 xor_key）。留空 = 配置文件同目录下的
+# wx_image_key.json。缺它时图片消息退回占位符，文本通道不受影响。
+WX_IMAGE_KEY_FILE = config.get("wx_image_key_file", "")
 # 发送方式已固定为 UIA 纯键盘模拟
 BUFFER_SECONDS = config.get("buffer_seconds", 5)
 WEB_PORT = config.get("web_port", 8766)

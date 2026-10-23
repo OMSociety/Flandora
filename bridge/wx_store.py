@@ -21,6 +21,7 @@
     session/session.db 的 SessionTable：未读数、摘要、最后一条的类型与发送者。
     contact/contact.db：备注名、昵称。
 """
+import glob
 import hashlib
 import logging
 import os
@@ -30,6 +31,7 @@ import time
 
 import wechat_account
 import wx_crypto
+import wx_image
 
 log = logging.getLogger("ob11-bridge")
 
@@ -108,6 +110,9 @@ def classify(local_type, body):
 
     类别用于日志与统计，文本是最终交给 OneBot 的内容；
     非文本消息给出方括号占位符，避免上游收到 XML 原文。
+
+    图片消息的文本里带上 XML 原文里的 md5：解码要按 md5 找对应的 `.dat`，
+    只留一个「[图片]」就没法定位了。
     """
     base = local_type & 0xFFFFFFFF
     sub = local_type >> 32
@@ -116,7 +121,10 @@ def classify(local_type, body):
     if base == 1:
         return _KIND_TEXT, body
     if base == BASE_IMAGE:
-        return "image", "[图片]"
+        # body 可能是 str，也可能是未解码的 bytes；两种都要能取到 md5。
+        text = body.decode("utf-8", "ignore") if isinstance(body, bytes) else str(body)
+        m = re.search(r'md5="([0-9a-fA-F]{32})"', text)
+        return "image", f'[图片] md5="{m.group(1).lower()}"' if m else "[图片]"
     if base == BASE_EMOJI:
         return "emoji", "[表情]"
     if base == BASE_VOICE:
@@ -158,13 +166,18 @@ class WxStore:
     """
 
     def __init__(self, data_dir: str, passphrase: bytes, work_dir: str,
-                 my_wxid: str = ""):
+                 my_wxid: str = "", image_key: bytes = b"",
+                 image_xor_key: int = -1):
         self.data_dir = data_dir
         self.passphrase = passphrase
         self.work_dir = work_dir
         self.my_wxid = my_wxid
+        self.image_key = image_key           # 图片 AES 密钥（账号级，16 字节 ASCII）
+        self.image_xor_key = image_xor_key   # 图片尾段 XOR 密钥（账号级，-1 = 未取得）
+        self._xor_sniffed = False
         self._seen = {}          # 相对路径 -> (size, mtime_ns)
         self._decrypted = set()  # 已成功解出的库名
+        self._image_dir = os.path.join(work_dir, "images")
 
     # ---------- 路径与解密 ----------
 
@@ -298,7 +311,7 @@ class WxStore:
             con.close()
 
     def image_path(self, msg_md5: str):
-        """图片消息的 md5 对应的本地文件名（仅供排查，文件本体是加密的 .dat）。"""
+        """图片消息的 md5 对应的本地文件名（仅用于定位 .dat，文件本体是加密的）。"""
         con = self._con("hardlink.db")
         try:
             row = con.execute(
@@ -310,8 +323,125 @@ class WxStore:
         finally:
             con.close()
 
+    # ---------- 图片 ----------
 
-def open_store(passphrase: bytes, work_root: str, data_root: str = None):
+    def image_ready(self) -> bool:
+        """图片能否解码。
+
+        XOR 密钥允许留空（-1）：它可以从本账号的图片里反推，不必预先配置。
+        真正必需的是 AES 密钥——那个只能从进程内存取，取不到就解不了。
+        """
+        return bool(self.image_key)
+
+    def _resolve_image(self, msg_md5: str, local_id: int = 0) -> str:
+        """按 md5 找到对应的 .dat 文件路径。
+
+        磁盘文件名用的是**资源库里的 md5**，不一定等于消息 XML 里的 md5，所以按
+        三级兜底找：
+
+        1. `hardlink.db` 的 md5 → file_name（最准，但并非所有版本都填）；
+        2. 消息 XML 的 md5 直接匹配文件名；
+        3. 用 `message_resource.db` 把 (会话, local_id) 映射到资源 md5 再匹配
+           ——XML 的 md5 与资源 md5 在实测里并不相同，这是补上的关键一环。
+        """
+        attach = os.path.join(self.data_dir, "msg", "attach")
+        if not os.path.isdir(attach):
+            raise WxStoreError(f"图片目录不存在：{attach}")
+
+        def find(name: str) -> str:
+            if not name:
+                return ""
+            for hit in glob.glob(os.path.join(attach, "*", "*", "Img", name)):
+                if os.path.isfile(hit):
+                    return hit
+            hits = glob.glob(os.path.join(attach, "*", "**", "Img", f"{name}*"),
+                             recursive=True)
+            return hits[0] if hits else ""
+
+        name = self.image_path(msg_md5)
+        if name:
+            hit = find(name)
+            if hit:
+                return hit
+
+        hit = find(msg_md5)
+        if hit:
+            return hit
+
+        for cand in self._resource_md5s(local_id):
+            hit = find(cand)
+            if hit:
+                return hit
+        raise WxStoreError(f"找不到图片文件（md5={msg_md5}, local_id={local_id}）")
+
+    def _resource_md5s(self, local_id: int) -> list[str]:
+        """资源库里与某条消息相关的 md5 候选。"""
+        if not local_id:
+            return []
+        try:
+            con = self._con("message_resource.db")
+        except WxStoreError:
+            return []
+        try:
+            rows = con.execute(
+                "SELECT packed_info FROM MessageResourceInfo "
+                "WHERE message_local_id=?", (local_id,)).fetchall()
+        except sqlite3.Error:
+            return []
+        finally:
+            con.close()
+        out = []
+        for (packed,) in rows:
+            if not packed:
+                continue
+            text = packed.decode("utf-8", "ignore") if isinstance(packed, bytes) else str(packed)
+            tail = text.strip().split("\n")[-1].strip()
+            if len(tail) == 32 and all(c in "0123456789abcdefABCDEF" for c in tail):
+                out.append(tail.lower())
+        return out
+
+    def _ensure_xor_key(self) -> int:
+        """XOR 密钥没配时，从本账号的图片里反推一次。"""
+        if self.image_xor_key >= 0:
+            return self.image_xor_key
+        if self._xor_sniffed:
+            raise WxStoreError("无法从本地图片反推 XOR 密钥")
+        self._xor_sniffed = True
+        attach = os.path.join(self.data_dir, "msg", "attach")
+        sample = glob.glob(os.path.join(attach, "*", "**", "Img", "*.dat"), recursive=True)
+        self.image_xor_key = wx_image.sniff_xor_key(sample, self.image_key)
+        return self.image_xor_key
+
+    def extract_image(self, msg_md5: str, local_id: int = 0) -> str | None:
+        """把一条图片消息还原成可读文件，返回落地路径；失败返回 None。
+
+        解出来的图片放在工作目录的 `images/` 下，按 md5 命名并缓存：同一张图
+        只解一次。密钥缺失时返回 None 而不是抛错——图片解不出来不该让整条消息
+        处理失败，上层会退回占位符。
+        """
+        if not self.image_ready():
+            return None
+        try:
+            src = self._resolve_image(msg_md5, local_id)
+        except WxStoreError as e:
+            log.debug("定位图片失败：%s", e)
+            return None
+        try:
+            xor_key = self._ensure_xor_key()
+            img = wx_image.decode_file(src, self.image_key, xor_key)
+        except (wx_image.ImageDecodeError, WxStoreError) as e:
+            log.warning("图片解码失败（md5=%s）：%s", msg_md5, e)
+            return None
+        os.makedirs(self._image_dir, exist_ok=True)
+        out = os.path.join(self._image_dir, f"{os.path.basename(src)}.{img.ext}")
+        if not os.path.isfile(out):
+            with open(out, "wb") as fh:
+                fh.write(img.data)
+        return out
+
+
+def open_store(passphrase: bytes, work_root: str, data_root: str = None,
+               image_key: bytes = b"", image_xor_key: int = -1):
     """按当前登录账号开一个 WxStore。"""
     root = data_root or wechat_account.default_root()
     account = wechat_account.current_account(root)
@@ -320,7 +450,8 @@ def open_store(passphrase: bytes, work_root: str, data_root: str = None):
     if not account.data_dir:
         raise WxStoreError(f"账号 {account.wxid} 的数据目录不存在")
     work_dir = os.path.join(work_root, account.wxid)
-    store = WxStore(account.data_dir, passphrase, work_dir, my_wxid=account.wxid)
+    store = WxStore(account.data_dir, passphrase, work_dir, my_wxid=account.wxid,
+                    image_key=image_key, image_xor_key=image_xor_key)
     store.refresh()
     return store
 

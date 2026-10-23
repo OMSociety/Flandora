@@ -6,7 +6,7 @@ related_targets: ["webui-frontend/src/pages/Dashboard.vue"]
 ---
 
 ## Scope
-WeBot-Bridge browser console, all seven existing pages. Operate mode for operators working in ordinary indoor desktop light and sometimes on phones.
+Flandora browser console, all seven existing pages. Operate mode for operators working in ordinary indoor desktop light and sometimes on phones.
 
 ## Direction contract
 

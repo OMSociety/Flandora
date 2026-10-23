@@ -1,5 +1,5 @@
 ---
-name: WeBot-Bridge
+name: Flandora
 description: 微信与 MaiBot 桥接控制台，微信绿 + 白/黑明暗主题的运维界面
 colors:
   primary: "#07c160"
@@ -87,7 +87,7 @@ components:
     padding: "9px 11px"
 ---
 
-# Design System: WeBot-Bridge
+# Design System: Flandora
 
 ## Overview
 

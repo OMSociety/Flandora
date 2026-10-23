@@ -1,6 +1,6 @@
 # 随包分发的第三方组件与许可
 
-`WeBot-Bridge-v1.0.0.zip` 里的可执行文件由 PyInstaller 打包，内含下列第三方组件。
+`Flandora-v1.0.0.zip` 里的可执行文件由 PyInstaller 打包，内含下列第三方组件。
 每个组件的许可证原文都在本目录下同名文件里，以文件内容为准；下表是索引，不是许可条款。
 
 ## 运行时组件
@@ -50,7 +50,7 @@
 
 ## 说明
 
-- frida 只随 `WeBotBridge-KeyTool.exe` 分发；主程序不含它。
-- pystray 与 Pillow 只随桌面管理器 `WeBotBridge-Manager.exe` 分发。
+- frida 只随 `Flandora-KeyTool.exe` 分发；主程序不含它。
+- pystray 与 Pillow 只随桌面管理器 `Flandora-Manager.exe` 分发。
 - 若你要基于本仓库重新打包分发，请自行确认上述条款对你的分发方式是否满足，尤其是
   LGPL-3.0（pystray）对「允许使用者替换该库」的要求。

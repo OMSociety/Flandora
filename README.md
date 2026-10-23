@@ -1,9 +1,10 @@
-# WeBot-Bridge
+# Flandora
 
-把微信个人号接进 [MaiBot](https://github.com/MaiM-with-u/MaiBot)（麦麦）：收微信消息、以本人身份回复，对麦麦侧表现为一个标准的 OneBot v11 实现。
+把微信个人号接进任意 OneBot v11 客户端：收微信消息、以本人身份回复，对外表现为一个标准的 OneBot v11 实现。
 
-本仓库是 Windows 侧的桥接服务，负责与微信打交道。麦麦侧的插件在另一个仓库
-[MaiBot WeChat Adapter](https://github.com/OMSociety/mai-bot-wechat-adapter)。
+本仓库是 Windows 侧的桥接服务，负责与微信打交道。它不绑定特定机器人框架——MaiBot、AstrBot
+或自己写的脚本都可以连上来；以 [MaiBot](https://github.com/MaiM-with-u/MaiBot)（麦麦）为例，
+其微信适配器在另一个仓库 [MaiBot WeChat Adapter](https://github.com/OMSociety/mai-bot-wechat-adapter)。
 
 > **提示：** 本程序通过自动化方式驱动你自己的微信客户端收发消息。这类用法可能与微信的用户协议冲突，账号存在被限制的风险。请只用自己的号，并自行评估。完整的合规与风险分析写在适配器仓库的 README 里。
 
@@ -25,7 +26,7 @@
 
 ## 这是什么
 
-微信从 4.x 起把聊天记录存在本机的 SQLCipher 加密数据库里。WeBot-Bridge 的做法是：
+微信从 4.x 起把聊天记录存在本机的 SQLCipher 加密数据库里。Flandora 的做法是：
 
 - **收件**：自带取钥能力，在微信登录的那一刻截获数据库口令，把本机数据库解密成标准 SQLite
   副本后直接读取。不依赖任何第三方插件，也不走屏幕识别。
@@ -57,24 +58,24 @@
 
 ### 方式一：安装程序（推荐）
 
-到 [Releases](https://github.com/OMSociety/WeBot-Bridge/releases) 下载
-`WeBot-Bridge-v1.0.0-setup.exe`，双击安装。安装目录默认在
-`%LOCALAPPDATA%\Programs\WeBot-Bridge`，安装过程中可以勾选开机自启与桌面快捷方式。
+到 [Releases](https://github.com/OMSociety/Flandora/releases) 下载
+`Flandora-v1.0.0-setup.exe`，双击安装。安装目录默认在
+`%LOCALAPPDATA%\Programs\Flandora`，安装过程中可以勾选开机自启与桌面快捷方式。
 
 本程序没有购买代码签名证书，Windows SmartScreen 会拦一下：点「更多信息」→
 「仍要运行」即可。卸载时程序会单独问一次要不要删掉配置与已保存的微信口令，默认删除。
 
 ### 方式二：便携包（portable zip）
 
-下载 `WeBot-Bridge-v1.0.0.zip`，解压到任意目录。
+下载 `Flandora-v1.0.0.zip`，解压到任意目录。
 
 ```
-WeBot-Bridge-v1.0.0/
-├── WeBotBridge.exe            ← 桥接服务（管理器自动调用）
-├── WeBotBridge-Manager.exe    ← 双击启动桌面管理器
-├── WeBotBridge-LogTail.exe    ← 日志跟随器（管理器自动调用）
-├── WeBotBridge-KeyTool.exe    ← 取钥器（向导自动调用，平时用不到）
-├── 启动.bat                   ← 等价于双击 WeBotBridge-Manager.exe
+Flandora-v1.0.0/
+├── Flandora.exe            ← 桥接服务（管理器自动调用）
+├── Flandora-Manager.exe    ← 双击启动桌面管理器
+├── Flandora-LogTail.exe    ← 日志跟随器（管理器自动调用）
+├── Flandora-KeyTool.exe    ← 取钥器（向导自动调用，平时用不到）
+├── 启动.bat                   ← 等价于双击 Flandora-Manager.exe
 ├── data/
 │   └── config.json            ← 配置文件（首次需手动填入）
 ├── docs/
@@ -83,9 +84,9 @@ WeBot-Bridge-v1.0.0/
 ```
 
 1. 编辑 `data/config.json`，见[配置详解](#配置详解)。最少要填 `bot_nicknames`。
-2. 双击 `启动.bat`，或直接运行 `WeBotBridge-Manager.exe`。
+2. 双击 `启动.bat`，或直接运行 `Flandora-Manager.exe`。
 
-> **提示：** 建议放在不含中文和空格的目录（如 `D:\WeBotBridge`），能少踩一些编码与权限的坑。
+> **提示：** 建议放在不含中文和空格的目录（如 `D:\Flandora`），能少踩一些编码与权限的坑。
 > 四个 exe 必须放在同一目录，管理器靠同目录下的主程序与日志跟随器工作。
 > `data/` 是可写区：配置、日志、进程号、微信口令与图片密钥都在里面。想搬到别的目录，整个
 > 文件夹移走即可。
@@ -93,13 +94,13 @@ WeBot-Bridge-v1.0.0/
 ### 方式三：从源码运行（开发者）
 
 ```bat
-git clone https://github.com/OMSociety/WeBot-Bridge.git
-cd WeBot-Bridge
+git clone https://github.com/OMSociety/Flandora.git
+cd Flandora
 py -3.13 -m venv .venv
-.venv\Scripts\python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r webot_bridge\requirements.txt
+.venv\Scripts\python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r flandora\requirements.txt
 .venv\Scripts\python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r manager\requirements.txt
 mkdir data
-copy webot_bridge\config.example.json data\config.json
+copy flandora\config.example.json data\config.json
 .venv\Scripts\python run_bridge.py
 ```
 
@@ -133,7 +134,7 @@ copy webot_bridge\config.example.json data\config.json
 WebUI 左边栏有「取钥向导」一页，把这件必须掐着时间做的事拆成了四步：
 
 1. **免责声明**：确认这是你自己的账号并勾选同意。
-2. **数据库口令**：点「开始取钥」，向导拉起 `WeBotBridge-KeyTool.exe`。它挂好钩子后会提示你
+2. **数据库口令**：点「开始取钥」，向导拉起 `Flandora-KeyTool.exe`。它挂好钩子后会提示你
    现在登录微信；在微信窗口里完成登录即可。隔离桌面模式下微信不在你的屏幕上，登录界面要在
    页面下方的实况画面里看，用手机扫码或确认。取到后口令用 Windows DPAPI 加密存到
    `data/wx_key.dat`。
@@ -248,7 +249,7 @@ bridge 生效。下面按用途分组，只列需要你关心的项，其余字�
 
 ## 界面说明
 
-### 桌面管理器（`WeBotBridge-Manager.exe`）
+### 桌面管理器（`Flandora-Manager.exe`）
 
 托盘常驻，负责启动与停止 bridge、查看状态、开机自启、快速打开 WebUI 与日志。双击
 `启动.bat` 就是打开它。管理器自身做了单实例锁，重复双击只会提示。
@@ -367,8 +368,8 @@ DPAPI 密文绑机器与 Windows 用户，属于预期行为，在新机器上�
    |  收件：解密本机 SQLCipher 库（口令由取钥器在登录时截获）
    |  发送：UI 自动化投递输入（默认在隔离桌面上）
    v
-WeBot-Bridge
-   |- 取钥器 WeBotBridge-KeyTool.exe（独立进程，只在取钥时运行）
+Flandora
+   |- 取钥器 Flandora-KeyTool.exe（独立进程，只在取钥时运行）
    |- OneBot v11 正向 WebSocket 服务端  ws://127.0.0.1:7999
    \- WebUI  http://127.0.0.1:8766
    ^
@@ -385,10 +386,10 @@ MaiBot（麦麦）
 
 | 路径 | 内容 |
 |---|---|
-| `run_bridge.py` | 入口脚本。放在仓库根，`webot_bridge` 包才会被完整收集 |
-| `webot_bridge/` | 主包：配置、收件源、发送器、协议、图片解码、WebUI 后端 |
-| `webot_bridge/wxkey/` | 取钥链路：定位、截获、还原 |
-| `webot_bridge/webui/` | WebUI 后端与前端静态产物 |
+| `run_bridge.py` | 入口脚本。放在仓库根，`flandora` 包才会被完整收集 |
+| `flandora/` | 主包：配置、收件源、发送器、协议、图片解码、WebUI 后端 |
+| `flandora/wxkey/` | 取钥链路：定位、截获、还原 |
+| `flandora/webui/` | WebUI 后端与前端静态产物 |
 | `webui-frontend/` | WebUI 前端的 vite 工程 |
 | `manager/` | 桌面托盘管理器与日志查看器 |
 | `tools/` | 独立小工具：取钥器、取图片密钥 |
@@ -403,8 +404,8 @@ MaiBot（麦麦）
 .venv\Scripts\python build.py
 ```
 
-产物在 `dist\` 下：`WeBot-Bridge-v1.0.0.zip`（便携包）与
-`WeBot-Bridge-v1.0.0-setup.exe`（安装程序）。打包前会自动构建 WebUI 前端，所以需要 Node.js 与
+产物在 `dist\` 下：`Flandora-v1.0.0.zip`（便携包）与
+`Flandora-v1.0.0-setup.exe`（安装程序）。打包前会自动构建 WebUI 前端，所以需要 Node.js 与
 npm；安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包
 （也可以用 `INNO_SETUP_DIR` 或 `ISCC` 环境变量指定 `ISCC.exe` 的位置）。
 取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。

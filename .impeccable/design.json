@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "generatedAt": "2026-10-24T05:40:00+08:00",
-  "title": "Design System: WeBot-Bridge",
+  "title": "Design System: Flandora",
   "extensions": {
     "colorMeta": {
       "primary": { "role": "primary", "displayName": "微信绿", "canonical": "#07c160", "tonalRamp": ["#e7f7ee", "#c8f0d8", "#7fdcA8", "#07c160", "#0b7f46", "#087f45"] },

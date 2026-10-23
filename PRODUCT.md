@@ -8,7 +8,7 @@ web
 
 ## Users
 
-在 Windows 上自行部署 WeBot-Bridge 的使用者。他们通过浏览器检查桥接运行状态、调整连接与消息配置、观察消息和日志，并完成微信取钥与发送测试。
+在 Windows 上自行部署 Flandora 的使用者。他们通过浏览器检查桥接运行状态、调整连接与消息配置、观察消息和日志，并完成微信取钥与发送测试。
 
 ## Product Purpose
 
@@ -28,7 +28,7 @@ web
 
 ## Brand Commitments
 
-产品名 WeBot-Bridge，描述为「微信 ↔ 麦麦 桥接控制台」。本次视觉参考为用户指定的 SnowLuma WebUI；主题采用绿色与白色／黑色，默认跟随系统，并允许手动切换明暗。
+产品名 Flandora，描述为「微信 ↔ 麦麦 桥接控制台」。本次视觉参考为用户指定的 SnowLuma WebUI；主题采用绿色与白色／黑色，默认跟随系统，并允许手动切换明暗。
 
 ## Evidence on Hand
 

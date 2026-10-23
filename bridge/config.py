@@ -107,11 +107,12 @@ OB_SERVER_TOKEN = config.get("ob_server_token", "")
 SELF_NAME = config.get("self_name", "wechat-bot")
 
 # ====== 隔离桌面模式 ======
-# 开启后微信由 bridge 启动在一个独立的 Windows 桌面上，向它投递输入不会把用户
-# 所在的桌面切走——「完全不抢前台」由此成立。代价是：微信必须由 bridge 启动
-# （用户不能自己双击），且首次登录要在 WebUI 里看截图完成确认。
-# 关闭时保持原行为：发送时微信会短暂到前台，发完立刻归还。
-ISOLATED_DESKTOP = bool(config.get("isolated_desktop", False))
+# 默认开启：微信由 bridge 启动在一个独立的 Windows 桌面上，向它投递输入时切换的
+# 是那张桌面的前台，用户自己所在的桌面完全不受打扰——发送通道因此可以长期开着。
+# 前提两条：微信必须由 bridge 启动（微信有单实例互斥，用户桌面上已经开着微信时
+# 隔离实例只会停在登录界面）；首次登录要在 WebUI 里看实况画面、用手机确认。
+# 设为 false 则回到另一种形态：微信由用户自己启动，发送时它会短暂到前台、发完归还。
+ISOLATED_DESKTOP = bool(config.get("isolated_desktop", True))
 # 隔离桌面的名称，一般不用改
 ISOLATED_DESKTOP_NAME = config.get("isolated_desktop_name", "WeBotSandbox")
 # 微信可执行文件路径。留空则自动探测常见安装位置。

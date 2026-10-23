@@ -308,9 +308,57 @@ _CANDIDATE_DIRS = (
     r"C:\Program Files (x86)\Tencent\WeChat",
 )
 
+_EXE_NAMES = ("Weixin.exe", "WeChat.exe")
+# 注册表与安装目录里用到的产品名
+_PRODUCT_NAMES = ("Weixin", "WeChat")
+# 每个盘符下可能装 Tencent 系产品的两级目录名
+_PROGRAM_DIRS = ("Program Files", "Program Files (x86)")
+
+
+def _drive_roots() -> list:
+    """所有存在的盘符根，C 盘排最前（绝大多数安装在这里）。"""
+    found = [f"{ch}:\\" for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+             if os.path.exists(f"{ch}:\\")]
+    return sorted(found, key=lambda r: (r[0] != "C", r))
+
+
+def _registry_dirs() -> list:
+    """从注册表取微信安装目录。
+
+    本机实测（微信 4.1.15.56）：
+      `HKCU\\SOFTWARE\\Tencent\\Weixin` 的值 `InstallPath` = `D:\\Program Files\\Tencent\\Weixin`
+
+    老版本写在哪个键下没有实机可验，所以 hive、键路径、值名都多试几个，命中即止。
+    取不到不算错——后面还有常见位置与逐盘扫描兜着。
+    """
+    try:
+        import winreg
+    except ImportError:
+        return []
+    dirs = []
+    for hive in (winreg.HKEY_CURRENT_USER, winreg.HKEY_LOCAL_MACHINE):
+        for prefix in ("SOFTWARE", r"SOFTWARE\WOW6432Node"):
+            for product in _PRODUCT_NAMES:
+                try:
+                    with winreg.OpenKey(hive, rf"{prefix}\Tencent\{product}") as key:
+                        for value in ("InstallPath", "InstallDir", "Path"):
+                            try:
+                                path, _ = winreg.QueryValueEx(key, value)
+                            except OSError:
+                                continue
+                            if isinstance(path, str) and path:
+                                dirs.append(path)
+                except OSError:
+                    continue
+    return dirs
+
 
 def find_weixin_exe(configured: str = "") -> str:
-    """定位微信可执行文件。配置优先，其次环境变量，最后扫常见安装位置。
+    """定位微信可执行文件。
+
+    依次试：配置 → 环境变量 `WECHAT_EXE` → 注册表记录的安装目录 → 常见安装位置 →
+    逐盘扫 `Program Files` 与 `Program Files (x86)`（两条都扫，微信有装在 32 位
+    目录下、也有装在非 C 盘的情况；本机就是 `D:\\Program Files\\Tencent\\Weixin`）。
 
     `Weixin.exe` 只是启动器，真正的版本目录里是 `Weixin.dll`——但我们要启动的
     就是启动器本身，所以找它是对的。
@@ -320,19 +368,18 @@ def find_weixin_exe(configured: str = "") -> str:
     env = os.environ.get("WECHAT_EXE", "")
     if env and os.path.isfile(env):
         return env
-    names = ("Weixin.exe", "WeChat.exe")
-    for d in _CANDIDATE_DIRS:
-        for n in names:
+
+    dirs = _registry_dirs() + list(_CANDIDATE_DIRS)
+    for root in _drive_roots():
+        for prog in _PROGRAM_DIRS:
+            for product in _PRODUCT_NAMES:
+                dirs.append(os.path.join(root, prog, "Tencent", product))
+
+    for d in dirs:
+        for n in _EXE_NAMES:
             p = os.path.join(d, n)
             if os.path.isfile(p):
                 return p
-    # 装到非默认盘时按盘符扫一层 Tencent 目录
-    for letter in "CDEFGH":
-        for sub in ("Tencent\\Weixin", "Tencent\\WeChat"):
-            for n in names:
-                p = os.path.join(f"{letter}:\\Program Files", sub, n)
-                if os.path.isfile(p):
-                    return p
     return ""
 
 

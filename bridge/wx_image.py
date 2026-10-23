@@ -142,30 +142,33 @@ def decode_file(path: str, aes_key: bytes, xor_key: int) -> DecodedImage:
         return decode(fh.read(), aes_key, xor_key)
 
 
-def sniff_xor_key(paths, aes_key: bytes) -> int:
+def sniff_xor_key(paths, aes_key: bytes = b"") -> int:
     """从一批文件里反推 XOR 密钥。
 
     判据：尾段解出的最后一字节应当是图片的结束标记（JPEG 的 FFD9）。逐字节尝试
     0-255，取让最多文件成立的那个。样本不足时抛错，交上层要求用户提供。
+
+    `aes_key` 只用于日志；反推本身不需要它——只用到文件尾字节与段长度。
     """
     votes: dict[int, int] = {}
+    n = 0
     for p in paths[:64]:
         try:
             with open(p, "rb") as fh:
                 raw = fh.read()
         except OSError:
             continue
-        if len(raw) < 1060 or raw[:6] != MAGIC:
+        if len(raw) < 16 or raw[:6] != MAGIC:
             continue
         _aes, xor_size = struct.unpack_from("<LL", raw, 6)
-        if xor_size < 2:
+        # 尾段至少要有一个字节，否则推不出密钥
+        if xor_size < 1 or xor_size > len(raw) - 15:
             continue
-        last = raw[-1]
-        # JPEG 以 FFD9 结尾，故 key = 末字节 ^ 0xD9
-        k = last ^ 0xD9
+        n += 1
+        k = raw[-1] ^ 0xD9
         votes[k] = votes.get(k, 0) + 1
     if not votes:
         raise ImageDecodeError("没有足够的样本反推 XOR 密钥")
     best = max(votes, key=votes.get)
-    log.info("反推 XOR 密钥 0x%02x（%d/%d 个文件支持）", best, votes[best], len(paths[:64]))
+    log.info("反推 XOR 密钥 0x%02x（%d/%d 个文件支持）", best, votes[best], n)
     return best

@@ -24,6 +24,7 @@ if _REPO_ROOT not in sys.path:
 import state
 import config
 import wechat_account
+from single_instance import acquire_mutex
 from senders import create_sender
 from ob_server import _run_ob_server
 from bridge_core import WeFlowBridge
@@ -263,30 +264,13 @@ if __name__ == "__main__":
 
     PID_FILE = os.path.join(os.path.dirname(os.path.abspath(config.CONFIG_FILE)), "bridge.pid")
 
-    def pid_exists(pid):
-        try:
-            import ctypes
-            from ctypes import wintypes
-            h = ctypes.windll.kernel32.OpenProcess(0x0400, False, pid)
-            if h:
-                ctypes.windll.kernel32.CloseHandle(h)
-                return True
-            return False
-        except Exception:
-            return True
+    # 判重交给内核对象；句柄存模块级变量，进程活着期间不能释放
+    _instance_mutex, _already_running = acquire_mutex()
+    if _already_running:
+        log.error("⚠️ 已有一个 bridge 在运行")
+        sys.exit(1)
 
-    if os.path.exists(PID_FILE):
-        try:
-            with open(PID_FILE, "r") as f:
-                old_pid = int(f.read().strip())
-            if pid_exists(old_pid):
-                log.error("⚠️ bridge.pid 已存在")
-                sys.exit(1)
-            else:
-                os.remove(PID_FILE)
-        except (ValueError, OSError):
-            os.remove(PID_FILE)
-
+    # pid 文件只作人工排查用（谁在跑、pid 是多少）
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
 

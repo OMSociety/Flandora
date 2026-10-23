@@ -55,7 +55,6 @@ BRIDGE_EXE = BRIDGE_DIR / ("bridge.exe" if sys.platform == "win32" else "bridge"
 BRIDGE_MAIN = BRIDGE_EXE if BRIDGE_EXE.exists() else (BRIDGE_DIR / "main.py")
 
 BRIDGE_LOG = BRIDGE_DIR / "bridge.log"
-BRIDGE_PID = BRIDGE_DIR / "bridge.pid"
 
 # Python 解释器：打包后用 sys.executable（同目录 Python）；源码用系统 Python（自动探测）
 if getattr(sys, "frozen", False):
@@ -222,20 +221,6 @@ class BridgeController:
             return f"运行中  PID={self._pid_text_cached}（自管）"
         return f"运行中  PID={self._pid_text_cached}（外部，已接管）"
 
-    def _clean_stale_bridge_pid(self) -> None:
-        """bridge.pid 存在但 PID 不在跑 → 视为残留，删除之（bridge 自身的启动检查太严苛）"""
-        if not IS_WINDOWS or not BRIDGE_PID.exists():
-            return
-        try:
-            content = BRIDGE_PID.read_text(encoding="utf-8", errors="replace").strip()
-            if content.isdigit():
-                pid = int(content)
-                if not self._alive_pid(pid):
-                    BRIDGE_PID.unlink()
-                    self._log(f"[manager] 清理残留 bridge.pid (旧 PID={pid})")
-        except Exception as exc:  # noqa: BLE001
-            self.log_queue.put(f"[manager] 清理 bridge.pid 失败: {exc}\n")
-
     def start(self) -> tuple[bool, str]:
         with self.lock:
             if self.is_running():
@@ -244,7 +229,6 @@ class BridgeController:
                 return False, f"找不到 Python: {PYTHON_EXE}"
             if not BRIDGE_MAIN.exists():
                 return False, f"找不到 bridge 主程序: {BRIDGE_MAIN}"
-            self._clean_stale_bridge_pid()
             try:
                 flags = subprocess.CREATE_NO_WINDOW if IS_WINDOWS else 0
                 env = os.environ.copy()

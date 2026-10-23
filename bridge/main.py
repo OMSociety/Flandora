@@ -103,16 +103,34 @@ def _bridge_loop():
     import ctypes
     ctypes.windll.ole32.CoInitialize(None)
 
-    if not config.ACCESS_TOKEN:
-        log.error("❌ 未配置 access_token")
+    inbound = config.INBOUND_SOURCE
+    if inbound == "weflow" and not config.ACCESS_TOKEN:
+        log.error("❌ 收件源是 weflow，但未配置 access_token")
         state.running = False
         return
 
-    log.info(f"Bridge | WeFlow: {config.WE_FLOW_BASE_URL} | OB11: {config.ASTRBOT_OB_URL} | 发送: uia")
+    log.info(f"Bridge | 收件: {inbound} | OB11: {config.ASTRBOT_OB_URL} | 发送: uia")
 
     bridge = WeFlowBridge(state.sender_instance)
     with state.bridge_lock:
         state.bridge_instance = bridge
+
+    if inbound == "local":
+        # 本地库收件自己轮询、自己重试，起不来时（还没登录、口令没取到）
+        # 隔一会儿再试，避免把失败当成功直接退出。
+        while state.running:
+            try:
+                bridge.listen_local_db()
+            except Exception as e:  # noqa: BLE001
+                log.error(f"本地库收件异常：{e}")
+            if not state.running:
+                break
+            log.warning("⚠️ 本地库收件未就绪，10s 后重试")
+            for _ in range(10):
+                if not state.running:
+                    break
+                time.sleep(1)
+        return
 
     try:
         # 探活改用 /api/v1/accounts：Alpha 的 /api/v1/messages 强制要求 talker 参数，

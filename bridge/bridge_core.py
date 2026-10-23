@@ -22,6 +22,8 @@ import requests
 
 import state
 import config
+import wx_crypto
+import wx_source
 from ob_protocol import push_event, make_message_event
 
 try:
@@ -548,25 +550,11 @@ class WeFlowBridge:
                         continue
                     try:
                         data = json.loads(data_str)
-                        msg_time = data.get("timestamp", 0)
-                        if msg_time < self.start_timestamp:
-                            continue
-                        raw_id = data.get("rawid", "")
-                        if raw_id in self.processed_ids:
-                            continue
-                        self.processed_ids.add(raw_id)
-                        if not self.should_ignore(data):
-                            if data.get("sessionType", "") == "group" or "@chatroom" in data.get("sessionId", ""):
-                                content = data.get("content", "")
-                                log.info(f"📩 群消息 [{data.get('sourceName','')}]: {content[:60]}")
-                                if state.group_reply_mode == "mention":
-                                    mentioned = any(f"@{n}" in content for n in config.BOT_NICKNAMES)
-                                    log.info(f"   @={mentioned}")
-                            else:
-                                log.info(f"📩 收到: {data.get('sourceName','')} → {data.get('content','')[:50]}")
-                            self.add_to_buffer(data)
                     except json.JSONDecodeError:
-                        pass
+                        continue
+                    if data.get("timestamp", 0) < self.start_timestamp:
+                        continue
+                    self._ingest(data)
 
         except requests.exceptions.ConnectionError:
             log.error("无法连接 WeFlow")
@@ -574,6 +562,58 @@ class WeFlowBridge:
             log.error(f"SSE 异常: {e}")
         finally:
             self._sse_session = None
+
+    def _ingest(self, data):
+        """一条消息进入缓冲区的唯一入口。
+
+        收件源只负责把消息整理成统一形态，去重、过滤与缓冲都在这里，
+        这样换收件源不会影响后面的链路。
+        """
+        raw_id = data.get("rawid", "")
+        if raw_id:
+            if raw_id in self.processed_ids:
+                return False
+            self.processed_ids.add(raw_id)
+        if self.should_ignore(data):
+            return False
+        if data.get("sessionType", "") == "group" or "@chatroom" in data.get("sessionId", ""):
+            content = data.get("content", "")
+            log.info(f"📩 群消息 [{data.get('sourceName','')}]: {content[:60]}")
+            if state.group_reply_mode == "mention":
+                mentioned = any(f"@{n}" in content for n in config.BOT_NICKNAMES)
+                log.info(f"   @={mentioned}")
+        else:
+            log.info(f"📩 收到: {data.get('sourceName','')} → {data.get('content','')[:50]}")
+        self.add_to_buffer(data)
+        return True
+
+    def listen_local_db(self):
+        """轮询微信本地库收件。
+
+        与 listen_sse 产出同样的消息形态，因此两者可以互换。
+        """
+        try:
+            source = wx_source.build_source()
+        except Exception as e:  # noqa: BLE001
+            log.error(f"本地库收件源启动失败：{e}")
+            return
+
+        source.prime()
+        try:
+            while state.running:
+                try:
+                    for data in source.poll():
+                        if not state.running:
+                            break
+                        self._ingest(data)
+                except wx_crypto.WrongKey:
+                    log.error("微信口令与当前登录账号对不上（切换过账号？），本地库收件停止")
+                    return
+                except Exception as e:  # noqa: BLE001
+                    log.warning(f"轮询本地库出错：{e}")
+                time.sleep(source.poll_seconds)
+        finally:
+            log.info("本地库收件已停止")
 
     def _fetch_wechat_image(self, talker: str) -> str | None:
         """从 WeFlow REST API 获取最新图片并保存到本地"""

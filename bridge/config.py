@@ -66,6 +66,19 @@ WECHAT_FILES_ROOT = config.get("wechat_files_root", "")
 # 微信收到投递进来的鼠标/键盘消息就会把自己升到前台，这是它的行为，发送器无法避免；
 # 开启后发送器会在发完立刻把前台还给原窗口，但发送期间前台确实会短暂切到微信。
 ALLOW_FOREGROUND_STEAL = bool(config.get("allow_foreground_steal", False))
+
+# ============ 收件源 ============
+# 消息从哪来："local" = 直接读微信本地库（不依赖任何第三方插件），
+#             "weflow" = 沿用 WeFlow 的 SSE 推送
+INBOUND_SOURCE = (config.get("inbound_source", "local") or "local").strip().lower()
+# 微信口令文件（64 位十六进制）。留空 = 配置文件同目录下的 wx_key.hex
+WX_KEY_FILE = config.get("wx_key_file", "")
+# 解密结果与游标的存放目录。留空 = 配置文件同目录下的 wx_cache
+WX_WORK_DIR = config.get("wx_work_dir", "")
+# 首次启动时回填多少秒内的历史消息（0 = 只收启动之后的新消息）
+WX_BACKFILL_SECONDS = int(config.get("wx_backfill_seconds", 0) or 0)
+# 轮询本地库的间隔（秒）
+WX_POLL_SECONDS = float(config.get("wx_poll_seconds", 1.0) or 1.0)
 # 发送方式已固定为 UIA 纯键盘模拟
 BUFFER_SECONDS = config.get("buffer_seconds", 5)
 WEB_PORT = config.get("web_port", 8766)

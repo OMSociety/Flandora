@@ -6,6 +6,7 @@
     config           配置读取
     state            进程级运行状态
     single_instance  单实例判重（命名互斥量）
+    update_check     启动时查一次新版本
     webui/           本地配置界面（FastAPI + 前端产物 dist/）
     wxkey/           数据库口令的取钥与还原
     wx_crypto        SQLCipher 4 页解密
@@ -13,3 +14,5 @@
     wx_image         图片 .dat 还原
     wx_desktop       隔离桌面
 """
+
+__version__ = "1.0.0"

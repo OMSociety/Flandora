@@ -36,7 +36,7 @@ try:
 except Exception:
     config = None
 
-log = logging.getLogger("webot-bridge")
+log = logging.getLogger("ob11-bridge")
 
 # Windows 消息 / 虚拟键码
 WM_KEYDOWN = 0x0100

@@ -34,13 +34,14 @@ from fastapi.staticfiles import StaticFiles
 
 from .. import state
 from .. import config
+from .. import __version__
 from ..ws_pool import _clients
 from . import monitor
 from .monitor import bus
 
 log = logging.getLogger("ob11-bridge")
 
-VERSION = "2.0.0"
+VERSION = __version__
 WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(WEBUI_DIR, "dist")
 
@@ -127,6 +128,7 @@ def get_status() -> dict:
         "counters": counters,
         "window": window,
         "window_locked": bool(getattr(config, "WECHAT_HWND", 0)),
+        "update": state.update_available,
     }
 
 

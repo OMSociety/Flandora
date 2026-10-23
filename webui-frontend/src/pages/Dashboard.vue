@@ -211,6 +211,11 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="dashboard">
+    <!-- 新版本提示：后台查一次 GitHub Release，查到才会出现 -->
+    <div class="update-note" v-if="status.update && status.update.latest">
+      <span>有新版本 <b>{{ status.update.latest }}</b>（当前 {{ status.update.current }}）</span>
+      <a :href="status.update.url" target="_blank" rel="noreferrer">查看发布页</a>
+    </div>
     <!-- 状态卡片 -->
     <div class="cards">
       <div class="card stat-card">
@@ -457,6 +462,17 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+.update-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid var(--amber);
+  border-radius: 10px;
+  background: rgba(245, 176, 65, 0.08);
+  font-size: 13px;
 }
 .cards {
   display: grid;

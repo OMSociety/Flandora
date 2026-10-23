@@ -55,6 +55,9 @@ ob_server_started = False
 # 群聊回复模式（运行时可变，启动时从 config 初始化）
 group_reply_mode = "mention"
 
+# 新版本提示：update_check 查到有新版时填 {"latest","current","url"}，否则 None
+update_available: Optional[dict] = None
+
 # 图片描述配置（运行时可变，Web 面板保存后即时生效）
 image_caption_provider = "ollama"
 image_caption_model = "llava:7b"

@@ -62,6 +62,10 @@ BOT_WXID = config.get("bot_wxid", "")
 WECHAT_HWND = int(config.get("wechat_hwnd", 0) or 0)
 # 微信数据根目录（用于识别当前登录账号；留空 = 自动解析系统「文档」目录下的 xwechat_files）
 WECHAT_FILES_ROOT = config.get("wechat_files_root", "")
+# 允许发送消息时把微信窗口提到前台（默认关闭）
+# 微信收到投递进来的鼠标/键盘消息就会把自己升到前台，这是它的行为，发送器无法避免；
+# 开启后发送器会在发完立刻把前台还给原窗口，但发送期间前台确实会短暂切到微信。
+ALLOW_FOREGROUND_STEAL = bool(config.get("allow_foreground_steal", False))
 # 发送方式已固定为 UIA 纯键盘模拟
 BUFFER_SECONDS = config.get("buffer_seconds", 5)
 WEB_PORT = config.get("web_port", 8766)

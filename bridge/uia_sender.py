@@ -6,14 +6,16 @@ uia_sender.py — 微信消息发送器
 
 - AttachThreadInput 共享输入队列 + SetActiveWindow，使微信线程能处理投递
   进来的鼠标/键盘消息
-- 已知边界：投递输入会使微信窗口升到前台。这是微信对输入消息的响应，
-  本模块无法避免（实测 SetFocus/SetValue/WM_CHAR/鼠标消息皆然）。
-  需要「前台始终是用户的窗口」时不能使用本模块
+- 投递输入会使微信窗口升到前台：微信收到投递进来的鼠标或键盘消息就升前台，
+  本模块无法避免（实测 SetFocus/SetValue/WM_CHAR/鼠标消息皆然）。因此发送通道
+  由 allow_foreground_steal 开关控制，默认关闭；关闭时发送直接失败并记日志
+- 开启后每条消息发完立刻把前台还给发送前的前台窗口（实测 3-11 毫秒），
+  用户看到的是一次短暂切换，而不是前台被微信占住
 - 联系人切换优先点会话列表项，列表里没有时才退回顶部搜索框
 - 文本用 WM_CHAR 逐字符输入（中文可靠，避免剪贴板/输入法问题）
 - 图片/文件用剪贴板 + 伪造 Ctrl 键态的 Ctrl+V
 - 发送前回读输入框校验，发送后按会话摘要行确认；任一步不符即报失败
-- 不最小化窗口、不改动窗口尺寸与位置
+- 不移动窗口、不改动窗口尺寸与位置、不改动置顶状态
 
 依赖:
   pip install uiautomation
@@ -47,8 +49,12 @@ VK_CONTROL = 0x11
 VK_LCONTROL = 0xA2
 VK_RETURN = 0x0D
 VK_BACK = 0x08
+VK_END = 0x23
 VK_ESCAPE = 0x1B
 VK_V = 0x56
+
+# ShowWindow 命令：还原并激活窗口
+SW_RESTORE = 9
 
 # WM_KEYUP 的 lParam：低位为重复次数 1，其余位标明键已抬起
 KEYUP_LPARAM = 0xC0000001
@@ -241,8 +247,10 @@ class UiaSender(BaseSender):
             cls._user32 = ctypes.windll.user32
         return cls._user32
 
-    def __init__(self, search_enabled: bool = True):
+    def __init__(self, search_enabled: bool = True,
+                 allow_foreground_steal: bool = False):
         self._lock = threading.Lock()
+        self._send_lock = threading.Lock()
         self._auto = None
         self._ready = False
 
@@ -257,8 +265,12 @@ class UiaSender(BaseSender):
 
         # 最近联系人缓存（相同目标跳过切换，快速发送）
         self._last_contact = ""
+        # 本次发送开始时的前台窗口（0 = 无需还原）
+        self._fg_before = 0
 
         self.search_enabled = search_enabled
+        # 是否允许发送时把微信窗口提到前台。关闭时发送通道整体不可用。
+        self.allow_foreground_steal = bool(allow_foreground_steal)
 
         self._init()
 
@@ -615,6 +627,98 @@ class UiaSender(BaseSender):
             pass
         self._attached = False
 
+    # ================================================================
+    # 前台窗口：发送通道开关与发完还原
+    # ================================================================
+
+    def _foreground_gate(self, contact: str) -> bool:
+        """发送通道开关检查。
+
+        微信收到投递进来的鼠标或键盘消息就会把自己升到前台，本模块无法避免，
+        所以通道默认关闭，要 config.json 里显式打开才发送。
+        """
+        if self.allow_foreground_steal:
+            return True
+        log.error(
+            f"[UIA✗] {contact}: 发送通道未启用——发送会把微信窗口提到前台。"
+            "确认可以接受后，把 config.json 里的 allow_foreground_steal 设为 true "
+            "并重启 bridge"
+        )
+        return False
+
+    @classmethod
+    def _foreground_window(cls) -> int:
+        """当前前台窗口句柄，取不到返回 0。"""
+        try:
+            return int(cls._user32_inst().GetForegroundWindow() or 0)
+        except Exception:
+            return 0
+
+    @classmethod
+    def _raise_window(cls, hwnd: int) -> bool:
+        """把指定窗口提到前台，成功返回 True。
+
+        裸 SetForegroundWindow 会被 Windows 的前台锁挡掉（实测三次只成一次）；
+        先 AttachThreadInput 到「当前前台窗口所属线程」，再 BringWindowToTop +
+        SetForegroundWindow，实测三次全成、耗时 3-11 毫秒。
+
+        只做还原动作：不移动窗口、不改尺寸、不改置顶状态。ShowWindow 仅在窗口
+        处于最小化时调用，避免把最大化的窗口还原成普通尺寸。
+        """
+        if not hwnd:
+            return False
+        user32 = cls._user32_inst()
+        kernel32 = ctypes.windll.kernel32
+        try:
+            if not user32.IsWindow(hwnd):
+                return False
+            cur = int(user32.GetForegroundWindow() or 0)
+            tid_cur = user32.GetWindowThreadProcessId(cur, None) if cur else 0
+            tid_me = kernel32.GetCurrentThreadId()
+            attached = False
+            if tid_cur and tid_cur != tid_me:
+                attached = bool(user32.AttachThreadInput(tid_me, tid_cur, True))
+            try:
+                if user32.IsIconic(hwnd):
+                    user32.ShowWindow(hwnd, SW_RESTORE)
+                user32.BringWindowToTop(hwnd)
+                user32.SetForegroundWindow(hwnd)
+            finally:
+                if attached:
+                    user32.AttachThreadInput(tid_me, tid_cur, False)
+        except Exception as e:
+            log.warning(f"把窗口提到前台失败: {e}")
+            return False
+        deadline = time.perf_counter() + 1.0
+        while time.perf_counter() < deadline:
+            if int(user32.GetForegroundWindow() or 0) == hwnd:
+                return True
+            time.sleep(0.02)
+        return int(user32.GetForegroundWindow() or 0) == hwnd
+
+    def _restore_foreground(self, hwnd: int) -> None:
+        """把前台还给发送前的前台窗口。
+
+        投递输入会把微信升到前台；发完立刻还回去，用户看到的是一次短暂切换而不是
+        前台被占住。发送前的前台本来就是微信、或那个窗口已经关掉时无需处理。
+
+        还原失败不影响发送结果，只记一条日志。
+        """
+        if not hwnd or hwnd == self._hwnd:
+            return
+        if self._foreground_window() == hwnd:
+            return
+        if not self._raise_window(hwnd):
+            log.warning("前台没有还给原窗口（消息本身已发出）")
+
+    def _release_foreground(self) -> None:
+        """在一次投递动作做完后立刻还前台，不等后面的送达确认。
+
+        送达确认要轮询会话摘要（最长约 3 秒），那段时间没必要把用户的前台占着；
+        每步投递后都调一次，前台本来就没被拿走时它只做两次 API 调用，几乎不耗时。
+        """
+        self._restore_foreground(self._fg_before)
+
     def _post_key(self, vk: int, *modifiers: int) -> None:
         """向微信主窗口投递一次按键（可带修饰键）。"""
         user32 = self._user32_inst()
@@ -901,22 +1005,40 @@ class UiaSender(BaseSender):
     # ================================================================
 
     def send_text(self, contact: str, text: str) -> bool:
-        """发送文本消息（顶层防护：微信重启/COM 失效时安全失败并自动重绑）。"""
-        try:
-            return self._send_text_impl(contact, text)
-        except Exception as e:
-            log.error(f"[UIA✗] {contact}: 发送异常（窗口可能已失效）: {e}")
-            with self._lock:
-                self._invalidate_window()
+        """发送文本消息。
+
+        顶层防护：通道未启用时直接拒绝；微信重启/COM 失效时安全失败并自动重绑；
+        发送结束后把前台还给发送前的前台窗口。
+        """
+        if not self._foreground_gate(contact):
             return False
+        with self._send_lock:
+            self._fg_before = self._foreground_window()
+            try:
+                return self._send_text_impl(contact, text)
+            except Exception as e:
+                log.error(f"[UIA✗] {contact}: 发送异常（窗口可能已失效）: {e}")
+                with self._lock:
+                    self._invalidate_window()
+                return False
+            finally:
+                self._restore_foreground(self._fg_before)
+                self._fg_before = 0
 
     def _clear_input(self) -> bool:
-        """清空输入框（退格逐字符删），并回读确认。"""
+        """清空输入框（先把插入点移到末尾，再退格逐字符删），并回读确认。
+
+        插入点不一定在末尾——输入框里的内容可能是别的程序写进去的，此时退格删不到
+        任何东西，输入框看着「清不掉」。所以每轮先投一次 VK_END。
+        """
         user32 = self._user32_inst()
         for _ in range(8):
             current = self._input_text()
             if not current:
                 return True
+            user32.PostMessageW(self._hwnd, WM_KEYDOWN, VK_END, 1)
+            user32.PostMessageW(self._hwnd, WM_KEYUP, VK_END, KEYUP_LPARAM)
+            time.sleep(0.05)
             for _ in range(len(current) + 4):
                 user32.PostMessageW(self._hwnd, WM_KEYDOWN, VK_BACK, 1)
                 user32.PostMessageW(self._hwnd, WM_KEYUP, VK_BACK, KEYUP_LPARAM)
@@ -982,6 +1104,8 @@ class UiaSender(BaseSender):
         try:
             user32.SetKeyboardState(bytes(state))
             self._post_key(VK_V, VK_CONTROL)
+            # 粘贴键一投出去，抢前台就已经发生了，立刻还回去，不等粘贴落定
+            self._release_foreground()
             time.sleep(1.2)
         finally:
             state[VK_CONTROL] = 0
@@ -1006,6 +1130,7 @@ class UiaSender(BaseSender):
 
             if not self._prepare_target(contact):
                 return False
+            self._release_foreground()
 
             self._attach_input()
             try:
@@ -1013,16 +1138,19 @@ class UiaSender(BaseSender):
                 if not self._clear_input():
                     log.error(f"[UIA✗] {contact}: 输入框有清不掉的残留，本次发送已取消")
                     return False
+                self._release_foreground()
                 if not self._type_text(text):
                     self._clear_input()
                     log.error(f"[UIA✗] {contact}: 文字未能完整进到输入框，本次发送已取消")
                     return False
+                self._release_foreground()
                 if self._open_chat_title() != contact:
                     self._clear_input()
                     log.error(f"[UIA✗] {contact}: 输入期间会话已改变，本次发送已取消")
                     return False
 
                 self._post_key(VK_RETURN)
+                self._release_foreground()
                 time.sleep(0.6)
 
                 if not self._confirm_sent(contact, text, summary_before):
@@ -1041,14 +1169,25 @@ class UiaSender(BaseSender):
     # ================================================================
 
     def send_image(self, contact: str, image_path: str) -> bool:
-        """发送图片（顶层防护：微信重启/COM 失效时安全失败并自动重绑）。"""
-        try:
-            return self._send_image_impl(contact, image_path)
-        except Exception as e:
-            log.error(f"[UIA✗] 图片 → {contact}: 发送异常（窗口可能已失效）: {e}")
-            with self._lock:
-                self._invalidate_window()
+        """发送图片。
+
+        顶层防护：通道未启用时直接拒绝；微信重启/COM 失效时安全失败并自动重绑；
+        发送结束后把前台还给发送前的前台窗口。
+        """
+        if not self._foreground_gate(contact):
             return False
+        with self._send_lock:
+            self._fg_before = self._foreground_window()
+            try:
+                return self._send_image_impl(contact, image_path)
+            except Exception as e:
+                log.error(f"[UIA✗] 图片 → {contact}: 发送异常（窗口可能已失效）: {e}")
+                with self._lock:
+                    self._invalidate_window()
+                return False
+            finally:
+                self._restore_foreground(self._fg_before)
+                self._fg_before = 0
 
     def _send_image_impl(self, contact: str, image_path: str) -> bool:
         """发送图片（剪贴板 + 后台 Ctrl+V + Enter）。"""
@@ -1060,6 +1199,7 @@ class UiaSender(BaseSender):
                 return False
             if not self._prepare_target(contact):
                 return False
+            self._release_foreground()
             if not self._copy_image_to_clipboard(image_path):
                 return False
 
@@ -1068,14 +1208,17 @@ class UiaSender(BaseSender):
                 if not self._clear_input():
                     log.error(f"[UIA✗] 图片 → {contact}: 输入框有清不掉的残留，本次发送已取消")
                     return False
+                self._release_foreground()
                 if not self._paste_clipboard(expect_image=True):
                     self._clear_input()
                     log.error(
                         f"[UIA✗] 图片 → {contact}: 剪贴板图片没能贴进输入框，本次发送已取消"
                     )
                     return False
+                self._release_foreground()
 
                 self._post_key(VK_RETURN)
+                self._release_foreground()
                 time.sleep(0.8)
 
                 summary = self._session_summary(contact) or ""
@@ -1100,14 +1243,23 @@ class UiaSender(BaseSender):
         实现方式：用 PowerShell 把文件路径放到剪贴板的 CF_HDROP 格式（即
         "拖入文件"语义），再到聊天窗口 Ctrl+V，微信会识别为文件并显示文件名，
         按 Enter 发送。
+
+        顶层防护：通道未启用时直接拒绝；发送结束后把前台还给发送前的前台窗口。
         """
-        try:
-            return self._send_file_impl(contact, file_path)
-        except Exception as e:
-            log.error(f"[UIA✗] 文件 → {contact}: 发送异常（窗口可能已失效）: {e}")
-            with self._lock:
-                self._invalidate_window()
+        if not self._foreground_gate(contact):
             return False
+        with self._send_lock:
+            self._fg_before = self._foreground_window()
+            try:
+                return self._send_file_impl(contact, file_path)
+            except Exception as e:
+                log.error(f"[UIA✗] 文件 → {contact}: 发送异常（窗口可能已失效）: {e}")
+                with self._lock:
+                    self._invalidate_window()
+                return False
+            finally:
+                self._restore_foreground(self._fg_before)
+                self._fg_before = 0
 
     def _send_file_impl(self, contact: str, file_path: str) -> bool:
         """发送文件（CF_HDROP 剪贴板 + 后台 Ctrl+V + Enter）。"""
@@ -1119,6 +1271,7 @@ class UiaSender(BaseSender):
                 return False
             if not self._prepare_target(contact):
                 return False
+            self._release_foreground()
             name = os.path.basename(file_path)
             if not self._copy_file_to_clipboard(file_path):
                 return False
@@ -1128,12 +1281,15 @@ class UiaSender(BaseSender):
                 if not self._clear_input():
                     log.error(f"[UIA✗] 文件 → {contact}: 输入框有清不掉的残留，本次发送已取消")
                     return False
+                self._release_foreground()
                 if not self._paste_clipboard(expect_image=False):
                     self._clear_input()
                     log.error(f"[UIA✗] 文件 → {contact}: 文件没能贴进输入框，本次发送已取消")
                     return False
+                self._release_foreground()
 
                 self._post_key(VK_RETURN)
+                self._release_foreground()
                 time.sleep(0.8)
 
                 summary = self._session_summary(contact) or ""

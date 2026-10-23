@@ -570,12 +570,21 @@ class BridgeManagerApp:
             return
         # 写一个 bat 到 Startup 目录，绕过快捷方式依赖
         bat = APPDATA_AUTOSTART_BAT
-        bat.write_text(
-            f'@echo off\r\n'
-            f'cd /d "{HERE}"\r\n'
-            f'start "" "{PYTHON_EXE}" "{HERE / "bridge_manager.py"}"\r\n',
-            encoding="gbk",
-        )
+        if getattr(sys, "frozen", False):
+            # 打包后直接启动管理器 exe：发布包里没有 bridge_manager.py，
+            # 也不该要求用户装 Python
+            body = (
+                f'@echo off\r\n'
+                f'cd /d "{HERE}"\r\n'
+                f'start "" "{HERE / "WeBotBridge-Manager.exe"}"\r\n'
+            )
+        else:
+            body = (
+                f'@echo off\r\n'
+                f'cd /d "{HERE}"\r\n'
+                f'start "" "{PYTHON_EXE}" "{HERE / "bridge_manager.py"}"\r\n'
+            )
+        bat.write_text(body, encoding="gbk")
         self._log(f"[自启] 已写入 {bat}")
 
     def _disable_autostart(self) -> None:

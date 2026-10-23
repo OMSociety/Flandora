@@ -43,10 +43,10 @@ def _start_bridge():
     state.paused.clear()
 
     # 先把 OB11 服务端拉起来——发消息可能依赖微信窗口搜索，先保证能收消息
-    if not state.ob_client_started:
+    if not state.ob_server_started:
         t = threading.Thread(target=_run_ob_server, daemon=True, name="ob11-server")
         t.start()
-        state.ob_client_started = True
+        state.ob_server_started = True
 
     # create_sender() 会做 UIA 窗口枚举，可能阻塞（微信最小化/锁屏时尤甚），
     # 放到独立线程避免卡住 _bridge_loop（SSE 收消息）的启动。
@@ -104,7 +104,7 @@ def _stop_bridge():
     state._ob_ws_ready.clear()
 
     # 重置启动标记，让下次 start 能重新拉起 WebSocket 服务端线程
-    state.ob_client_started = False
+    state.ob_server_started = False
     state._ob_ws_loop = None
 
     log.info("[Web] 已停止")

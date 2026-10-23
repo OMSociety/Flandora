@@ -7,14 +7,13 @@ import os
 import sys
 import tempfile
 
-# 仓库根 = 本文件的上一级；bridge 包在仓库根的 bridge/ 下。
+# 仓库根 = 本文件的上一级；包在仓库根的 webot_bridge/ 下。
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BRIDGE = os.path.join(REPO_ROOT, "bridge")
-for p in (BRIDGE, REPO_ROOT):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+PKG = os.path.join(REPO_ROOT, "webot_bridge")
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
-from wxkey import recover
+from webot_bridge.wxkey import recover
 
 
 def test_candidates_prioritise_deref_head():

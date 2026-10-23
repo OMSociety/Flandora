@@ -8,18 +8,17 @@ import os
 import sys
 import tempfile
 
-BRIDGE = r"D:\WorkSpace\Github\wechat-onebot-bridge\bridge"
-REPO = os.path.dirname(BRIDGE)
-for p in (BRIDGE, REPO):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PKG = os.path.join(REPO_ROOT, "webot_bridge")
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 
 def with_cfg(fn):
     """在临时目录里造 config.json 并切换 cwd，跑完还原。"""
     d = tempfile.mkdtemp(prefix="wwb-idx-")
     import shutil
-    shutil.copy(os.path.join(BRIDGE, "config.example.json"), os.path.join(d, "config.json"))
+    shutil.copy(os.path.join(PKG, "config.example.json"), os.path.join(d, "config.json"))
     old = os.getcwd()
     os.chdir(d)
     try:
@@ -32,8 +31,8 @@ def main() -> int:
     os.environ.pop("WX_IMAGE_KEY_FILE", None)
 
     def run(d):
-        import config  # noqa: F401  触发配置加载
-        import wx_source
+        from webot_bridge import config  # noqa: F401  触发配置加载
+        from webot_bridge import wx_source
         # 写一份属于账号 other 的密钥
         with open(os.path.join(d, "wx_image_key.json"), "w", encoding="utf-8") as fh:
             json.dump({"wxid": "wxid_someone_else", "aes_key": "0123456789abcdef",

@@ -10,6 +10,9 @@
 用法（向导调起时用的就是这条）：
     WeBotBridge-KeyTool.exe --out <口令文件路径> --capture-out <取证jsonl> --json
 
+--out 省略时写到程序目录下的 data/wx_key.dat（打包 = exe 同级 data/，源码 = 仓库根
+data/），与 bridge 读写口令的位置一致。
+
 退出码：
     0  取到并已保存
     2  没取到（用户没重新登录、或当前微信版本不支持定位）
@@ -25,20 +28,32 @@ import sys
 import time
 from typing import Callable, Optional
 
-_BRIDGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_IMPL_ROOT = os.path.join(_BRIDGE_ROOT, "bridge")
-for _p in (_IMPL_ROOT, _BRIDGE_ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-from wxkey import capture, locator  # noqa: E402
-from wxkey.store import KeyStore, KeyStoreError  # noqa: E402
+from webot_bridge.wxkey import capture, locator  # noqa: E402
+from webot_bridge.wxkey.store import KeyStore, KeyStoreError  # noqa: E402
 
 log = logging.getLogger("wxkey.tool")
 
 EXIT_OK = 0
 EXIT_NOT_CAPTURED = 2
 EXIT_CANNOT_SAVE = 3
+
+
+def _default_out_path(filename: str) -> str:
+    """默认落盘位置：打包后取 exe 同级的 data/，源码运行时取仓库根下的 data/。
+
+    与 webot_bridge/config.py 的 data_dir() 规则一致。这里不直接复用它是为了避开
+    导入期副作用：config 在 import 时就会查找 config.json，找不到直接抛异常，而取钥
+    恰恰发生在用户还没生成配置的时候。
+    """
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = _REPO_ROOT
+    return os.path.join(base, "data", filename)
 
 
 class Reporter:
@@ -122,8 +137,9 @@ def run(out_path: str, *, capture_out: Optional[str] = None,
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="从微信里取数据库口令并加密保存")
-    parser.add_argument("--out", required=True,
-                        help="口令文件路径（DPAPI 加密，仅当前用户可解）")
+    parser.add_argument("--out", default=_default_out_path("wx_key.dat"),
+                        help="口令文件路径（DPAPI 加密，仅当前用户可解）；"
+                             "默认 data/wx_key.dat")
     parser.add_argument("--capture-out", default=None,
                         help="把截获的内存片段另存为 JSONL，便于排查问题")
     parser.add_argument("--login-wait", type=float, default=capture.LOGIN_WAIT,

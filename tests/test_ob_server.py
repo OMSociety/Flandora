@@ -15,11 +15,10 @@ import socket
 import sys
 import tempfile
 
-BRIDGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BRIDGE_SUB = os.path.join(BRIDGE, "bridge")
-for p in (BRIDGE_SUB, BRIDGE):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PKG = os.path.join(REPO_ROOT, "webot_bridge")
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 TOKEN = "test-token-8f3a"
 MB = 1024 * 1024
@@ -163,16 +162,16 @@ async def _checks(ob_server, config) -> int:
 def main() -> int:
     logging.getLogger().setLevel(logging.CRITICAL)
     d = tempfile.mkdtemp(prefix="wwb-ob-")
-    shutil.copy(os.path.join(BRIDGE_SUB, "config.example.json"),
+    shutil.copy(os.path.join(PKG, "config.example.json"),
                 os.path.join(d, "config.json"))
     old = os.getcwd()
     os.chdir(d)
     try:
-        import config
+        from webot_bridge import config
         config.OB_SERVER_HOST = "127.0.0.1"
         config.OB_SERVER_PORT = _free_port()
         config.OB_SERVER_TOKEN = TOKEN
-        import ob_server
+        from webot_bridge import ob_server
         checks = asyncio.run(_checks(ob_server, config))
     finally:
         os.chdir(old)

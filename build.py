@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
-"""WeChatOneBotBridge 一键打包脚本
+"""WeBot-Bridge 一键打包脚本
 
-打包三个组件：
-  - bridge.exe              来自 wechat-weflow-bridge-ob11/main.py
-  - MaiBotBridgeManager.exe 来自 bridge-manager/bridge_manager.py
-  - log_tail.exe            来自 bridge-manager/log_tail.py
+打包四个组件：
+  - WeBotBridge.exe            来自 run_bridge.py（webot_bridge 包的入口）
+  - WeBotBridge-Manager.exe    来自 manager/bridge_manager.py
+  - WeBotBridge-LogTail.exe    来自 manager/log_tail.py
+  - WeBotBridge-KeyTool.exe    来自 tools/keytool.py（唯一带 frida 的 exe）
 
-产物：dist/WeChatOneBotBridge-v1.0.0.zip
+前三个是运行必需；取钥器只在首次取钥与换号时用，单独成一个 exe 是为了不让
+frida 的几十 MB 拖进主程序。
+
+产物：dist/WeBot-Bridge-v1.0.0.zip
 """
 from __future__ import annotations
 
@@ -19,19 +23,29 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-BRIDGE_SRC = ROOT / "bridge"
+PKG_SRC = ROOT / "webot_bridge"
 MANAGER_SRC = ROOT / "manager"
-# WebUI 是仓库根下的独立包（webui/），不在 bridge/ 内；
-# bridge.exe 的入口在 bridge/main.py，因此打包时必须显式把 ROOT 加进分析路径。
-WEBUI_SRC = ROOT / "webui"
-WEBUI_FRONTEND = WEBUI_SRC / "frontend"
+TOOLS_SRC = ROOT / "tools"
+WEBUI_SRC = PKG_SRC / "webui"
+WEBUI_FRONTEND = ROOT / "webui-frontend"
 WEBUI_DIST = WEBUI_SRC / "dist"
+DOCS_SRC = ROOT / "docs"
 DIST = ROOT / "dist"
 BUILD = ROOT / "build"
 PYTHON = Path(sys.executable)
 
-VERSION = "1.1.1"
-PKG_NAME = f"WeChatOneBotBridge-v{VERSION}"
+VERSION = "1.0.0"
+PKG_NAME = f"WeBot-Bridge-v{VERSION}"
+
+# pip 走清华源，国内直连 PyPI 常常超时
+PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
+
+EXE_BRIDGE = "WeBotBridge"
+EXE_MANAGER = "WeBotBridge-Manager"
+EXE_LOGTAIL = "WeBotBridge-LogTail"
+EXE_KEYTOOL = "WeBotBridge-KeyTool"
+
+EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
 
 
 def step(msg: str) -> None:
@@ -42,11 +56,9 @@ def clean() -> None:
     for p in [DIST, BUILD]:
         if p.exists():
             shutil.rmtree(p, ignore_errors=True)
-    for sub in [BRIDGE_SRC, MANAGER_SRC, WEBUI_SRC]:
-        for d in sub.glob("__pycache__"):
+    for sub in [PKG_SRC, MANAGER_SRC, TOOLS_SRC]:
+        for d in sub.rglob("__pycache__"):
             shutil.rmtree(d, ignore_errors=True)
-        for f in sub.glob("*.spec"):
-            f.unlink(missing_ok=True)
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
@@ -60,10 +72,11 @@ def install_pyinstaller() -> None:
         print(f"PyInstaller 已安装：{PyInstaller.__version__}")
     except ImportError:
         step("安装 PyInstaller")
-        run([str(PYTHON), "-m", "pip", "install", "pyinstaller"])
+        run([str(PYTHON), "-m", "pip", "install", "-i", PIP_MIRROR, "pyinstaller"])
 
 
-def pyi(src: Path, name: str, workdir: Path, onefile: bool = True, windowed: bool = False, extra_args: list[str] | None = None) -> None:
+def pyi(src: Path, name: str, workdir: Path, onefile: bool = True,
+        windowed: bool = False, extra_args: list[str] | None = None) -> None:
     cmd = [
         str(PYTHON), "-m", "PyInstaller",
         "--noconfirm",
@@ -84,9 +97,9 @@ def pyi(src: Path, name: str, workdir: Path, onefile: bool = True, windowed: boo
 
 
 def ensure_webui_dist() -> None:
-    """确保 webui/dist 存在（WebUI 前端静态产物）。
+    """确保 webot_bridge/webui/dist 存在（WebUI 前端静态产物）。
 
-    dist 不在仓库里，必须由 vite 现场构建；缺了它 bridge.exe 能跑但 WebUI 只返回
+    dist 不在仓库里，必须由 vite 现场构建；缺了它 exe 能跑但 WebUI 只返回
     503「前端尚未构建」。发布包不该缺这一块，所以这里直接构建，失败就中止。
     """
     if (WEBUI_DIST / "index.html").is_file():
@@ -113,20 +126,20 @@ def ensure_webui_dist() -> None:
 
 
 def build_bridge() -> None:
-    step("打包 bridge.exe")
+    step(f"打包 {EXE_BRIDGE}{EXE_SUFFIX}")
     extras = [
-        # webui 包在仓库根，不在 bridge/ 内，PyInstaller 默认分析路径找不到它
+        # 入口脚本放在仓库根，webot_bridge 才会被完整收集
         "--paths", str(ROOT),
-        "--add-data", f"{BRIDGE_SRC / 'config.example.json'};.",
-        "--add-data", f"{WEBUI_DIST};webui/dist",
+        "--add-data", f"{PKG_SRC / 'config.example.json'};.",
+        "--add-data", f"{WEBUI_DIST};webot_bridge/webui/dist",
         # 隐藏 import（PyInstaller 默认按 import 追踪，一些动态加载需要手动加）
         "--hidden-import", "websockets",
         "--hidden-import", "comtypes.gen",
         "--hidden-import", "uiautomation",
         "--hidden-import", "PIL._tkinter_finder",
-        "--hidden-import", "webui",
-        "--hidden-import", "webui.app",
-        "--hidden-import", "webui.monitor",
+        "--hidden-import", "webot_bridge.webui",
+        "--hidden-import", "webot_bridge.webui.app",
+        "--hidden-import", "webot_bridge.webui.monitor",
         # uvicorn 用字符串动态选择事件循环、HTTP 与 WebSocket 实现，静态追踪不到
         "--hidden-import", "uvicorn.logging",
         "--hidden-import", "uvicorn.loops.auto",
@@ -136,22 +149,33 @@ def build_bridge() -> None:
         "--hidden-import", "uvicorn.protocols.websockets.websockets_impl",
         "--hidden-import", "uvicorn.lifespan.on",
     ]
-    pyi(BRIDGE_SRC / "main.py", "bridge", BRIDGE_SRC, onefile=True, windowed=False, extra_args=extras)
+    pyi(ROOT / "run_bridge.py", EXE_BRIDGE, ROOT, onefile=True, windowed=False, extra_args=extras)
+
+
+def build_keytool() -> None:
+    step(f"打包 {EXE_KEYTOOL}{EXE_SUFFIX}")
+    extras = [
+        "--paths", str(ROOT),
+        # frida 的 Python 包带编译扩展与二进制，collect-all 才能拿全
+        "--collect-all", "frida",
+    ]
+    pyi(TOOLS_SRC / "keytool.py", EXE_KEYTOOL, ROOT, onefile=True, windowed=False, extra_args=extras)
 
 
 def build_log_tail() -> None:
-    step("打包 log_tail.exe")
-    pyi(MANAGER_SRC / "log_tail.py", "log_tail", MANAGER_SRC, onefile=True, windowed=False)
+    step(f"打包 {EXE_LOGTAIL}{EXE_SUFFIX}")
+    pyi(MANAGER_SRC / "log_tail.py", EXE_LOGTAIL, MANAGER_SRC, onefile=True, windowed=False)
 
 
 def build_manager() -> None:
-    step("打包 MaiBotBridgeManager.exe")
+    step(f"打包 {EXE_MANAGER}{EXE_SUFFIX}")
     extras = [
         "--hidden-import", "pystray",
         "--hidden-import", "PIL._tkinter_finder",
         "--hidden-import", "tkinter",
     ]
-    pyi(MANAGER_SRC / "bridge_manager.py", "MaiBotBridgeManager", MANAGER_SRC, onefile=True, windowed=True, extra_args=extras)
+    pyi(MANAGER_SRC / "bridge_manager.py", EXE_MANAGER, MANAGER_SRC,
+        onefile=True, windowed=True, extra_args=extras)
 
 
 def assemble_zip() -> Path:
@@ -159,37 +183,42 @@ def assemble_zip() -> Path:
     rel = DIST / PKG_NAME
     if rel.exists():
         shutil.rmtree(rel)
-    rel.mkdir(parents=True)
+    (rel / "data").mkdir(parents=True)
 
     # 1) exe
-    for fname in ("bridge.exe", "MaiBotBridgeManager.exe", "log_tail.exe"):
+    for name in (EXE_BRIDGE, EXE_MANAGER, EXE_LOGTAIL, EXE_KEYTOOL):
+        fname = f"{name}{EXE_SUFFIX}"
         src = DIST / fname
-        if src.exists():
-            shutil.copy2(src, rel / fname)
+        if not src.exists():
+            raise SystemExit(f"缺少打包产物 {src}")
+        shutil.copy2(src, rel / fname)
 
-    # 2) 配置文件
-    shutil.copy2(BRIDGE_SRC / "config.example.json", rel / "config.json")
+    # 2) 配置模板：可写数据统一落在 data/
+    shutil.copy2(PKG_SRC / "config.example.json", rel / "data" / "config.json")
 
     # 3) 启动脚本（双击启动管理器）
     (rel / "启动.bat").write_text(
-        """@echo off
+        f"""@echo off
 chcp 65001 >nul
-start "" MaiBotBridgeManager.exe
+start "" {EXE_MANAGER}{EXE_SUFFIX}
 """,
         encoding="utf-8",
     )
 
-    # 4) WeChatOneBotBridge README（项目根的 README 是 Akasha-WeChat 历史说明，新的在 docs/）
-    readme_dst = rel / "README.md"
-    src_readme = ROOT / "docs" / "WeChatOneBotBridge-README.md"
-    if src_readme.exists():
-        shutil.copy2(src_readme, readme_dst)
+    # 4) README
+    readme = ROOT / "README.md"
+    if readme.is_file():
+        shutil.copy2(readme, rel / "README.md")
 
-    # 5) LICENSE（打包 zip 时附一份）
-    if not (rel / "LICENSE").exists() and (ROOT / "LICENSE").exists():
+    # 5) LICENSE
+    if (ROOT / "LICENSE").is_file():
         shutil.copy2(ROOT / "LICENSE", rel / "LICENSE")
 
-    # 5) 打包 zip
+    # 6) docs（已知限制与验证记录、第三方许可）
+    if DOCS_SRC.is_dir():
+        shutil.copytree(DOCS_SRC, rel / "docs")
+
+    # 7) 打包 zip
     zip_path = DIST / f"{PKG_NAME}.zip"
     if zip_path.exists():
         zip_path.unlink()
@@ -204,11 +233,12 @@ start "" MaiBotBridgeManager.exe
 
 def main() -> int:
     t0 = time.time()
-    DIST.mkdir(exist_ok=True)
     clean()
+    DIST.mkdir(parents=True, exist_ok=True)
     ensure_webui_dist()
     install_pyinstaller()
     build_bridge()
+    build_keytool()
     build_log_tail()
     build_manager()
     zip_path = assemble_zip()

@@ -10,13 +10,11 @@ import subprocess
 import sys
 import uuid
 
-BRIDGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BRIDGE_SUB = os.path.join(BRIDGE, "bridge")
-for p in (BRIDGE_SUB, BRIDGE):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
-import single_instance  # noqa: E402
+from webot_bridge import single_instance  # noqa: E402
 
 
 def main() -> int:
@@ -52,10 +50,10 @@ def main() -> int:
     # 跨进程：子进程拿同一个名字——这才是真正的使用场景
     code = (
         "import sys; sys.path.insert(0, %r);"
-        "from single_instance import acquire_mutex;"
+        "from webot_bridge.single_instance import acquire_mutex;"
         "h, running = acquire_mutex(%r);"
         "print('ALREADY' if running else 'FIRST')"
-    ) % (BRIDGE_SUB, name)
+    ) % (REPO_ROOT, name)
 
     def run_child(src: str) -> str:
         out = subprocess.run([sys.executable, "-c", src], capture_output=True,

@@ -1,411 +1,415 @@
-# WeChatOneBotBridge
+# WeBot-Bridge
 
-> **微信 ↔ OneBot v11 桥接**，让 MaiBot 直接接管微信收发消息。
-> 本项目是 [Akasha-WeChat](https://github.com/) 的衍生分支，改为对接 MaiBot 的微信适配器（OneBot v11 WS 服务端），并附桌面管理器。
+把微信个人号接进 [MaiBot](https://github.com/MaiM-with-u/MaiBot)（麦麦）：收微信消息、以本人身份回复，对麦麦侧表现为一个标准的 OneBot v11 实现。
 
----
+本仓库是 Windows 侧的桥接服务，负责与微信打交道。麦麦侧的插件在另一个仓库
+[MaiBot WeChat Adapter](https://github.com/OMSociety/mai-bot-wechat-adapter)。
 
-## 📑 目录
+> **提示：** 本程序通过自动化方式驱动你自己的微信客户端收发消息。这类用法可能与微信的用户协议冲突，账号存在被限制的风险。请只用自己的号，并自行评估。完整的合规与风险分析写在适配器仓库的 README 里。
 
-- [✨ 功能特性](#-功能特性)
-- [📦 安装](#-安装)
-- [🚀 快速开始](#-快速开始)
-- [⚙️ 配置详解](#️-配置详解)
-- [🖼️ 界面说明](#️-界面说明)
-- [⚠️ 使用注意事项（重要）](#️-使用注意事项重要)
-- [❓ 常见问题 FAQ](#-常见问题-faq)
-- [🏗️ 架构](#️-架构)
-- [🛠️ 开发者](#️-开发者)
-- [📜 协议与致谢](#-协议与致谢)
+## 目录
 
----
+- [这是什么](#这是什么)
+- [环境要求](#环境要求)
+- [安装](#安装)
+- [快速开始](#快速开始)
+- [配置详解](#配置详解)
+- [界面说明](#界面说明)
+- [使用注意事项](#使用注意事项)
+- [常见问题](#常见问题)
+- [已知限制](#已知限制)
+- [架构](#架构)
+- [开发者](#开发者)
+- [来源与致谢](#来源与致谢)
+- [许可证](#许可证)
 
-## ✨ 功能特性
+## 这是什么
 
-- 📡 **双向桥接**：微信消息 → MaiBot、MaiBot 回复 → 微信
-- 🎙️ **UIA 自动化**：基于 uiautomation 的原生键盘模拟发消息，零 hook、零注入
-- 🔌 **OneBot v11 标准**：MaiBot 通过微信适配器直连（WS Server on `0.0.0.0:7999`）
-- 🎵 **语音支持**：MaiBot 的 OneBot v11 `voice` segment 会以「mp3 文件卡片」形式发到微信（双击可播放；非"按住说话"式语音气泡）
-- 🌐 **WebUI 控制面板**：`http://127.0.0.1:8766` 看实时消息 / 改窗口绑定 / 发测试消息
-- 🎨 **桌面管理器**（QQ 风格）：实时日志、端口状态、一键启停、最小化到托盘
-- 🔁 **自动领养**：管理器启动时若发现已运行的 bridge，自动接管（不重复启动）
-- ⚡ **零卡顿拖拽**：主线程零 PowerShell 阻塞，3s 一次的轻量后台采集
-- 🚀 **打包即用**：双击 `启动.bat` 启动管理器，无需 Python 环境（见 Releases 的 zip 包）
+微信从 4.x 起把聊天记录存在本机的 SQLCipher 加密数据库里。WeBot-Bridge 的做法是：
 
----
+- **收件**：自带取钥能力，在微信登录的那一刻截获数据库口令，把本机数据库解密成标准 SQLite
+  副本后直接读取。不依赖任何第三方插件，也不走屏幕识别。
+- **发送**：用 UI 自动化操作真实的微信窗口投递文本、图片与文件，对微信而言与用户自己操作
+  没有区别。
+- **对外**：起一个 OneBot v11 正向 WebSocket 服务端（默认 `ws://127.0.0.1:7999`），麦麦的
+  微信适配器连上来，就是一个普通的 OneBot 连接。
+- **界面**：桌面托盘管理器管启停与自启，浏览器控制面板管配置、实况画面与取钥向导。
 
-## 📦 安装
+它与 QQ 通道互不干扰，可以同时挂在同一个麦麦上。
 
-### 方式一：下载预编译 zip（推荐）
+## 环境要求
 
-从 [Releases](https://github.com/jessiongod/wechat-onebot-bridge/releases) 下载最新版，解压到**任意目录**即可，**无需 Python 环境**。
+| 项 | 要求 |
+|---|---|
+| 系统 | Windows 10 / 11（64 位）。隔离桌面模式依赖 Windows 桌面 API |
+| 微信 | 微信 4.x PC 版，需已在本机登录过一次 |
+| Python | 仅源码运行需要，3.13（3.10 及以上可用） |
+| 麦麦 | MaiBot 1.3.x，以及配套的微信适配器插件 |
+| Node.js | 仅从源码打包时需要（构建 WebUI 前端） |
+| 网络 | 全部组件都在本机，不需要外网。只有「检查新版本」与图片描述、语音转写会出网 |
 
-> ⚠️ **解压路径**：建议放在不含中文和空格的目录（如 `D:\WeChatBridge`）。虽然代码已做 UTF-8 处理，但放在纯英文路径能避免一些潜在的编码/权限问题。
+本程序**跟着微信版本走**：取钥与解密不写死任何偏移，而是在运行期于内存中结构化定位。
+微信升级后一般无需更新本程序。当前实测的版本号见[已知限制](#已知限制)。
+
+## 安装
+
+### 方式一：下载发布包（推荐）
+
+1. 到 [Releases](https://github.com/OMSociety/WeBot-Bridge/releases) 下载
+   `WeBot-Bridge-v1.0.0.zip`，解压到任意目录。
 
 ```
-WeChatOneBotBridge/
-├── MaiBotBridgeManager.exe   ← 双击启动桌面管理器
-├── bridge.exe                ← 桥接服务（管理器自动调用）
-├── log_tail.exe              ← 日志跟随器（管理器自动调用）
-├── config.json               ← 配置文件（首次需手动填入）
-├── 启动.bat                  ← 等价于双击 MaiBotBridgeManager.exe
+WeBot-Bridge-v1.0.0/
+├── WeBotBridge.exe            ← 桥接服务（管理器自动调用）
+├── WeBotBridge-Manager.exe    ← 双击启动桌面管理器
+├── WeBotBridge-LogTail.exe    ← 日志跟随器（管理器自动调用）
+├── WeBotBridge-KeyTool.exe    ← 取钥器（向导自动调用，平时用不到）
+├── 启动.bat                   ← 等价于双击 WeBotBridge-Manager.exe
+├── data/
+│   └── config.json            ← 配置文件（首次需手动填入）
+├── docs/
 ├── README.md
 └── LICENSE
 ```
 
-> ⚠️ **三个 exe 必须放在同一目录**。管理器靠同目录下的 `bridge.exe` / `log_tail.exe` 工作，别拆开。
+2. 编辑 `data/config.json`，见[配置详解](#配置详解)。最少要填 `bot_nicknames`。
+3. 双击 `启动.bat`，或直接运行 `WeBotBridge-Manager.exe`。
+
+> **提示：** 建议放在不含中文和空格的目录（如 `D:\WeBotBridge`），能少踩一些编码与权限的坑。
+> 四个 exe 必须放在同一目录，管理器靠同目录下的主程序与日志跟随器工作。
+> `data/` 是可写区：配置、日志、进程号、微信口令与图片密钥都在里面。想搬到别的目录，整个
+> 文件夹移走即可。
 
 ### 方式二：从源码运行（开发者）
 
-需要 Python 3.10+：
-
-```bash
-git clone https://github.com/jessiongod/wechat-onebot-bridge.git
-cd wechat-onebot-bridge
-pip install -r bridge/requirements.txt
-pip install pystray Pillow        # 桌面管理器托盘用
-python manager/bridge_manager.py  # 启动桌面管理器
+```bat
+git clone https://github.com/OMSociety/WeBot-Bridge.git
+cd WeBot-Bridge
+py -3.13 -m venv .venv
+.venv\Scripts\python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r webot_bridge\requirements.txt
+.venv\Scripts\python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r manager\requirements.txt
+mkdir data
+copy webot_bridge\config.example.json data\config.json
+.venv\Scripts\python run_bridge.py
 ```
 
----
+源码模式的可写数据和打包后一样落在仓库根的 `data\`（该目录不入版本控制）。
 
-## 🚀 快速开始
+## 快速开始
 
-### 第 1 步：准备 WeFlow
+### 第 1 步：准备微信
 
-[WeFlow](https://weflow.top) 是一个开源的微信桌面 hook 工具，通过 SSE 协议把微信消息推送出去。
+用你打算交给机器人的那个微信号，在本机正常登录一次微信，确认能收发消息。
 
-- 启动后访问 `http://127.0.0.1:5031`
-- 在 WeFlow 设置里拿到 `access_token`
-- 记得在 WeFlow 里开启 API 服务（默认端口 5031）
+如果你打算用默认的**隔离桌面**模式（推荐），**先把微信彻底退出**：右键任务栏图标退出，
+并确认任务管理器里没有 `Weixin.exe`。隔离桌面模式下微信由本程序启动；Windows 上微信是
+单实例的，你自己先开了微信的话，隔离实例只会停在登录页。
 
-> 如果 WeFlow 端口不是 5031，改 `config.json` 里的 `weflow_base_url`。
-
-### 第 2 步：启动 MaiBot（微信适配器模式）
-
-让 MaiBot 的微信适配器作为 **WS 客户端**连到本 bridge（不是 server）。
-
-- 默认连入地址：`ws://127.0.0.1:7999`
-- 鉴权 token：`config.json` 里的 `ob_server_token`（两端必须一致）
-
-### 第 3 步：配置 config.json
-
-把 zip 里的 `config.json`（或源码的 `bridge/config.example.json` 复制为 `config.json`），填入你的真实值：
+### 第 2 步：配置 data/config.json
 
 ```jsonc
 {
-    "access_token": "你的 WeFlow access_token",
-    "ob_server_token": "自己生成一个随机字符串（MaiBot 微信适配器也填这个）",
-    "bot_nicknames": ["机器人微信昵称"],
-    "bot_wxid": "机器人自己的 wxid",
-    "astrbot_attachments": "C:\\path\\to\\maibot\\attachments",
-    "image_caption_api_key": "OpenAI 兼容 API key（可选，图片描述）",
-    "fun_asr_api_key": "阿里云百炼 API key（可选，语音转写）"
+    "bot_nicknames": ["你的微信昵称"],
+    "ob_server_port": 7999,
+    "ob_server_token": ""
 }
 ```
 
-保存后重启管理器（或点管理器上的「重启」）。
+完整字段说明见[配置详解](#配置详解)，每一项在 `config.json` 里都带 `_comment` 注释。
 
-### 第 4 步：启动
+### 第 3 步：首次取钥
 
-- **桌面管理器（推荐）**：双击 `启动.bat` 或 `MaiBotBridgeManager.exe`
-- **纯命令行**：在 `bridge/` 目录跑 `python main.py`（或打包的 `bridge.exe`）
+微信的数据库口令只在**登录那一瞬间**存在，过后就查不到了。所以取钥必须配合一次重新登录：
 
-管理器启动后会自动接管任何已在运行的 bridge。状态显示「运行中 PID=xxx（外部，已接管）」即成功。
+1. 确认微信已彻底退出。
+2. 打开 `WeBotBridge-Manager.exe`，在 WebUI 里进入配置页，点「取钥向导」。
+3. 向导会拉起 `WeBotBridge-KeyTool.exe`，它挂好钩子后提示你**现在登录微信**。
+4. 在微信窗口里完成登录。隔离桌面模式下微信不在你的屏幕上，登录界面要在 WebUI 的实况画面
+   里看，用手机扫码或确认。
+5. 取到口令后，工具用 Windows DPAPI 加密存到 `data/wx_key.dat`，向导显示成功。
 
----
+**取钥只做这一次**，之后每次开机直接启动即可。换微信号、或口令失效时重复本步。
 
-## ⚙️ 配置详解
+> **提示：** 口令用 Windows DPAPI 加密，只能在同一台机器的同一个 Windows 用户下解开。
+> 把 `data/` 拷到别的机器或别的用户下会解不开，需要在那边重新取钥。
 
-所有配置都在 `bridge/config.json`（打包版直接在根目录）。改完**重启 bridge** 生效。
+### 第 4 步：在麦麦里装微信适配器
+
+按 [MaiBot WeChat Adapter](https://github.com/OMSociety/mai-bot-wechat-adapter) 的 README
+安装插件，然后让它连到本程序：
+
+```toml
+[server]
+host = "127.0.0.1"
+port = 7999
+token = ""            # 与 bridge 的 ob_server_token 填同一个值
+```
+
+### 第 5 步：启动
+
+管理器里点「启动」。日志里出现 OneBot 服务端开始监听、适配器连上来（1 客户端），就通了。
+给机器人发条消息试试。
+
+只有文本通道需要数据库口令；**图片**还需要额外一步，见[图片](#图片)。
+
+## 配置详解
+
+配置文件是程序目录下的 `data/config.json`（源码模式即仓库根的 `data/config.json`）。改完需要重启
+bridge 生效。下面按用途分组，只列需要你关心的项，其余字段见文件内注释。
 
 ### 核心必填
 
-| 字段 | 类型 | 必填 | 说明 |
-| --- | --- | :---: | --- |
-| `weflow_base_url` | 字符串 | ✅ | WeFlow API 地址，默认 `http://127.0.0.1:5031` |
-| `access_token` | 字符串 | ✅ | WeFlow 的鉴权 token |
-| `bot_nicknames` | 数组 | ✅ | 机器人在微信里的所有昵称（可多个），用于 @ 触发识别 |
-| `ob_server_token` | 字符串 | ✅ | MaiBot 连入的鉴权 token，**两端必须一致** |
-| `astrbot_attachments` | 字符串 | ✅ | MaiBot 的 attachments 目录绝对路径 |
+| 字段 | 说明 |
+|---|---|
+| `bot_nicknames` | 机器人微信昵称的列表。群里只有 @ 到这些昵称之一才会触发回复 |
+| `bot_wxid` | 机器人自己的 wxid，可留空（程序从当前登录账号推断） |
+| `ob_server_port` | OneBot v11 服务端端口，默认 7999 |
+| `ob_server_token` | OneBot 握手鉴权 token，留空则不校验。默认只监听回环地址 |
+| `self_name` | 机器人在麦麦侧显示的名字 |
+| `astrbot_attachments` | 麦麦的 `attachments` 目录绝对路径 |
 
-### 常用进阶
+### 收件（读微信本地库）
 
-| 字段 | 默认 | 说明 |
-| --- | --- | --- |
-| `ob_server_host` | `127.0.0.1` | OB11 WS 服务监听地址。`0.0.0.0` 允许局域网其他设备连入 |
-| `ob_server_port` | `7999` | OB11 WS 服务端口。**改端口时 MaiBot 端也要改** |
-| `bot_wxid` | `""` | 机器人自己的 wxid（防自回复，可留空） |
-| `self_name` | `wechat-bot` | 机器人显示名 |
-| `wechat_hwnd` | `0` | 多开微信时指定机器人所在窗口句柄，`0` = 自动取第一个微信窗口 |
-| `group_reply_mode` | `mention` | `mention`（仅 @ 触发）/ `all`（群里所有消息都回复） |
-| `context_messages` | `5` | @ 触发时附带的最近群消息数量（0 = 关闭） |
-| `buffer_seconds` | `9` | 消息缓冲窗口时间，多条合并后再推，避免麦麦响应太碎 |
-| `web_port` | `8766` | WebUI 面板端口（网页入口） |
-| `webui_auto_open` | `true` | 启动 bridge 时自动打开浏览器到 WebUI |
-| `group_name_map` | `{}` | 群 ID → 群名 映射（见下方重点说明） |
-| `maibot_emoji_dir` | `""` | MaiBot 表情库目录（可选） |
+| 字段 | 说明 |
+|---|---|
+| `wechat_files_root` | 微信数据根目录。留空 = 自动取「文档」目录下的 `xwechat_files`；文档库被重定向到别的盘也能正确解析 |
+| `wx_key_file` | 口令文件路径。留空 = `data/wx_key.dat` |
+| `wx_work_dir` | 解密副本与游标的存放目录。留空 = `data/wx_cache`。原始库始终只读 |
+| `wx_poll_seconds` | 轮询间隔，默认 1.0 秒 |
+| `wx_backfill_seconds` | 首次启动时额外收进多少秒内的历史消息。`0` = 只收启动之后的新消息，不会把旧聊天记录灌给机器人 |
+| `buffer_seconds` | 同一联系人多久内的连续消息合并成一次上下文 |
+| `context_messages` | 每次带上多少条历史消息作为上下文 |
+| `group_reply_mode` | `mention`（默认，被 @ 才回）/ `all`（群里每条都回） |
+| `group_name_map` | 群 ID 到群名的映射 |
 
-### 图片描述（视觉模型识别图片内容）
+### 发送
 
-| 字段 | 默认 | 说明 |
-| --- | --- | --- |
-| `image_caption_provider` | `openai` | `openai`（OpenAI 兼容）/ `ollama`（本地视觉模型） |
-| `image_caption_model` | `gpt-4o-mini` | 视觉模型名，例如 `gpt-4o-mini`、`llava:7b`、`deepseek-v4-flash-vision-exp` |
-| `image_caption_api_key` | `""` | OpenAI 兼容 API key（provider=openai 时必填） |
-| `image_caption_api_base` | `https://api.deepseek.com/v1` | OpenAI 兼容 API 的 base 地址 |
-| `image_caption_prompt` | `请用中文简短描述这张图片的内容` | 描述提示词 |
+| 字段 | 说明 |
+|---|---|
+| `isolated_desktop` | **默认 `true`**。让微信跑在一张独立的 Windows 桌面上，向它投递输入时切换的前台是那张桌面的，你自己的桌面完全不受打扰，发送通道因此可以长期开着 |
+| `isolated_desktop_name` | 隔离桌面的名字，默认 `WeBotSandbox`。只有要同时跑多份互不干扰的实例时才需要改 |
+| `wechat_exe` | 微信主程序路径。留空 = 自动探测常见安装位置（含注册表登记的安装路径） |
+| `wechat_hwnd` | 指定要驱动的微信窗口句柄，`0` = 自动取第一个。**一台机器上同时登录多个微信**时才需要手填，且微信重启后句柄会变，要重新绑定 |
+| `allow_foreground_steal` | 仅在 `isolated_desktop` 为 `false` 时有意义。默认 `false`，此时发送功能整体不可用；设为 `true` 后发送可用，代价是每条消息发出时前台会短暂切到微信，发完立刻切回（实测切回耗时 3–11 毫秒） |
 
-> provider 选 `ollama` 时用 `ollama_base_url`（默认 `http://127.0.0.1:61000`）。
+关于前台切换的成因，见[已知限制](#已知限制)。
 
-### 语音转写（DashScope Fun-ASR，可选）
+### 图片
 
-| 字段 | 默认 | 说明 |
-| --- | --- | --- |
-| `fun_asr_workspace_id` | `""` | 阿里云百炼业务空间 ID，留空则关闭语音转写 |
-| `fun_asr_region` | `cn` | `cn`（北京）/ `intl`（新加坡） |
-| `fun_asr_api_key` | `""` | 阿里云百炼 API key |
-| `fun_asr_model` | `fun-asr-flash-2026-06-15` | 转写模型 |
+| 字段 | 说明 |
+|---|---|
+| `wx_image_key_file` | 图片密钥文件路径。留空 = `data/wx_image_key.json` |
+| `image_caption_provider` | 收到图片时交给谁描述：`openai`（任何 OpenAI 兼容接口）/ `ollama`（本地）/ 留空 = 不描述，直接把图片交给麦麦 |
+| `image_caption_model` | 视觉模型名 |
+| `image_caption_api_base` | 兼容接口地址 |
+| `image_caption_api_key` | 兼容接口密钥 |
+| `image_caption_prompt` | 描述用的提示词 |
+| `ollama_base_url` / `ollama_timeout` | 本地 Ollama 的地址与超时 |
+
+图片密钥与数据库口令不是一回事：**AES 密钥只在微信解码图片的那几秒驻留内存**，所以要在
+微信正在打开一张没看过的图时去抓。做法：
+
+1. 管理器里点「启动」，让微信跑起来。
+2. 在 WebUI 里点「取图片密钥」。
+3. 按提示在微信里**点开一张你之前没看过的图片**（没被缓存过，才会触发解码）。
+4. 工具从内存里扫到密钥后写入 `data/wx_image_key.json`。
+
+密钥是账号级的：换号后要重新取。缺它时图片消息退回 `[图片]` 占位，文字通道不受影响。
+
+### 语音转写（可选）
+
+收到的语音消息本体是加密的 `.dat`，目前尚未还原，所以本程序**不会**尝试转写收到的语音，
+只在日志里记一条占位。相关字段 `fun_asr_*` 保留着，等语音通道打通后可直接用。
+
+发送方向不受影响：麦麦侧发出的 OneBot v11 `voice` 段会以「mp3 文件卡片」发到微信。
 
 ### 表情学习（可选）
 
-| 字段 | 默认 | 说明 |
-| --- | --- | --- |
-| `emoji_learn_enabled` | `true` | 观察群友表情 → 蒸馏成表达方式喂给麦麦 |
-| `emoji_learn_threshold` | `15` | 积累多少条样本触发一次蒸馏 |
-| `maibot_webui_url` | `http://127.0.0.1:8001` | 麦麦 WebUI 地址（投喂表达方式用） |
+| 字段 | 说明 |
+|---|---|
+| `emoji_learn_enabled` | 是否开启。开启后采集微信自带表情（`[捂脸]` 这类代码）的使用场景 |
+| `emoji_learn_threshold` | 样本积累到多少条后，用 LLM 蒸馏成「表达方式」条目并写进麦麦的表达方式库 |
+| `maibot_emoji_dir` | 麦麦的表情库目录 |
+| `maibot_webui_url` | 麦麦 WebUI 地址，用于写入表达方式库 |
 
----
+## 界面说明
 
-## 🖼️ 界面说明
+### 桌面管理器（`WeBotBridge-Manager.exe`）
 
-### 桌面管理器
+托盘常驻，负责启动与停止 bridge、查看状态、开机自启、快速打开 WebUI 与日志。双击
+`启动.bat` 就是打开它。管理器自身做了单实例锁，重复双击只会提示。
 
-- **状态栏**：显示「运行中 PID=xxx（自管/外部）」——`外部，已接管` 表示 bridge 是别的进程启动的，管理器直接接管控制。
-- **运行信息**：PID、端口 7999 客户端数、WeFlow 健康、微信进程数。
-- **bridge 日志（实时）**：跟随 `bridge.log` 滚动，管理器窗口最小化到托盘也会继续采集。
-- **按钮**：`▶ 启动` / `■ 停止` / `↻ 重启`。
-- **最小化到托盘**：关掉主窗口 = 最小化到托盘，bridge 仍在后台。右键托盘图标可「彻底退出」。
-- **开机自启动**：勾选即写入 Windows 启动项。
+### WebUI 控制面板（`http://127.0.0.1:8766`）
 
-### WebUI 控制面板（http://127.0.0.1:8766）
-
-- **仪表盘**：24 小时收发消息量、连接状态。
+- **仪表盘**：运行状态、收发计数、收件源是否就绪、当前微信窗口。
 - **消息**：实时消息流。
-- **日志**：运行日志。
-- **配置**：在线改 config.json（保存后重启生效）。
-- **发送测试**：手动给某个联系人/群发一条测试消息。
-- **窗口绑定**：多开微信时，在这里指定机器人所在窗口句柄（`wechat_hwnd`）。
+- **日志**：与日志文件同源。
+- **配置**：表单化编辑 `config.json`，保存后按需重启 bridge。
+- **微信画面**：隔离桌面模式下微信的实况截图，可以在这里点鼠标完成登录或操作微信。
+- **发送测试**：手动发一条消息验证发送通道。
 
----
+## 使用注意事项
 
-## ⚠️ 使用注意事项（重要）
+### 1. 端口
 
-### 1. 端口冲突
+默认占用 7999（OneBot）与 8766（WebUI）。被占用时改 `ob_server_port` 与 `web_port`，
+适配器那边同步改。
 
-bridge 占用 3 个端口：`5031`（连 WeFlow）、`7999`（OB11 WS 服务端）、`8766`（WebUI）。它们必须**空闲**，否则启动失败。
-
-- 占用检查：
-  ```bash
-  netstat -ano | findstr :7999
-  ```
-- 若 7999 被其他程序占用，改 `ob_server_port`，同时改 MaiBot 微信适配器连入端口。
-
-### 2. wechat_hwnd（微信窗口句柄）——最容易踩的坑
-
-当电脑上**同时登录多个微信**时，机器人必须绑定到正确那个微信窗口。
-
-- 微信**重启后窗口句柄会变**，需要重新绑定。
-- `wechat_hwnd = 0` 时自动取第一个微信窗口。如果取错，发送消息会发到别的微信。
-- **多开建议**：给每个机器人一份独立配置，用不同的 `ob_server_port` 和 `wechat_hwnd`。
-
-### 3. 群 ID → 群名映射 group_name_map
-
-微信搜索框**无法搜到以 `@chatroom` 结尾的群 ID**，所以你需要把"群 ID"映射成"群里显示的真实名字"，bridge 才能用群名去搜索并发送。
-
-```jsonc
-"group_name_map": {
-    "45850044528@chatroom": "BOT TEST",
-    "47795211464@chatroom": "工程群"
-}
+```bat
+netstat -ano | findstr :7999
 ```
 
-> 群 ID 可以在微信-群聊设置里查看，或用 WebUI 的消息流看到。
+### 2. 隔离桌面模式下微信不在你的屏幕上
 
-### 4. ob_server_token 两端必须一致
+这是设计目的，不是故障。要看微信，用 WebUI 的「微信画面」。想让微信回到自己屏幕上，把
+`isolated_desktop` 设为 `false`，然后自己启动微信（但要接受发送时的前台切换）。
 
-- 这个 token 是 MaiBot 连入本 bridge 的**握手鉴权**。
-- 一端改了另一端没改，MaiBot 会**一直连不上**（表现：MaiBot 侧报 token 无效 / 连接失败，bridge.log 里没有 MaiBot 连入记录）。
+### 3. 隔离桌面模式下首次登录要在 WebUI 里完成
 
-### 5. 发送方式依赖 UIA 自动化
+隔离桌面的窗口你看不见，第一次登录得在 WebUI 的实况画面里操作，用手机扫码或确认。
 
-- bridge 用 uiautomation 模拟键盘来发微信消息，**微信窗口必须保持在前台/可被激活**（别最小化到托盘让微信隐身）。
-- 需要保证你运行该程序的账号能访问到微信窗口（通常以登录微信的同一个 Windows 账号运行）。
-- 这条路径对**输入法、弹窗**有一定要求——如果有桌面弹窗（如微信更新提示、安全弹窗）会打断发送。
+### 4. `ob_server_token` 两端必须一致
 
-### 6. 防火墙 / 局域网
+bridge 的 `ob_server_token` 与适配器的 `server.token` 填同一个值。留空表示不校验鉴权，
+此时服务端只监听 `127.0.0.1`。一端改了另一端没改，适配器会一直连不上。
 
-- 如果 MaiBot 和 bridge 在**不同机器**，需要：
-  1. 把 `ob_server_host` 改成 `0.0.0.0`
-  2. 在防火墙放行 `7999` 端口
-- 如果都在本机，保持 `127.0.0.1` 即可。
+### 5. `group_name_map` 为什么必要
 
-### 7. 编码问题
+微信的搜索框**搜不到以 `@chatroom` 结尾的群 ID**，所以发送前必须把群 ID 映射成群里的真实
+群名。群 ID 可以在 WebUI 的消息流里看到。
 
-- `bridge.log` 是 **UTF-8** 编码。用记事本/编辑器打开没问题。
-- **不要用旧版 cmd（cp936）的 `type` 直接看**，会乱码。用 `Get-Content -Encoding UTF8`（PowerShell）或 vscode 打开。
-- 管理器能正确显示 UTF-8 日志（已做编码修复）。
+### 6. 发送依赖 UI 自动化
 
-### 8. 多实例
+本机显示缩放、系统主题或输入法状态异常时，UI 自动化可能定位不到控件；桌面弹窗（微信更新
+提示、安全提示）也会打断发送。失败原因会写进日志。
 
-- 桌面管理器已做**单实例锁**：再双击一次只会弹提示，不会开第二个。
-- bridge 本身可多开（不同 `ob_server_port`），但一个端口只能一个 bridge。
+### 7. 防火墙与局域网
 
-### 9. 先启动顺序
+麦麦和 bridge 不在同一台机器时，把 `ob_server_host` 改成可对外监听的地址、在防火墙放行
+7999，并务必给 `ob_server_token` 填一串随机字符。都在本机就保持 `127.0.0.1`。
 
-- 建议顺序：**WeFlow → bridge（/管理器） → MaiBot adapters**。
-- bridge 启动时会自动拉起 WebUI；MaiBot 侧 adapter 连接是异步的，稍等几秒连接就会建立。
-- 若 MaiBot 先于 bridge 启动并连不上，bridge 启动后会接受它的重连，无需重启 MaiBot。
+### 8. 日志编码
 
-### 10. 安全提醒（公开仓库）
+日志文件是 UTF-8。用 PowerShell 的 `Get-Content -Encoding UTF8` 或编辑器查看，不要用旧版
+cmd 的 `type`（cp936 会乱码）。管理器已做编码修复，可以正常显示。
 
-- **仓库里不含 `config.json`**（含密钥）。你 clone 后自己从 `config.example.json` 复制并填真实值。
-- 不要把真实的 `access_token` / `fun_asr_api_key` / `image_caption_api_key` 提交到 GitHub（会泄露），也不要发到群里。
+### 9. 一个微信号只能被一份实例驱动
 
-### 11. 语音消息（OneBot v11 `voice` segment）
+Windows 上微信是单实例的。要跑多个微信号，用 `isolated_desktop_name` 给每份实例配一个不同
+的桌面名，并用不同的 `ob_server_port`。
 
-当 MaiBot 侧发出 OneBot v11 `voice` 段（典型场景：配合 [mai-voice-sender](https://github.com/jessiongod/mai-voice-sender) 之类 TTS 插件），bridge 会按以下规则发送：
+### 10. 别把配置提交进仓库
 
-- **QQ 侧（走 MaiBot 任意支持 voice 的 adapter + 后端）**：发的是「语音消息气泡」（带波形、可读时长，QQ 个人号原生支持）—— 这是真正的"语音消息"。本桥接不参与 QQ 侧的处理，QQ 是否能发语音取决于 MaiBot 端接的 adapter 与其后端是否支持。
-- **微信侧（本 bridge）**：**微信 PC 客户端没有"上传 mp3 当语音消息"的接口**，语音消息必须按住麦克风按钮录制。bridge 因此把 mp3 以「文件卡片」形式发到聊天窗口，对方双击可播放音频，但**不是"按住说话"那种带波形的语音气泡**。在 UIA 层面能做的已经做到最像。
+`config.json` 里有你的 token 与 API key，仓库里不含它。不要把真实的 `ob_server_token`、
+`image_caption_api_key`、`fun_asr_api_key` 提交到 GitHub 或发到群里。
 
-如果你希望微信侧发出的是"语音气泡"（带波形、可拖动进度条），目前唯一可行路径是 hook 微信进程底层发 protobuf（不在本项目范围内，且违反微信协议），所以本桥接选择"文件卡片"这一上限。
+## 常见问题
 
-实现细节：
+**Q：启动时报「找不到 config.json」。**
+把 `config.example.json` 复制为 `config.json` 放进程序目录下的 `data/`（源码模式即仓库根的 `data/`）。
 
-- `uia_sender.send_file()`：用 PowerShell 把文件路径放到剪贴板 `CF_HDROP` 格式，再到聊天窗口 Ctrl+V，微信会识别为附件 → Enter 发送。
-- `ob_protocol._handle_ob_api`：收到 `voice` 段 → 解 `base64://...` mp3 → 落临时文件 → `send_file` → 清理临时文件。
+**Q：启动管理器后日志窗口是空的？**
+确认四个 exe 在同一目录、`config.json` 存在且没有报错，然后点一次「重启」。
 
----
+**Q：启动成功但收不到消息。**
+先看日志里收件源是否就绪。若提示口令缺失或账号不符，说明还没取钥，或者**换了微信号**——
+口令与登录的微信号一一对应，换号后必须重新取钥。
 
-## ❓ 常见问题 FAQ
+**Q：能收不能发。**
+默认的隔离桌面模式要求微信由本程序启动。若你把 `isolated_desktop` 设成了 `false`，发送还
+需要 `allow_foreground_steal` 为 `true`。
 
-**Q: 启动管理器后日志窗口是空的？**
-A: 检查三点：① `bridge.exe` 是否和管理器在同一目录；② `config.json` 是否存在且没有报错；③ 先让 bridge 真正跑起来（点「重启」）。
+**Q：图片显示成 `[图片]` 占位。**
+缺少图片密钥，见[图片](#图片)。
 
-**Q: MaiBot 收不到微信消息？**
-A: 依次排查：
-1. WeFlow 是否正常推送（WebUI 消息流有没有新消息）
-2. `ob_server_token` 两端是否一致
-3. 用浏览器打开 `http://127.0.0.1:7999`，能收到 OB11 协议说明说明服务正常
-4. MaiBot 微信适配器是否能连上 `ws://127.0.0.1:7999`
+**Q：换了台机器，口令解不开。**
+DPAPI 密文绑机器与 Windows 用户，属于预期行为，在新机器上重新取钥。
 
-**Q: 发送消息失败 / 发到错误的微信？**
-A: 检查 `wechat_hwnd` 是否正确绑定机器人窗口；微信窗口是否在前台可激活；是否有弹窗打断。
+**Q：微信升级后还能用吗。**
+一般能。取钥与解密都是运行期定位，不写死偏移。
 
-**Q: 一开管理就跑很多窗口？**
-A: 那是早期版本的 bug，新版已修复（所有 PowerShell 子进程加了 `CREATE_NO_WINDOW`）。若仍有，检查是否运行了旧版 exe。
+## 已知限制
 
-**Q: 拖拽窗口卡顿？**
-A: 主线程已无 PowerShell 阻塞。若仍卡，通常是机器整体负载高，或显卡驱动导致 Tk 渲染慢（更新显卡驱动）。
+照实列在这里，细节与验证过程见 `docs/`：
 
-**Q: 开机自启动没生效？**
-A: 用管理员身份运行一次，勾选"开机自启动"，确认没有被杀毒软件拦截。
+- **语音、文件、视频消息拿不到本体。** 这几种在磁盘上同样是加密的 `.dat` 封装，目前只还原
+  了图片那一种。收到语音只记一条占位日志。
+- **取钥需要一次重新登录。** 口令只在登录瞬间存在，等不来，这是微信的设计。
+- **图片密钥需要一张没被缓存过的图。** 密钥只为正在解码的图片短暂驻留内存。
+- **隔离桌面上登录仍需手机确认。** 扫码或手机端确认这一步绕不过去。
+- **发送必然触发微信自身的窗口消息处理。** 我们已逐项实测否证了十几种「不惊动它」的投递
+  方式（PostMessage、SendMessageTimeout、UIA SetValue、SetFocus、Invoke、SetActiveWindow、
+  完全附着线程等），任何向微信投递的输入都会让它升到前台，这是微信自身的行为。隔离桌面是
+  绕开它的办法，不是修好了它。
+- **未在全新安装的 Windows 上验证过。** 开发与测试都在一台已经装了很多东西的机器上完成。
 
-**Q: 微信重启后 bot 不说话了？**
-A: 微信重启 → `wechat_hwnd` 变 → 去 WebUI「窗口绑定」重新绑定，然后重启 bridge。
+实测过的微信版本、否证清单与实验数据记录在 `docs/known-limits-dat-format.md` 与
+`docs/known-limits-nonfg.md`。
 
-**Q: 图片识别没反应？**
-A: 确认 `image_caption_provider` 对应的 API key 有效（`openai` 填 `image_caption_api_key`，`ollama` 填 `ollama_base_url`），且网络可达。
-
-**Q: 语音消息无法转写？**
-A: 语音转写依赖 DashScope Fun-ASR，需填 `fun_asr_workspace_id` + `fun_asr_api_key` 且模型可用。
-
----
-
-## 🏗️ 架构
+## 架构
 
 ```
-┌────────────┐    SSE (5031)     ┌──────────────┐    WS (7999)    ┌────────────┐
-│   WeFlow   │ ────────────────→ │    bridge    │ ←─────────────── │   MaiBot   │
-│  (微信hook) │  ←─────────────── │  (本项目)    │ ───────────────→│微信适配器   │
-└────────────┘    UIA 发送       └──────┬───────┘    OneBot v11    │ (客户端)   │
-                                        │                           └────────────┘
-                                        │
-                                    WebUI (8766)
-                                        │
-                                        ▼
-                                 FastAPI 控制面板
+微信 PC 客户端
+   |  收件：解密本机 SQLCipher 库（口令由取钥器在登录时截获）
+   |  发送：UI 自动化投递输入（默认在隔离桌面上）
+   v
+WeBot-Bridge
+   |- 取钥器 WeBotBridge-KeyTool.exe（独立进程，只在取钥时运行）
+   |- OneBot v11 正向 WebSocket 服务端  ws://127.0.0.1:7999
+   \- WebUI  http://127.0.0.1:8766
+   ^
+   |  OneBot v11
+   v
+MaiBot WeChat Adapter（麦麦插件）
+   v
+MaiBot（麦麦）
 ```
 
----
-
-## 🛠️ 开发者
+## 开发者
 
 ### 目录结构
 
-```
-wechat-onebot-bridge/
-├── bridge/          ← bridge 主程序源码（WeFlow SSE → OneBot v11）
-│   ├── main.py
-│   ├── config.py
-│   ├── config.example.json
-│   ├── bridge_core.py
-│   ├── ob_server.py
-│   ├── uia_sender.py
-│   └── ...
-├── manager/         ← 桌面管理器源码（tkinter GUI）
-│   ├── bridge_manager.py
-│   ├── log_tail.py
-│   └── README.md
-├── webui/           ← WebUI 控制面板（FastAPI + Vue 前端）
-│   ├── app.py
-│   ├── dist/        ← 前端构建产物
-│   └── frontend/    ← Vue 源码
-├── build.py         ← 一键打包脚本（PyInstaller）
-├── LICENSE
-├── README.md
-└── .gitignore
+| 路径 | 内容 |
+|---|---|
+| `run_bridge.py` | 入口脚本。放在仓库根，`webot_bridge` 包才会被完整收集 |
+| `webot_bridge/` | 主包：配置、收件源、发送器、协议、图片解码、WebUI 后端 |
+| `webot_bridge/wxkey/` | 取钥链路：定位、截获、还原 |
+| `webot_bridge/webui/` | WebUI 后端与前端静态产物 |
+| `webui-frontend/` | WebUI 前端的 vite 工程 |
+| `manager/` | 桌面托盘管理器与日志查看器 |
+| `tools/` | 独立小工具：取钥器、取图片密钥 |
+| `tests/` | 单测，不依赖真实微信 |
+| `docs/` | 已知限制与验证记录、第三方许可 |
+| `build.py` | 一键打包 |
+
+### 打包
+
+```bat
+.venv\Scripts\python build.py
 ```
 
-### 打包成 exe
+产物在 `dist\WeBot-Bridge-v1.0.0.zip`。打包前会自动构建 WebUI 前端，所以需要 Node.js 与
+npm。取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。
 
-```bash
-pip install pyinstaller
-python build.py
-# 产物：dist/WeChatOneBotBridge-v1.0.0.zip
+### 跑测试
+
+```bat
+.venv\Scripts\python tests\test_wx_image.py
 ```
 
-### 从源码跑 bridge
+`tests/` 下的脚本都可直接执行，测试数据现造，不读真实微信数据。
 
-```bash
-cd bridge
-pip install -r requirements.txt
-python main.py
-```
+## 来源与致谢
 
-### 前端开发
+- [jessiongod/wechat-onebot-bridge](https://github.com/jessiongod/wechat-onebot-bridge)：
+  本仓库的前身与上游，收件、发送与 OneBot 协议层的早期设计来自这里。
+- [jessiongod/mai-bot-wechat-adapter](https://github.com/jessiongod/mai-bot-wechat-adapter)：
+  麦麦侧微信适配器的前身。
+- 顾海蔚蓝：早期结构与文档。
 
-```bash
-cd webui/frontend
-npm install
-npm run build   # 产物写入 webui/dist
-```
+本仓库在上述工作基础上重做了取钥、收件与发送链路，并按 MIT 许可证继续分发。
 
----
+## 许可证
 
-## 📜 协议与致谢
-
-### 协议
-
-MIT License（见 [LICENSE](LICENSE)）。
-
-### 致谢
-
-- **原作者**：Akasha-WeChat（[原仓库](https://github.com/)）——本项目是基于它的衍生分支，改动为对接 MaiBot 微信适配器并附赠桌面管理器。
-- [MaiBot](https://github.com/) —— 主项目。
-- [WeFlow](https://weflow.top) —— 微信 hook 框架。
-- [uiautomation](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows) —— 跨进程窗口自动化。
-- [OneBot v11](https://github.com/botuniverse/onebot-11) —— 标准化聊天机器人协议。
-
-> 若在使用过程中有任何问题，欢迎到 [Issues](https://github.com/jessiongod/wechat-onebot-bridge/issues) 提问。有用的话点个 ⭐ 支持一下！
+MIT，见 [LICENSE](LICENSE)。发布包内 `docs/third-party-licenses/` 收录了随包分发的第三方
+组件的许可证原文。

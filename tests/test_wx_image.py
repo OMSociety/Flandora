@@ -7,12 +7,11 @@ import sys
 import struct
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BRIDGE = os.path.join(REPO_ROOT, "bridge")
-for p in (BRIDGE, REPO_ROOT):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+PKG = os.path.join(REPO_ROOT, "webot_bridge")
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
-import wx_image
+from webot_bridge import wx_image
 
 
 def _encrypt(key: bytes, data: bytes) -> bytes:

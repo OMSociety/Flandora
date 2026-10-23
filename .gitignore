@@ -5,9 +5,8 @@ __pycache__/
 .venv/
 venv/
 
-# 运行产物
-bridge.pid
-bridge.log
+# 运行产物：配置、日志、pid、微信口令与图片密钥都在 data/ 下
+data/
 *.log
 
 # 前端依赖

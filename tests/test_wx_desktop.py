@@ -12,17 +12,16 @@ import shutil
 import sys
 import tempfile
 
-BRIDGE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BRIDGE_SUB = os.path.join(BRIDGE, "bridge")
-for p in (BRIDGE_SUB, BRIDGE):
-    if p not in sys.path:
-        sys.path.insert(0, p)
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PKG = os.path.join(REPO_ROOT, "webot_bridge")
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 
 def with_cfg(**overrides):
     """在临时目录里造 config.json 并切换 cwd，返回 (目录, config 模块)。"""
     d = tempfile.mkdtemp(prefix="wwb-desk-")
-    shutil.copy(os.path.join(BRIDGE_SUB, "config.example.json"),
+    shutil.copy(os.path.join(PKG, "config.example.json"),
                 os.path.join(d, "config.json"))
     path = os.path.join(d, "config.json")
     with open(path, encoding="utf-8") as fh:
@@ -33,7 +32,7 @@ def with_cfg(**overrides):
     old = os.getcwd()
     os.chdir(d)
     try:
-        import config
+        from webot_bridge import config
         importlib.reload(config)   # 同一个进程里换配置必须重载，否则拿到上一份
         return d, config
     finally:
@@ -44,7 +43,7 @@ def main() -> int:
     checks = 0
 
     # ---------- 1. 可执行文件定位 ----------
-    import wx_desktop
+    from webot_bridge import wx_desktop
 
     configured = r"D:\Program Files\Tencent\Weixin\Weixin.exe"
     got = wx_desktop.find_weixin_exe(configured)

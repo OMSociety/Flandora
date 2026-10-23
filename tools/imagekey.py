@@ -11,8 +11,11 @@ XOR 密钥不用扫：它可以从本账号已有图片的尾部反推（末字�
 这里顺手算好一并写入，省得用户还要再填一个值。
 
 用法：
-    python tools/imagekey.py --out <配置目录>            # 交互，等用户打开图片
-    python tools/imagekey.py --out <dir> --seconds 300   # 限定等待时长
+    python tools/imagekey.py                    # 交互，等用户打开图片
+    python tools/imagekey.py --seconds 300      # 限定等待时长
+
+--out 省略时写到程序目录下的 data/（打包 = exe 同级 data/，源码 = 仓库根 data/），
+与 bridge 读图片密钥的位置一致。
 """
 from __future__ import annotations
 
@@ -27,16 +30,28 @@ import sys
 import time
 from ctypes import wintypes
 
-_BRIDGE_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_IMPL_ROOT = os.path.join(_BRIDGE_ROOT, "bridge")
-for _p in (_IMPL_ROOT, _BRIDGE_ROOT):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_ROOT not in sys.path:
+    sys.path.insert(0, _REPO_ROOT)
 
-import wx_image  # noqa: E402
+from webot_bridge import wx_image  # noqa: E402
 
 EXIT_OK = 0
 EXIT_NOT_FOUND = 2
+
+
+def _default_out_dir() -> str:
+    """默认输出目录：打包后取 exe 同级的 data/，源码运行时取仓库根下的 data/。
+
+    与 webot_bridge/config.py 的 data_dir() 规则一致。这里不直接复用它是为了避开
+    导入期副作用：config 在 import 时就会查找 config.json，找不到直接抛异常，而取
+    图片密钥往往发生在用户还没生成配置的时候。
+    """
+    if getattr(sys, "frozen", False):
+        base = os.path.dirname(sys.executable)
+    else:
+        base = _REPO_ROOT
+    return os.path.join(base, "data")
 
 PROCESS_VM_READ = 0x0010
 PROCESS_QUERY_INFORMATION = 0x0400
@@ -75,7 +90,7 @@ def weixin_pids() -> list[int]:
 
 def attach_dir() -> str:
     """当前登录账号的图片目录。"""
-    import wechat_account
+    from webot_bridge import wechat_account
     acct = wechat_account.current_account()
     if acct is None or not acct.data_dir:
         raise SystemExit("找不到已登录的微信账号，请先登录微信")
@@ -163,8 +178,9 @@ def sniff_xor(attach: str) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="从微信进程取图片解码密钥")
-    parser.add_argument("--out", required=True,
-                        help="输出目录，密钥写到该目录下的 wx_image_key.json")
+    parser.add_argument("--out", default=_default_out_dir(),
+                        help="输出目录，密钥写到该目录下的 wx_image_key.json；"
+                             "默认 data/")
     parser.add_argument("--seconds", type=float, default=600.0,
                         help="持续扫描的秒数上限")
     args = parser.parse_args(argv)
@@ -221,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     path = os.path.join(args.out, "wx_image_key.json")
     payload = {"aes_key": found.decode("ascii"), "xor_key": xor_key}
 
-    import wechat_account
+    from webot_bridge import wechat_account
     acct = wechat_account.current_account()
     if acct is not None:
         payload["wxid"] = acct.wxid

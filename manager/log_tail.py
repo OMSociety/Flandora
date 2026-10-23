@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""日志 tail —— 由 bridge_manager 通过 subprocess 拉起，把 bridge.log 增量输出。"""
+"""日志 tail —— 由 bridge_manager 通过 subprocess 拉起，把 webot_bridge.log 增量输出。"""
 from __future__ import annotations
 
 import os
@@ -13,7 +13,7 @@ def main() -> int:
         return 1
     log_path = Path(sys.argv[1])
 
-    # 关键：Windows 上 Python 默认 stdout 是 cp936，bridge.log 里的非 GBK 字符
+    # 关键：Windows 上 Python 默认 stdout 是 cp936，webot_bridge.log 里的非 GBK 字符
     # （emoji/部分中文生僻字/特殊符号）会让 write 抛 UnicodeEncodeError，
     # 进而被静默吞掉导致 GUI 看不到任何日志。强制 UTF-8 + errors='replace'。
     try:

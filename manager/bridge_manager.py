@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""MaiBot Bridge 管理器 — 图形界面
+"""WeBot-Bridge 管理器 — 图形界面
 
 双击 启动.bat 即可运行；关闭窗口时最小化到托盘，右键托盘图标可彻底退出。
 
@@ -24,7 +24,7 @@ import tkinter as tk
 # 单实例锁（Windows 具名互斥量）
 try:
     import ctypes
-    _mutex_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\MaiBotBridgeManager_SingleInstance")
+    _mutex_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\WeBotBridge_SingleInstance")
     _already_running = ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
 except Exception:  # noqa: BLE001
     _mutex_handle = None
@@ -35,7 +35,7 @@ from typing import Optional
 
 # === 路径 ===
 # 兼容两种运行方式：
-#   1) 源码：__file__ 指向 bridge-manager/bridge_manager.py
+#   1) 源码：__file__ 指向 manager/bridge_manager.py
 #   2) 打包后：PyInstaller 把 __file__ 指向 _MEIPASS 临时目录，要用 sys.executable 找 exe 所在目录
 if getattr(sys, "frozen", False):  # PyInstaller 打包模式
     HERE = Path(sys.executable).resolve().parent
@@ -44,17 +44,20 @@ else:
 
 # bridge 项目目录：
 #   打包后：必须在 manager.exe 同目录（dist/），因为所有 exe/config/log 都在一起
-#   源码：在 ../wechat-weflow-bridge-ob11/
+#   源码：仓库根（manager/ 的上一级）
 if getattr(sys, "frozen", False):
     BRIDGE_DIR = HERE
 else:
-    BRIDGE_DIR = HERE.parent / "wechat-weflow-bridge-ob11"
+    BRIDGE_DIR = HERE.parent
 
-# 找 bridge 主程序：优先 bridge.exe（打包后），回退 main.py（源码）
-BRIDGE_EXE = BRIDGE_DIR / ("bridge.exe" if sys.platform == "win32" else "bridge")
-BRIDGE_MAIN = BRIDGE_EXE if BRIDGE_EXE.exists() else (BRIDGE_DIR / "main.py")
+# 可写数据（配置、日志、pid）在程序目录的 data/ 下，与 webot_bridge/config.py 的
+# data_dir() 取值一致：打包 = exe 同级，源码 = 仓库根。
+DATA_DIR = BRIDGE_DIR / "data"
+BRIDGE_LOG = DATA_DIR / "webot_bridge.log"
 
-BRIDGE_LOG = BRIDGE_DIR / "bridge.log"
+# 找 bridge 主程序：优先 WeBotBridge.exe（打包后），回退 webot_bridge/main.py（源码）
+BRIDGE_EXE = BRIDGE_DIR / ("WeBotBridge.exe" if sys.platform == "win32" else "WeBotBridge")
+BRIDGE_MAIN = BRIDGE_EXE if BRIDGE_EXE.exists() else (BRIDGE_DIR / "webot_bridge" / "main.py")
 
 # Python 解释器：打包后用 sys.executable（同目录 Python）；源码用系统 Python（自动探测）
 if getattr(sys, "frozen", False):
@@ -62,19 +65,21 @@ if getattr(sys, "frozen", False):
 else:
     _cand = [
         Path(sys.executable),
+        Path(r"C:\Python313\python.exe"),
+        Path(r"C:\Program Files\Python313\python.exe"),
         Path(r"C:\Python312\python.exe"),
         Path(r"C:\Python311\python.exe"),
         Path(r"C:\Program Files\Python312\python.exe"),
     ]
     PYTHON_EXE = next((c for c in _cand if c.exists()), _cand[0])
 
-# log_tail：优先 log_tail.exe（打包后），回退 log_tail.py
-LOG_TAIL_EXE = HERE / ("log_tail.exe" if sys.platform == "win32" else "log_tail")
+# log_tail：优先 WeBotBridge-LogTail.exe（打包后），回退 log_tail.py
+LOG_TAIL_EXE = HERE / ("WeBotBridge-LogTail.exe" if sys.platform == "win32" else "WeBotBridge-LogTail")
 LOG_TAIL_PY = HERE / "log_tail.py"
 LOG_TAIL_PATH = LOG_TAIL_EXE if LOG_TAIL_EXE.exists() else LOG_TAIL_PY
 
-LOG_DIR = HERE / "logs"
-AUTOSTART_NAME = "MaiBotBridgeManager"
+LOG_DIR = DATA_DIR
+AUTOSTART_NAME = "WeBotBridge-Manager"
 
 # Windows
 IS_WINDOWS = sys.platform == "win32"
@@ -234,7 +239,7 @@ class BridgeController:
                 env = os.environ.copy()
                 env["PYTHONIOENCODING"] = "utf-8"
                 env["PYTHONUTF8"] = "1"
-                # 打包后：直接调 bridge.exe；源码：调 python main.py
+                # 打包后：直接调 WeBotBridge.exe；源码：调 python webot_bridge/main.py
                 if BRIDGE_EXE.exists():
                     cmd = [str(BRIDGE_EXE)]
                 else:
@@ -351,7 +356,7 @@ class BridgeManagerApp:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        self.root.title("MaiBot Bridge 管理器")
+        self.root.title("WeBot-Bridge 管理器")
         self.root.geometry("720x560")
         self.root.minsize(620, 460)
 
@@ -359,7 +364,7 @@ class BridgeManagerApp:
 
         # 后台状态采集线程（避免 PowerShell 阻塞 Tk 主线程）
         self._stat_snapshot: dict[str, object] = {
-            "pid": None, "port_clients": -1, "weflow": "?", "wechat": "?",
+            "pid": None, "port_clients": -1, "wechat": "?",
         }
         self._stat_lock = threading.Lock()
         self._stat_dirty = threading.Event()
@@ -415,7 +420,6 @@ class BridgeManagerApp:
         self.info_vars = {
             "PID": tk.StringVar(value="-"),
             "端口 7999 客户端": tk.StringVar(value="-"),
-            "WeFlow (5031)": tk.StringVar(value="-"),
             "微信进程": tk.StringVar(value="-"),
             "日志文件": tk.StringVar(value="-" if not BRIDGE_LOG.exists() else str(BRIDGE_LOG)),
         }
@@ -522,7 +526,7 @@ class BridgeManagerApp:
             pystray.MenuSeparator(),
             pystray.MenuItem("❌ 退出", lambda _: self.root.after(0, self._quit)),
         )
-        self._tray_icon = pystray.Icon("MaiBotBridge", icon_img, "MaiBot Bridge 管理器", menu)
+        self._tray_icon = pystray.Icon("WeBotBridge", icon_img, "WeBot-Bridge 管理器", menu)
         self._tray_thread = threading.Thread(target=self._tray_icon.run, daemon=True)
         self._tray_thread.start()
 
@@ -589,7 +593,7 @@ class BridgeManagerApp:
 
         频率控制：每秒 1 次主 tick，但只在主 tick 跑 PowerShell；
         中间的轻量 tick（每 1s）只刷新 cached state 里的进程存活（用本地 API 免 PowerShell）。
-        客户端数 / WeFlow / 微信查询每 3s 一次。
+        客户端数 / 微信查询每 3s 一次。
         """
         tick = 0
         while not self._stat_thread_stop.is_set():
@@ -612,7 +616,6 @@ class BridgeManagerApp:
                 # 3) 端口客户端数（每 3 tick 一次，≈3s）
                 if tick % 3 == 0:
                     snapshot["port_clients"] = self._count_clients()
-                    snapshot["weflow"] = self._probe_weflow()
                     snapshot["wechat"] = self._count_wechat()
 
                 with self._stat_lock:
@@ -641,7 +644,6 @@ class BridgeManagerApp:
                 else:
                     self.info_vars["PID"].set("-")
                 self.info_vars["端口 7999 客户端"].set(str(snap.get("port_clients", "-")))
-                self.info_vars["WeFlow (5031)"].set(snap.get("weflow", "?"))
                 self.info_vars["微信进程"].set(snap.get("wechat", "?"))
 
                 state_run = "disabled" if running else "normal"
@@ -671,18 +673,6 @@ class BridgeManagerApp:
             return int(out.strip().decode("ascii", errors="ignore"))
         except Exception:  # noqa: BLE001
             return -1
-
-    def _probe_weflow(self) -> str:
-        if not IS_WINDOWS:
-            return "?"
-        try:
-            out = _run_powershell(
-                "(Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 http://127.0.0.1:5031/api/v1/health).StatusCode",
-                timeout=5,
-            )
-            return "✓ 正常" if out.strip() == b"200" else f"异常 {out.strip().decode(errors='ignore')}"
-        except Exception:  # noqa: BLE001
-            return "✗ 离线"
 
     def _count_wechat(self) -> str:
         if not IS_WINDOWS:
@@ -742,7 +732,7 @@ def main() -> None:
     if _already_running:
         try:
             import tkinter.messagebox as mb
-            mb.showwarning("MaiBot Bridge", "管理器已在运行，请到系统托盘查看。")
+            mb.showwarning("WeBot-Bridge", "管理器已在运行，请到系统托盘查看。")
         except Exception:  # noqa: BLE001
             pass
         return

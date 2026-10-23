@@ -53,10 +53,20 @@
 
 ## 安装
 
-### 方式一：下载发布包（推荐）
+两种成品形态，任选一种；都不需要管理员权限，也都不需要装 Python。
 
-1. 到 [Releases](https://github.com/OMSociety/WeBot-Bridge/releases) 下载
-   `WeBot-Bridge-v1.0.0.zip`，解压到任意目录。
+### 方式一：安装程序（推荐）
+
+到 [Releases](https://github.com/OMSociety/WeBot-Bridge/releases) 下载
+`WeBot-Bridge-v1.0.0-setup.exe`，双击安装。安装目录默认在
+`%LOCALAPPDATA%\Programs\WeBot-Bridge`，安装过程中可以勾选开机自启与桌面快捷方式。
+
+本程序没有购买代码签名证书，Windows SmartScreen 会拦一下：点「更多信息」→
+「仍要运行」即可。卸载时程序会单独问一次要不要删掉配置与已保存的微信口令，默认删除。
+
+### 方式二：便携包（portable zip）
+
+下载 `WeBot-Bridge-v1.0.0.zip`，解压到任意目录。
 
 ```
 WeBot-Bridge-v1.0.0/
@@ -72,15 +82,15 @@ WeBot-Bridge-v1.0.0/
 └── LICENSE
 ```
 
-2. 编辑 `data/config.json`，见[配置详解](#配置详解)。最少要填 `bot_nicknames`。
-3. 双击 `启动.bat`，或直接运行 `WeBotBridge-Manager.exe`。
+1. 编辑 `data/config.json`，见[配置详解](#配置详解)。最少要填 `bot_nicknames`。
+2. 双击 `启动.bat`，或直接运行 `WeBotBridge-Manager.exe`。
 
 > **提示：** 建议放在不含中文和空格的目录（如 `D:\WeBotBridge`），能少踩一些编码与权限的坑。
 > 四个 exe 必须放在同一目录，管理器靠同目录下的主程序与日志跟随器工作。
 > `data/` 是可写区：配置、日志、进程号、微信口令与图片密钥都在里面。想搬到别的目录，整个
 > 文件夹移走即可。
 
-### 方式二：从源码运行（开发者）
+### 方式三：从源码运行（开发者）
 
 ```bat
 git clone https://github.com/OMSociety/WeBot-Bridge.git
@@ -344,7 +354,7 @@ DPAPI 密文绑机器与 Windows 用户，属于预期行为，在新机器上�
 - **未在全新安装的 Windows 上验证过。** 开发与测试都在一台已经装了很多东西的机器上完成。
 
 实测过的微信版本、否证清单与实验数据记录在 `docs/known-limits-dat-format.md` 与
-`docs/known-limits-nonfg.md`。
+`docs/known-limits-desktop.md`。
 
 ## 架构
 
@@ -380,6 +390,7 @@ MaiBot（麦麦）
 | `tools/` | 独立小工具：取钥器、取图片密钥 |
 | `tests/` | 单测，不依赖真实微信 |
 | `docs/` | 已知限制与验证记录、第三方许可 |
+| `installer/` | Inno Setup 安装脚本 |
 | `build.py` | 一键打包 |
 
 ### 打包
@@ -388,8 +399,11 @@ MaiBot（麦麦）
 .venv\Scripts\python build.py
 ```
 
-产物在 `dist\WeBot-Bridge-v1.0.0.zip`。打包前会自动构建 WebUI 前端，所以需要 Node.js 与
-npm。取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。
+产物在 `dist\` 下：`WeBot-Bridge-v1.0.0.zip`（便携包）与
+`WeBot-Bridge-v1.0.0-setup.exe`（安装程序）。打包前会自动构建 WebUI 前端，所以需要 Node.js 与
+npm；安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包
+（也可以用 `INNO_SETUP_DIR` 或 `ISCC` 环境变量指定 `ISCC.exe` 的位置）。
+取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。
 
 ### 跑测试
 

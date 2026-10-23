@@ -14,11 +14,13 @@ import time
 
 from . import state
 from . import config
+from . import update_check
 from . import wechat_account
 from .single_instance import acquire_mutex
 from .senders import create_sender
 from .ob_server import _run_ob_server
 from .bridge_core import WeBotBridge
+from . import __version__
 
 log = logging.getLogger("ob11-bridge")
 
@@ -229,7 +231,11 @@ def main() -> int:
         log.info("=" * 50)
         log.info(" WeBot-Bridge 微信桥接 (OneBot v11)")
         log.info("=" * 50)
-        log.info("Bridge 版本: 2026-08-24 OB11 + WebUI 2.0 (FastAPI)")
+        log.info("Bridge 版本: %s", __version__)
+        if config.CONFIG_GENERATED:
+            log.info("首次启动：已按默认值生成 %s，请到 WebUI 里把示例值改成你的真实值", config.CONFIG_FILE)
+        # 后台查一次新版，失败静默（见 update_check）
+        update_check.check_async()
         start_account_watch()
         _start_bridge()
         if getattr(config, "WEBUI_AUTO_OPEN", True):

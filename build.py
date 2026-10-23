@@ -10,7 +10,9 @@
 前三个是运行必需；取钥器只在首次取钥与换号时用，单独成一个 exe 是为了不让
 frida 的几十 MB 拖进主程序。
 
-产物：dist/WeBot-Bridge-v1.0.0.zip
+产物：
+  dist/WeBot-Bridge-v1.0.0.zip              portable 包
+  dist/WeBot-Bridge-v1.0.0-setup.exe        安装程序（需要 Inno Setup）
 """
 from __future__ import annotations
 
@@ -193,8 +195,8 @@ def assemble_zip() -> Path:
             raise SystemExit(f"缺少打包产物 {src}")
         shutil.copy2(src, rel / fname)
 
-    # 2) 配置模板：可写数据统一落在 data/
-    shutil.copy2(PKG_SRC / "config.example.json", rel / "data" / "config.json")
+    # 2) 可写数据目录：首次启动时程序会在这里生成 config.json
+    (rel / "data").mkdir(parents=True, exist_ok=True)
 
     # 3) 启动脚本（双击启动管理器）
     (rel / "启动.bat").write_text(
@@ -231,6 +233,51 @@ start "" {EXE_MANAGER}{EXE_SUFFIX}
     return zip_path
 
 
+def find_iscc() -> Path | None:
+    """定位 Inno Setup 的命令行编译器 ISCC.exe。
+
+    依次看：环境变量 ISCC（完整路径）、INNO_SETUP_DIR（安装目录）、PATH，
+    最后退到几个常见安装位置。
+    """
+    direct = os.environ.get("ISCC", "").strip()
+    if direct and Path(direct).is_file():
+        return Path(direct)
+    dirs = [
+        os.environ.get("INNO_SETUP_DIR", "").strip(),
+        r"C:\Program Files (x86)\Inno Setup 7",
+        r"C:\Program Files\Inno Setup 7",
+        r"C:\Program Files (x86)\Inno Setup 6",
+        r"C:\Program Files\Inno Setup 6",
+    ]
+    for d in dirs:
+        if d and (Path(d) / "ISCC.exe").is_file():
+            return Path(d) / "ISCC.exe"
+    found = shutil.which("ISCC") or shutil.which("iscc")
+    return Path(found) if found else None
+
+
+def build_installer() -> Path | None:
+    """编译 setup exe。没装 Inno Setup 就跳过：zip 本身已是可用产物。"""
+    step("编译安装程序（setup exe）")
+    iscc = find_iscc()
+    if iscc is None:
+        print(
+            "找不到 Inno Setup 的 ISCC.exe，本次不生成 setup exe。\n"
+            "  装好后重跑即可，或设环境变量 ISCC=<ISCC.exe 的完整路径>。\n"
+            "  下载地址：https://jrsoftware.org/isdl.php"
+        )
+        return None
+    iss = ROOT / "installer" / "WeBot-Bridge.iss"
+    if not iss.is_file():
+        raise SystemExit(f"缺少安装脚本 {iss}")
+    run([str(iscc), str(iss)], cwd=iss.parent)
+    setup = DIST / f"{PKG_NAME}-setup.exe"
+    if not setup.is_file():
+        raise SystemExit(f"ISCC 执行完毕但没有生成 {setup}")
+    print(f"\n生成：{setup} ({setup.stat().st_size / 1024 / 1024:.2f} MB)")
+    return setup
+
+
 def main() -> int:
     t0 = time.time()
     clean()
@@ -242,9 +289,12 @@ def main() -> int:
     build_log_tail()
     build_manager()
     zip_path = assemble_zip()
+    setup_path = build_installer()
     # 这里不要用 emoji：Windows 控制台默认 GBK 编码，编码失败会让打包成功却以退出码 1 结束
     print(f"\n[完成] 打包完成，耗时 {time.time() - t0:.1f}s")
-    print(f"   发布包：{zip_path}")
+    print(f"   portable：{zip_path}")
+    if setup_path is not None:
+        print(f"   安装程序：{setup_path}")
     return 0
 
 

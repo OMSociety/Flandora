@@ -8,7 +8,7 @@ config.json 查找顺序：
   1. 程序目录/data/config.json
   2. 打包：exe 同目录/config.json；源码：包目录/config.json
   3. 当前工作目录/config.json
-  4. PyInstaller 临时目录（仅 config.example.json，作为最后兜底）
+  4. 都没有时，把打包进来的 config.example.json 写到 1 的位置，当作首次启动的默认配置
 """
 import json
 import os
@@ -36,8 +36,13 @@ def data_dir() -> str:
     return _default_data_dir()
 
 
-def _find_config_path() -> str:
-    """按优先级查找 config.json"""
+def _find_config_path() -> tuple:
+    """按优先级查找 config.json；都没有时用打包进来的示例生成一份。
+
+    返回 (路径, 是否是这次生成的)。生成的那份落在 data_dir()，也就是可写数据目录
+    ——不能把示例本身当配置用，它在打包后位于 PyInstaller 的临时解包目录，
+    进程一退就被清掉，日志与微信游标会跟着一起丢。
+    """
     candidates = []
     if getattr(sys, "frozen", False):
         exe_dir = os.path.dirname(sys.executable)
@@ -51,21 +56,39 @@ def _find_config_path() -> str:
     for d in candidates:
         p = os.path.join(d, "config.json")
         if os.path.isfile(p):
-            return p
-    # 兜底：临时目录里的 example（仅用于提示用户）
-    if getattr(sys, "_MEIPASS", None):
-        candidate = os.path.join(sys._MEIPASS, "config.example.json")
+            return p, False
+
+    example = _find_example()
+    if example:
+        target = os.path.join(_default_data_dir(), "config.json")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(example, "r", encoding="utf-8") as src:
+            text = src.read()
+        with open(target, "w", encoding="utf-8") as dst:
+            dst.write(text)
+        return target, True
+
+    raise FileNotFoundError(
+        "找不到 config.json，也没有可用的 config.example.json。"
+        f"请把 config.example.json 复制为 config.json，放到 {_default_data_dir()}。"
+    )
+
+
+def _find_example() -> str:
+    """打包进来的配置示例；源码运行时用包目录里那份。"""
+    packed = getattr(sys, "_MEIPASS", "")
+    if packed:
+        candidate = os.path.join(packed, "config.example.json")
         if os.path.isfile(candidate):
             return candidate
-    raise FileNotFoundError(
-        "找不到 config.json。请把 config.example.json 复制为 config.json 并填好 token，"
-        f"放到 {os.path.join(_default_data_dir(), 'config.json')}。"
-    )
+    candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "config.example.json")
+    return candidate if os.path.isfile(candidate) else ""
 
 
 # ============ 配置 ============
 
-CONFIG_FILE = _find_config_path()
+CONFIG_FILE, CONFIG_GENERATED = _find_config_path()
 
 
 def load_config():

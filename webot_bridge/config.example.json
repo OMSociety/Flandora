@@ -1,5 +1,5 @@
 {
-    "_comment": "WeBot-Bridge 配置示例。复制为 config.json 后填入你的真实值。",
+    "_comment": "WeBot-Bridge 配置。首次启动会自动生成一份 config.json，把下面的示例值改成你的真实值即可，也可以在 WebUI 里改。",
     "bot_nicknames": [
         "机器人微信昵称"
     ],

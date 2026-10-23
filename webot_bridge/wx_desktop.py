@@ -4,7 +4,7 @@
 
 向微信投递输入（无论鼠标消息、`WM_CHAR` 还是 UIA 动作）都会让微信把它自己
 激活到前台——这是微信自身的行为，逐机制实测见
-`docs/known-limits-nonfg.md`。
+`docs/known-limits-desktop.md`。
 
 但「抢前台」是**桌面局部**的：每个 Desktop 有自己的前台窗口。把微信放到另一个
 Desktop 上，它升到前台只影响那个桌面，用户所在的 Default 桌面不受影响。

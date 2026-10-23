@@ -8,7 +8,6 @@ WeFlow 的推送是「插件把消息转发出来」，这里换成直接读微�
 """
 import logging
 import os
-import re
 import time
 
 import config
@@ -16,6 +15,7 @@ import wechat_account
 import wx_crypto
 import wx_store
 from wx_store import WxStoreError
+from wxkey.store import KeyStore, KeyStoreError
 
 log = logging.getLogger("ob11-bridge")
 
@@ -28,8 +28,12 @@ class WxSourceError(Exception):
 
 
 def default_key_file() -> str:
+    """口令文件默认位置：配置文件同目录下的 ``wx_key.dat``。
+
+    扩展名是 .dat 而非 .hex：内容是 DPAPI 密文（见 wxkey.store），不是明文。
+    """
     base = os.path.dirname(config.CONFIG_FILE) or "."
-    return os.path.join(base, "wx_key.hex")
+    return os.path.join(base, "wx_key.dat")
 
 
 def default_work_dir() -> str:
@@ -38,19 +42,32 @@ def default_work_dir() -> str:
 
 
 def load_passphrase(path: str = None) -> bytes:
-    """读 64 位十六进制的口令文件。允许 # 开头的注释行。"""
+    """读口令，并确认它属于当前登录的账号。
+
+    口令文件是 DPAPI 加密的，只有生成它的那个 Windows 账户解得开；换账户或
+    换机器会解不开，这时给出「重新取钥」的指引，而不是把底层错误直接抛给用户。
+    """
     path = path or config.WX_KEY_FILE or default_key_file()
     if not os.path.isfile(path):
-        raise WxSourceError(f"找不到微信口令文件 {path}，需要先跑一次取钥")
+        raise WxSourceError(
+            f"找不到微信口令文件 {path}。请先在配置界面里执行一次「取密钥」。")
+
+    store = KeyStore(path)
     try:
-        with open(path, encoding="utf-8") as f:
-            text = f.read()
-    except OSError as e:
-        raise WxSourceError(f"读不到口令文件 {path}: {e}") from e
-    text = "".join(ln for ln in text.splitlines() if not ln.strip().startswith("#")).strip()
-    if not re.fullmatch(r"[0-9a-fA-F]{64}", text):
-        raise WxSourceError(f"{path} 里的口令不是 64 位十六进制")
-    return bytes.fromhex(text)
+        stored = store.load()
+    except KeyStoreError as e:
+        raise WxSourceError(str(e)) from e
+    if stored is None:
+        raise WxSourceError(f"口令文件为空：{path}")
+
+    # 账号对不上时直接报错，不拿旧口令去解新账号的库——那样只会得到
+    # 「页面校验失败」，看不出真正原因是换了账号。
+    current = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
+    if current is not None and stored.wxid and current.wxid != stored.wxid:
+        raise WxSourceError(
+            f"口令属于账号 {stored.wxid}，当前登录的是 {current.wxid}。"
+            f"请为新账号重新执行一次「取密钥」。")
+    return stored.passphrase
 
 
 class WxLocalSource:

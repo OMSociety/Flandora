@@ -111,11 +111,14 @@ def _process_start_time(pid: int) -> float:
     return 0
 
 
-def enum_wechat_windows() -> list[dict]:
+def enum_wechat_windows(desktop_name: str = "") -> list[dict]:
     """枚举所有疑似微信主窗口。
 
     判定：顶层可见窗口，标题含「微信/WeChat」，且类名像 Qt 窗口或进程是
     WeChat.exe/Weixin.exe（过滤浏览器标签页等同名窗口）。
+
+    `desktop_name` 非空时改在指定 Desktop 上枚举（隔离桌面模式）——那些窗口在
+    当前桌面的 `EnumWindows` 里根本不可见，必须走 `EnumDesktopWindows`。
     """
     user32 = ctypes.windll.user32
     results = []
@@ -124,7 +127,8 @@ def enum_wechat_windows() -> list[dict]:
 
     def _cb(hwnd, _lparam):
         try:
-            if not user32.IsWindowVisible(hwnd):
+            # 隔离桌面上的窗口不可见，不能按可见性过滤
+            if not desktop_name and not user32.IsWindowVisible(hwnd):
                 return True
             length = user32.GetWindowTextLengthW(hwnd)
             if length == 0:
@@ -160,7 +164,16 @@ def enum_wechat_windows() -> list[dict]:
             pass
         return True
 
-    user32.EnumWindows(EnumWindowsProc(_cb), 0)
+    if desktop_name:
+        hdesk = user32.OpenDesktopW(desktop_name, 0, False, 0x000F01FF)
+        if not hdesk:
+            return results
+        try:
+            user32.EnumDesktopWindows(hdesk, EnumWindowsProc(_cb), 0)
+        finally:
+            user32.CloseDesktop(hdesk)
+    else:
+        user32.EnumWindows(EnumWindowsProc(_cb), 0)
     return results
 
 
@@ -248,7 +261,8 @@ class UiaSender(BaseSender):
         return cls._user32
 
     def __init__(self, search_enabled: bool = True,
-                 allow_foreground_steal: bool = False):
+                 allow_foreground_steal: bool = False,
+                 isolated_desktop: str = ""):
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
         self._auto = None
@@ -271,6 +285,9 @@ class UiaSender(BaseSender):
         self.search_enabled = search_enabled
         # 是否允许发送时把微信窗口提到前台。关闭时发送通道整体不可用。
         self.allow_foreground_steal = bool(allow_foreground_steal)
+        # 非空时表示微信跑在指定名字的独立 Desktop 上：窗口枚举改走
+        # EnumDesktopWindows，前台提升只影响那个桌面，用户所在的桌面不受打扰。
+        self.isolated_desktop = isolated_desktop or ""
 
         self._init()
 
@@ -326,23 +343,43 @@ class UiaSender(BaseSender):
         except Exception:
             return False
 
-    def _window_state(self, w) -> str:
+    @classmethod
+    def state_from_handle(cls, hwnd: int) -> str:
+        """按窗口句柄判断微信状态，返回 'login' / 'chat' / 'unknown'。
+
+        供 WebUI 与桌面管理器复用：`ControlFromHandle` 能取到**别的桌面**上的
+        控件，所以隔离桌面上的窗口也能这样判状态。
+        """
+        try:
+            import uiautomation as auto
+        except ImportError:
+            return "unknown"
+        try:
+            ctrl = auto.ControlFromHandle(hwnd)
+            if not ctrl or not ctrl.Exists(0.3):
+                return "unknown"
+        except Exception:
+            return "unknown"
+        return cls._window_state(ctrl)
+
+    @classmethod
+    def _window_state(cls, w) -> str:
         """按窗口内容判断状态，返回 'login' / 'chat' / 'unknown'。
 
         微信掉线后登录布局承载在 mmui::MainWindow 里（与已登录主窗口同一个
         类名），只比类名会把登录界面当主界面，所以有界遍历子孙节点看内容。
         """
         try:
-            if w.ClassName == self.LOGIN_WINDOW_CLASS:
+            if w.ClassName == cls.LOGIN_WINDOW_CLASS:
                 return "login"
         except Exception:
             pass
 
-        budget = [self.SCAN_MAX_NODES]
+        budget = [cls.SCAN_MAX_NODES]
         found = {"login": False, "chat": False}
 
         def rec(ctrl, depth):
-            if found["login"] or depth > self.SCAN_MAX_DEPTH or budget[0] <= 0:
+            if found["login"] or depth > cls.SCAN_MAX_DEPTH or budget[0] <= 0:
                 return
             try:
                 children = list(ctrl.GetChildren())
@@ -356,11 +393,11 @@ class UiaSender(BaseSender):
                     blob = f"{child.AutomationId or ''} {child.Name or ''}"
                 except Exception:
                     blob = ""
-                if any(mk in blob for mk in self.LOGIN_TEXT_MARKERS):
+                if any(mk in blob for mk in cls.LOGIN_TEXT_MARKERS):
                     found["login"] = True
                     return
                 try:
-                    if child.Name in self.CHAT_UI_MARKERS:
+                    if child.Name in cls.CHAT_UI_MARKERS:
                         found["chat"] = True
                 except Exception:
                     pass
@@ -377,13 +414,52 @@ class UiaSender(BaseSender):
             return "chat"
         return "unknown"
 
+    def _find_window_isolated(self) -> bool:
+        """在隔离桌面上定位微信主窗口。
+
+        两条路都只看当前桌面、在隔离桌面上看不见微信：`EnumWindows` 与 UIA 的
+        `GetRootControl()`。所以先用 `EnumDesktopWindows` 取 hwnd，再用
+        `ControlFromHandle` 跨桌面拿 UIA 控件（实测可用）。
+        """
+        auto = self._auto
+        cands = enum_wechat_windows(self.isolated_desktop)
+        if not cands:
+            log.error("隔离桌面 %s 上没有找到微信窗口，微信是否已启动？",
+                      self.isolated_desktop)
+            return False
+        # 主窗口面积最大，优先试
+        cands.sort(key=lambda c: -((c["rect"][2] - c["rect"][0]) *
+                                   (c["rect"][3] - c["rect"][1])))
+        for info in cands:
+            try:
+                w = auto.ControlFromHandle(info["hwnd"])
+                if not w or not w.Exists(0.3):
+                    continue
+                if self._window_state(w) == "login":
+                    log.error("隔离桌面上的微信停在登录界面，请先在 WebUI 里完成登录")
+                    return False
+                self._window = w
+                self._hwnd = info["hwnd"]
+                log.info("已绑定隔离桌面 %s 上的微信窗口 hwnd=%d",
+                         self.isolated_desktop, info["hwnd"])
+                return True
+            except Exception as exc:  # noqa: BLE001
+                log.warning("绑定隔离窗口 hwnd=%s 失败：%s", info["hwnd"], exc)
+        log.error("隔离桌面上没有找到可用的已登录微信窗口")
+        return False
+
     def _find_window(self) -> bool:
         """定位微信**已登录主窗口**：优先绑定 config.wechat_hwnd 指定的窗口（多开场景），
         未配置或已失效则回退到自动查找。
 
         查找顺序：按进程名（Weixin.exe/WeChat.exe）挑顶层窗口；识别不到进程时退回
         标题匹配。登录界面一律不绑定——否则模拟按键会打进登录界面并假报发送成功。
+
+        隔离桌面模式下改走 `_find_window_isolated()`：那上面的窗口在
+        `GetRootControl()` 的树里根本不存在。
         """
+        if self.isolated_desktop:
+            return self._find_window_isolated()
         auto = self._auto
         root = auto.GetRootControl()
         children = list(root.GetChildren())
@@ -636,7 +712,12 @@ class UiaSender(BaseSender):
 
         微信收到投递进来的鼠标或键盘消息就会把自己升到前台，本模块无法避免，
         所以通道默认关闭，要 config.json 里显式打开才发送。
+
+        隔离桌面模式下无需此开关：微信在那张桌面上怎么升前台都影响不到用户，
+        这正是该模式存在的意义。
         """
+        if self.isolated_desktop:
+            return True
         if self.allow_foreground_steal:
             return True
         log.error(

@@ -9,6 +9,7 @@ const tabs = [
   { id: 'messages', icon: '💬', label: '消息' },
   { id: 'logs', icon: '📜', label: '日志' },
   { id: 'config', icon: '⚙️', label: '配置' },
+  { id: 'desktop', icon: '🖥️', label: '微信画面' },
   { id: 'test', icon: '✈️', label: '发送测试' },
 ]
 </script>

@@ -51,6 +51,17 @@ def _start_bridge():
     # create_sender() 会做 UIA 窗口枚举，可能阻塞（微信最小化/锁屏时尤甚），
     # 放到独立线程避免卡住 _bridge_loop（SSE 收消息）的启动。
     def _create_sender_async():
+        # 隔离桌面模式下微信由本程序启动，必须先把它拉起来，否则下面找不到窗口
+        try:
+            import wx_desktop
+            mgr = wx_desktop.manager()
+            if mgr.enabled():
+                log.info("[Web] 隔离桌面模式：正在其上启动微信")
+                if not mgr.start():
+                    log.error("[Web] 隔离桌面启动失败：%s",
+                              mgr.status().get("error", ""))
+        except Exception as exc:  # noqa: BLE001
+            log.error(f"隔离桌面启动异常: {exc}")
         try:
             state.sender_instance = create_sender()
         except Exception as exc:  # noqa: BLE001

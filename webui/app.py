@@ -12,6 +12,11 @@ FastAPI WebUI 应用。
 - GET  /api/stats         统计（计数器 + 24h 分布 + 热门联系人）
 - GET  /api/contacts      已知联系人/群列表
 - POST /api/send          测试发送 {"contact", "text"}
+- GET  /api/desktop/status     隔离桌面运行/登录状态
+- POST /api/desktop/start      在隔离桌面上启动微信
+- POST /api/desktop/stop       结束隔离桌面上的微信
+- GET  /api/desktop/screenshot 隔离桌面上微信窗口的实况截图（PNG）
+- POST /api/desktop/click      把画面点击转发到隔离窗口 {"x", "y"}
 - WS   /ws                实时推送（log / msg / status 事件）
 - GET  /                  前端静态页面（webui/dist）
 """
@@ -24,7 +29,7 @@ import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import state
@@ -61,6 +66,8 @@ HOT_CONFIG_ATTRS = {
 RESTART_KEYS = (
     "weflow_base_url", "access_token", "ob_server_host", "ob_server_port",
     "ob_server_token", "web_port", "astrbot_ob_url", "astrbot_attachments",
+    # 隔离桌面相关的三个改动都要重启才成立：桌面要重建、微信要重开、窗口要重绑
+    "isolated_desktop", "isolated_desktop_name", "wechat_exe",
 )
 
 VALID_MODES = ("mention", "all", "batch")
@@ -431,6 +438,97 @@ def api_flash_window(payload: dict):
         return JSONResponse({"ok": False, "error": "hwnd 不能为 0"}, 400)
     ok = flash_window(hwnd)
     return {"ok": ok}
+
+
+# ============ 隔离桌面（微信跑在独立桌面上，登录靠截图） ============
+
+
+@app.get("/api/desktop/status")
+def api_desktop_status():
+    """隔离桌面的运行与登录状态。"""
+    try:
+        import wx_desktop
+    except ImportError as e:
+        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+    try:
+        return {"ok": True, **wx_desktop.manager().status()}
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 500)
+
+
+@app.post("/api/desktop/start")
+def api_desktop_start():
+    """在隔离桌面上启动微信（已启动时是空操作）。"""
+    try:
+        import wx_desktop
+    except ImportError as e:
+        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+    mgr = wx_desktop.manager()
+    if not mgr.enabled():
+        return JSONResponse({
+            "ok": False,
+            "error": "隔离桌面模式未开启。请先在配置里把 isolated_desktop 设为 true 并保存",
+        }, 400)
+    if not mgr.start():
+        return JSONResponse(
+            {"ok": False, "error": mgr.status().get("error", "启动失败")}, 500)
+    return {"ok": True, **mgr.status()}
+
+
+@app.post("/api/desktop/stop")
+def api_desktop_stop():
+    """结束隔离桌面上的微信并释放桌面（只动本程序启动的那个）。"""
+    try:
+        import wx_desktop
+    except ImportError as e:
+        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+    wx_desktop.manager().stop()
+    return {"ok": True, **wx_desktop.manager().status()}
+
+
+@app.get("/api/desktop/screenshot")
+def api_desktop_screenshot():
+    """隔离桌面上微信窗口的实况截图（PNG）。
+
+    隔离桌面用户看不见，登录必须靠这个画面；二维码与「需在手机上完成登录」
+    这类界面都在这里显示。
+    """
+    try:
+        import wx_desktop
+    except ImportError as e:
+        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+    mgr = wx_desktop.manager()
+    if not mgr.enabled():
+        return JSONResponse(
+            {"ok": False, "error": "隔离桌面模式未开启"}, 400)
+    png = mgr.screenshot_png()
+    if png is None:
+        return JSONResponse(
+            {"ok": False, "error": "没取到画面：微信窗口不在或尚未出现"}, 404)
+    return Response(content=png, media_type="image/png",
+                    headers={"Cache-Control": "no-store"})
+
+
+@app.post("/api/desktop/click")
+def api_desktop_click(payload: dict):
+    """把画面上的点击转发到隔离桌面上的微信窗口。
+
+    坐标是**客户区坐标**（相对窗口左上角），与 /api/desktop/screenshot 的像素
+    一一对应——前端按图片显示尺寸等比换算即可。
+    """
+    try:
+        import wx_desktop
+    except ImportError as e:
+        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+    try:
+        x = int((payload or {}).get("x", -1))
+        y = int((payload or {}).get("y", -1))
+    except (TypeError, ValueError):
+        return JSONResponse({"ok": False, "error": "x/y 必须是整数"}, 400)
+    if not wx_desktop.manager().click(x, y):
+        return JSONResponse(
+            {"ok": False, "error": f"点击未送达（窗口不在，或坐标越界: {x},{y}）"}, 400)
+    return {"ok": True}
 
 
 # ============ WebSocket 实时推送 ============

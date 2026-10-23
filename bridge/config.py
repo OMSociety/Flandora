@@ -106,6 +106,17 @@ OB_SERVER_PORT = config.get("ob_server_port", 7998)
 OB_SERVER_TOKEN = config.get("ob_server_token", "")
 SELF_NAME = config.get("self_name", "wechat-bot")
 
+# ====== 隔离桌面模式 ======
+# 开启后微信由 bridge 启动在一个独立的 Windows 桌面上，向它投递输入不会把用户
+# 所在的桌面切走——「完全不抢前台」由此成立。代价是：微信必须由 bridge 启动
+# （用户不能自己双击），且首次登录要在 WebUI 里看截图完成确认。
+# 关闭时保持原行为：发送时微信会短暂到前台，发完立刻归还。
+ISOLATED_DESKTOP = bool(config.get("isolated_desktop", False))
+# 隔离桌面的名称，一般不用改
+ISOLATED_DESKTOP_NAME = config.get("isolated_desktop_name", "WeBotSandbox")
+# 微信可执行文件路径。留空则自动探测常见安装位置。
+WECHAT_EXE = config.get("wechat_exe", "")
+
 # ====== 群 ID → 群名 映射 ======
 # 微信搜索框无法搜 "@chatroom" 结尾的群 ID，需要填真实群名才能搜到。
 # 格式: {"群ID": "微信里显示的群名"}

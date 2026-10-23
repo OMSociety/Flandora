@@ -1,12 +1,22 @@
+# 微信 4.x → MaiBot 桥接的运行期依赖。
+#
+# 解释器：开发与打包统一用 Python 3.13（仓库根下的 .venv，已 gitignore）。
+# 终端用户不需要装 Python——发布包由 PyInstaller 打包，解释器与下面这些库都随包
+# 分发（含 Frida，取钥要用，见 README 的取钥一节）。
+#
+# 安装：.venv\Scripts\python.exe -m pip install -r bridge\requirements.txt
+
 requests>=2.31.0
-pyautogui>=0.9.54
-pyperclip>=1.8.2
-pygetwindow>=0.0.9
-uiautomation>=2.0.17
 Pillow>=10.0.0
+# 窗口自动化：定位微信窗口、投递输入、隔离桌面截图（wx_desktop 用 Image 编 PNG）
+uiautomation>=2.0.17
 # websockets.asyncio（新版 asyncio 协议栈）自 13.0 起提供，ob_server.py 依赖它
 websockets>=13.0,<17
 fastapi>=0.110.0
 uvicorn>=0.29.0
 # 微信消息正文在库里是 zstd 压缩的（收件源选 local 时需要）
 zstandard>=0.22.0
+# 内置取钥：Frida 注入微信进程，在登录瞬间截获数据库口令（wxkey/capture.py）。
+# 进程枚举与模块导出的取法在 17 上换过一次，代码对 16/17 都兼容，但只在 17.x
+# 上验证过，所以下限取 17。
+frida>=17.0.0,<18

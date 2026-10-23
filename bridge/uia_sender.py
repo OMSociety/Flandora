@@ -2,17 +2,22 @@
 uia_sender.py — 微信消息发送器
 =================================================================
 
-方案：微信窗口激活到前台 + uiautomation SendKeys 键盘模拟。
+方案：把输入以窗口消息定向投递给微信线程，不移动真实光标。
 
-- 发送前激活微信窗口（会抢焦点，用户已知晓并接受）
-- 联系人切换用 Ctrl+F 搜索（前台可靠）
+- AttachThreadInput 共享输入队列 + SetActiveWindow，使微信线程能处理投递
+  进来的鼠标/键盘消息
+- 已知边界：投递输入会使微信窗口升到前台。这是微信对输入消息的响应，
+  本模块无法避免（实测 SetFocus/SetValue/WM_CHAR/鼠标消息皆然）。
+  需要「前台始终是用户的窗口」时不能使用本模块
+- 联系人切换优先点会话列表项，列表里没有时才退回顶部搜索框
 - 文本用 WM_CHAR 逐字符输入（中文可靠，避免剪贴板/输入法问题）
-- 发送后尝试最小化微信（尽力减少打扰）
-- 清空输入框用 SendKeys Ctrl+A + Delete（避免残留字符）
+- 图片/文件用剪贴板 + 伪造 Ctrl 键态的 Ctrl+V
+- 发送前回读输入框校验，发送后按会话摘要行确认；任一步不符即报失败
+- 不最小化窗口、不改动窗口尺寸与位置
 
 依赖:
-  pip install uiautomation pyperclip
-  发送图片需要 PowerShell (Windows 自带)
+  pip install uiautomation
+  发送图片/文件需要 PowerShell (Windows 自带)
 """
 
 import ctypes
@@ -35,14 +40,18 @@ log = logging.getLogger("weflow-bridge")
 WM_KEYDOWN = 0x0100
 WM_KEYUP = 0x0101
 WM_CHAR = 0x0102
+WM_MOUSEMOVE = 0x0200
+WM_LBUTTONDOWN = 0x0201
+WM_LBUTTONUP = 0x0202
 VK_CONTROL = 0x11
+VK_LCONTROL = 0xA2
 VK_RETURN = 0x0D
-VK_SHIFT = 0x10
 VK_BACK = 0x08
-VK_DELETE = 0x2E
-VK_A = 0x41
-VK_F = 0x46
+VK_ESCAPE = 0x1B
 VK_V = 0x56
+
+# WM_KEYUP 的 lParam：低位为重复次数 1，其余位标明键已抬起
+KEYUP_LPARAM = 0xC0000001
 
 
 class BaseSender:
@@ -167,11 +176,63 @@ def flash_window(hwnd: int, count: int = 5) -> bool:
 
 
 class UiaSender(BaseSender):
-    """
-    微信消息发送器（SendKeys 键盘模拟 + WM_CHAR 中文输入）。
-    """
+    """微信消息发送器：把输入以窗口消息定向投递给微信线程。"""
 
-    WECHAT_TITLES = ["微信", "WeChat"]
+    WECHAT_TITLES = ["微信", "WeChat", "Weixin"]
+
+    # 微信登录界面的窗口类名。未登录时微信只存在这个窗口，而它的标题同样是
+    # 「微信」，仅按标题查找会误绑到登录界面：后续 Ctrl+F / 粘贴 / 回车都会
+    # 打进登录界面，并在发送后假报成功（消息其实从未发出）。
+    LOGIN_WINDOW_CLASS = "mmui::LoginWindow"
+
+    # 会话列表项 / 输入框 / 搜索框 / 搜索结果项 / 搜索弹层（微信 4.1.15.56 实测类名）。
+    # 会话项的名字是多行文本：会话名 / 最后一条消息摘要 / 时间。
+    SESSION_CELL_CLASS = "mmui::ChatSessionCell"
+    INPUT_FIELD_CLASS = "mmui::ChatInputField"
+    SEARCH_FIELD_CLASS = "mmui::XSearchField"
+    SEARCH_RESULT_CLASS = "mmui::SearchContentCellView"
+    # 搜索结果项实测类名是 mmui::XTableCell（搜狗网络结果与「功能」动作项也是
+    # 同一个类名），保留旧类名以兼容其它版本。
+    SEARCH_RESULT_CLASSES = ("mmui::XTableCell", "mmui::SearchContentCellView")
+    SEARCH_POPOVER_CLASS = "mmui::SearchContentPopover"
+    # 弹层里「功能」分区的标题：它下面会出现与联系人同名的**动作项**
+    # （如「发送文件」），不是会话，必须排除。
+    SEARCH_ACTION_HEADER = "功能"
+
+    # 图片贴进富文本输入框后，ValuePattern 读到的是嵌入对象占位符 U+FFFC。
+    IMAGE_MARK = "\ufffc"
+
+    # 控件树遍历预算：会话多时微信 UI 树可达数百节点。
+    WALK_MAX_DEPTH = 30
+    WALK_MAX_NODES = 4000
+
+    # 抑制子进程控制台窗口。不能用 PowerShell 的 -WindowStyle Hidden：
+    # Windows PowerShell 5.1 把它与 -Command 内联脚本组合时会以 -1 退出，
+    # 剪贴板写不进去（图片/文件因此发不出去）。
+    CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+
+    # 窗口识别的首选依据是进程名：微信 4.1.x 通过 UIA 暴露的窗口 Name 会在
+    # 「微信」/「Weixin」之间变化（同一 hwnd 实测两种取值），标题匹配不可靠。
+    WECHAT_EXE_NAMES = ("weixin.exe", "wechat.exe")
+
+    # 登录态判定按内容而非类名：掉线时登录布局承载在 mmui::MainWindow 里
+    # （类名与已登录主窗口相同），只比类名会把登录界面当成主界面。
+    LOGIN_TEXT_MARKERS = (
+        "login_layout",
+        "login_step_layout",
+        "请重新登录",
+        "为了你的账号安全",
+    )
+    CHAT_UI_MARKERS = ("通讯录", "聊天", "搜索")
+
+    # 内容扫描的边界：够覆盖登录布局与聊天界面，且不会在异常窗口上失控。
+    SCAN_MAX_DEPTH = 8
+    SCAN_MAX_NODES = 500
+
+    # 无障碍树为空的判据。微信被关到托盘后又被重新显示时，UIA 树只剩
+    # MainWindow 与其渲染子窗两级；这与「界面尚未渲染完」不同，等多久都不会恢复。
+    A11Y_EMPTY_NODES = 4
+
     _user32 = None
 
     @classmethod
@@ -189,7 +250,12 @@ class UiaSender(BaseSender):
         self._window = None
         self._hwnd = 0
 
-        # 最近联系人缓存（相同目标跳过搜索，快速发送）
+        # 线程附着状态（共享输入队列用；必须成对出现）
+        self._attached = False
+        self._tid_me = 0
+        self._tid_wx = 0
+
+        # 最近联系人缓存（相同目标跳过切换，快速发送）
         self._last_contact = ""
 
         self.search_enabled = search_enabled
@@ -216,12 +282,105 @@ class UiaSender(BaseSender):
             self._hwnd = self._window.NativeWindowHandle
             self._ready = True
 
-    def _find_window(self):
-        """定位微信主窗口：优先绑定 config.wechat_hwnd 指定的窗口（多开场景），
-        未配置或已失效则回退到按标题自动查找（取第一个）。"""
+    @staticmethod
+    def _exe_name(pid: int) -> str:
+        """取 pid 对应的可执行文件名（小写，含扩展名）。失败返回空串。"""
+        if not pid:
+            return ""
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32
+        try:
+            handle = kernel32.OpenProcess(
+                PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid)
+            )
+        except Exception:
+            return ""
+        if not handle:
+            return ""
+        try:
+            size = wintypes.DWORD(1024)
+            buf = ctypes.create_unicode_buffer(1024)
+            if kernel32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+                return os.path.basename(buf.value).lower()
+            return ""
+        except Exception:
+            return ""
+        finally:
+            kernel32.CloseHandle(handle)
+
+    def _is_wechat_process(self, w) -> bool:
+        try:
+            return self._exe_name(w.ProcessId) in self.WECHAT_EXE_NAMES
+        except Exception:
+            return False
+
+    def _window_state(self, w) -> str:
+        """按窗口内容判断状态，返回 'login' / 'chat' / 'unknown'。
+
+        微信掉线后登录布局承载在 mmui::MainWindow 里（与已登录主窗口同一个
+        类名），只比类名会把登录界面当主界面，所以有界遍历子孙节点看内容。
+        """
+        try:
+            if w.ClassName == self.LOGIN_WINDOW_CLASS:
+                return "login"
+        except Exception:
+            pass
+
+        budget = [self.SCAN_MAX_NODES]
+        found = {"login": False, "chat": False}
+
+        def rec(ctrl, depth):
+            if found["login"] or depth > self.SCAN_MAX_DEPTH or budget[0] <= 0:
+                return
+            try:
+                children = list(ctrl.GetChildren())
+            except Exception:
+                return
+            for child in children:
+                if found["login"] or budget[0] <= 0:
+                    return
+                budget[0] -= 1
+                try:
+                    blob = f"{child.AutomationId or ''} {child.Name or ''}"
+                except Exception:
+                    blob = ""
+                if any(mk in blob for mk in self.LOGIN_TEXT_MARKERS):
+                    found["login"] = True
+                    return
+                try:
+                    if child.Name in self.CHAT_UI_MARKERS:
+                        found["chat"] = True
+                except Exception:
+                    pass
+                rec(child, depth + 1)
+
+        try:
+            rec(w, 0)
+        except Exception:
+            pass
+
+        if found["login"]:
+            return "login"
+        if found["chat"]:
+            return "chat"
+        return "unknown"
+
+    def _find_window(self) -> bool:
+        """定位微信**已登录主窗口**：优先绑定 config.wechat_hwnd 指定的窗口（多开场景），
+        未配置或已失效则回退到自动查找。
+
+        查找顺序：按进程名（Weixin.exe/WeChat.exe）挑顶层窗口；识别不到进程时退回
+        标题匹配。登录界面一律不绑定——否则模拟按键会打进登录界面并假报发送成功。
+        """
         auto = self._auto
         root = auto.GetRootControl()
         children = list(root.GetChildren())
+
+        def _usable(w) -> bool:
+            try:
+                return w.ClassName not in ("Chrome_WidgetWin_1", "CabinetWClass")
+            except Exception:
+                return False
 
         target = 0
         try:
@@ -233,20 +392,61 @@ class UiaSender(BaseSender):
             for w in children:
                 try:
                     if w.NativeWindowHandle == target and w.Exists(0.1):
+                        if self._window_state(w) == "login":
+                            log.error(f"配置的微信窗口 hwnd={target} 是登录界面，微信尚未登录")
+                            return False
                         self._window = w
                         log.info(f"使用配置的微信窗口 hwnd={target}")
-                        return
+                        return True
                 except Exception:
                     continue
             log.warning(f"配置的微信窗口 hwnd={target} 已失效，回退自动查找")
 
+        by_process = []
+        titled = []
         for w in children:
-            if w.ClassName in ("Chrome_WidgetWin_1", "CabinetWClass"):
+            if not _usable(w):
                 continue
-            for kw in self.WECHAT_TITLES:
-                if kw in w.Name:
-                    self._window = w
-                    return
+            if self._is_wechat_process(w):
+                by_process.append(w)
+                continue
+            try:
+                if any(kw in w.Name for kw in self.WECHAT_TITLES):
+                    titled.append(w)
+            except Exception:
+                continue
+
+        candidates = by_process or titled
+        login_window = None
+        unknown_window = None
+        for w in candidates:
+            state = self._window_state(w)
+            if state == "login":
+                login_window = w
+                continue
+            if state == "unknown":
+                unknown_window = w
+                continue
+            self._window = w
+            return True
+
+        if unknown_window is not None:
+            nodes = len(self._walk(unknown_window))
+            if nodes <= self.A11Y_EMPTY_NODES:
+                log.error(
+                    f"微信窗口存在，但无障碍(UIA)树为空（只枚举到 {nodes} 个节点）。"
+                    "通常是微信被关到托盘后又被重新显示：此时它只重绘界面，不重建无障碍树。"
+                    "请从托盘彻底退出微信并重新启动；本次发送已取消"
+                )
+                return False
+            # 聊天界面特征可能尚未渲染完（微信刚启动）；仍绑定，发送前会再校验。
+            log.warning("微信窗口已绑定，但未识别到聊天界面特征（界面可能尚未渲染）")
+            self._window = unknown_window
+            return True
+
+        if login_window is not None:
+            log.error("微信当前停在登录界面（未登录），请先登录微信；本次发送已取消")
+        return False
 
     def current_window_info(self) -> dict | None:
         """当前绑定的微信窗口信息（供 WebUI 状态展示）。句柄已失效则返回 None。"""
@@ -300,6 +500,15 @@ class UiaSender(BaseSender):
                 log.error(f"绑定窗口异常: {e}")
         return False
 
+    def _is_login_window(self) -> bool:
+        """当前绑定的窗口是否是登录界面（微信掉线后主窗口会被它取代）。"""
+        if not self._window:
+            return False
+        try:
+            return self._window_state(self._window) == "login"
+        except Exception:
+            return False
+
     def _window_alive(self) -> bool:
         """检测当前窗口控件是否仍然有效。
 
@@ -314,6 +523,10 @@ class UiaSender(BaseSender):
                 return False
             # 再校验句柄本身是否仍是有效窗口
             if not self._user32_inst().IsWindow(self._hwnd):
+                return False
+            # 绑定的若是登录界面（发送途中微信掉线），同样不可用
+            if self._is_login_window():
+                log.warning("绑定的微信窗口已变为登录界面，微信可能已掉线")
                 return False
             return True
         except Exception as e:
@@ -350,7 +563,7 @@ class UiaSender(BaseSender):
         self._invalidate_window()
         self._find_window()
         if not self._window:
-            log.warning("微信窗口未找到")
+            log.error("微信主窗口不可用（未登录或窗口未找到），本次发送已取消")
             self._ready = False
             return False
         self._ready = True
@@ -361,47 +574,49 @@ class UiaSender(BaseSender):
     # 窗口激活 / 键盘辅助
     # ================================================================
 
-    def _activate(self):
-        """激活微信窗口到前台（会抢焦点，用户已知晓并接受）。
+    def _attach_input(self):
+        """附着到微信 UI 线程，使投递的鼠标/键盘消息能被 Qt 处理。
 
-        微信 4.1.12 下键盘模拟（SendKeys）依赖前台窗口：若微信不在前台，
-        按键会打到其它窗口，导致切换联系人 / 回车发送失效（只有定向投递的
-        WM_CHAR 能进输入框）。这里用「Alt 键技巧」绕过窗口激活限制，把微信
-        可靠地置为前台（失败则重试），并用 GetForegroundWindow 校验。
+        SetForegroundWindow 会主动把微信提到最前，改用 AttachThreadInput 让本线程
+        与微信线程共享输入队列，再 SetActiveWindow 把微信设为该队列的活动窗口，
+        这样投递的鼠标/键盘消息会被处理，真实光标也不被移动。
+
+        边界：这两步本身就会使微信窗口成为前台窗口（实测），见模块文档字符串。
+
+        成功返回 True，调用方**必须**配一次 _detach_input()。
         """
         user32 = self._user32_inst()
+        kernel32 = ctypes.windll.kernel32
         hwnd = self._hwnd
         if not hwnd:
-            return
-        # 若窗口被最小化（发送后 _restore_foreground 会最小化），先恢复，
-        # 否则按键会落到前台其它窗口，导致消息发不出去。
+            return False
+        if self._attached:
+            return True
         try:
-            if user32.IsIconic(hwnd):
-                user32.ShowWindow(hwnd, 9)  # SW_RESTORE
+            self._tid_wx = user32.GetWindowThreadProcessId(hwnd, None)
+            self._tid_me = kernel32.GetCurrentThreadId()
+            user32.AttachThreadInput(self._tid_me, self._tid_wx, True)
+            user32.SetActiveWindow(hwnd)
+            self._attached = True
+            time.sleep(0.2)
+            return True
+        except Exception as e:
+            log.warning(f"附着微信输入队列失败: {e}")
+            self._attached = False
+            return False
+
+    def _detach_input(self):
+        """解除线程附着。共享输入队列期间不做别的事，用完立刻解除。"""
+        if not self._attached:
+            return
+        try:
+            self._user32_inst().AttachThreadInput(self._tid_me, self._tid_wx, False)
         except Exception:
             pass
-        time.sleep(0.15)
-        kernel32 = ctypes.windll.kernel32
-        for _ in range(4):
-            try:
-                user32.keybd_event(0x12, 0, 0, 0)  # ALT down
-                time.sleep(0.05)
-                we_tid = user32.GetWindowThreadProcessId(hwnd, None)
-                cur_tid = kernel32.GetCurrentThreadId()
-                user32.AttachThreadInput(cur_tid, we_tid, True)
-                user32.SetForegroundWindow(hwnd)
-                user32.BringWindowToTop(hwnd)
-                user32.AttachThreadInput(cur_tid, we_tid, False)
-                user32.keybd_event(0x12, 0, 2, 0)  # ALT up
-            except Exception:
-                pass
-            time.sleep(0.2)
-            if user32.GetForegroundWindow() == hwnd:
-                break
-        time.sleep(0.2)
+        self._attached = False
 
     def _post_key(self, vk: int, *modifiers: int) -> None:
-        """向微信主窗口发送组合键（PostMessage 辅助，WM_CHAR 场景用）。"""
+        """向微信主窗口投递一次按键（可带修饰键）。"""
         user32 = self._user32_inst()
         hwnd = self._hwnd
         if not hwnd:
@@ -411,101 +626,274 @@ class UiaSender(BaseSender):
             time.sleep(0.02)
         user32.PostMessageW(hwnd, WM_KEYDOWN, vk, 1)
         time.sleep(0.02)
-        user32.PostMessageW(hwnd, WM_KEYUP, vk, 1)
-        for mod in modifiers:
-            user32.PostMessageW(hwnd, WM_KEYUP, mod, 1)
+        user32.PostMessageW(hwnd, WM_KEYUP, vk, KEYUP_LPARAM)
+        for mod in reversed(modifiers):
+            user32.PostMessageW(hwnd, WM_KEYUP, mod, KEYUP_LPARAM)
             time.sleep(0.02)
 
     def _post_char(self, ch: str) -> None:
-        """发送一个可见字符（PostMessage WM_CHAR，支持中文）。"""
+        """投递一个可见字符（WM_CHAR，支持中文）。"""
         user32 = self._user32_inst()
         if self._hwnd:
             user32.PostMessageW(self._hwnd, WM_CHAR, ord(ch), 1)
 
-    def _restore_foreground(self) -> None:
-        """发送后尽力最小化微信（减少打扰）。"""
+    def _client_lparam(self, sx: float, sy: float, hwnd: int = 0) -> int:
+        """屏幕坐标 → 指定窗口客户区坐标，并打包成鼠标消息的 lParam。"""
+        target = hwnd or self._hwnd
+        point = wintypes.POINT(int(sx), int(sy))
+        self._user32_inst().ScreenToClient(target, ctypes.byref(point))
+        return ((point.y & 0xFFFF) << 16) | (point.x & 0xFFFF)
+
+    def _post_click(self, control, hwnd: int = 0) -> bool:
+        """向控件中心投递一次鼠标点击。
+
+        用 PostMessage 而非真实光标移动（SendInput）：不会挪动用户的鼠标，
+        也不需要窗口在前台。
+
+        `hwnd` 指定接收消息的窗口，默认主窗口。搜索弹层是**独立顶层窗口**
+        （Qt popup 有自己的 HWND，类名 Qt51514QWindowToolSaveBits），消息发给
+        主窗到不了它，点结果项必须显式把消息投给弹层自己。
+        """
+        user32 = self._user32_inst()
         try:
-            user32 = self._user32_inst()
-            hwnd = self._hwnd
-            if hwnd and not user32.IsIconic(hwnd):
-                user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
-        except Exception as e:
-            log.warning(f"最小化微信失败: {e}")
+            rect = control.BoundingRectangle
+        except Exception:
+            return False
+        if rect.right <= rect.left or rect.bottom <= rect.top:
+            return False
+        target = hwnd or self._hwnd
+        if not target:
+            return False
+        lp = self._client_lparam((rect.left + rect.right) / 2,
+                                 (rect.top + rect.bottom) / 2, target)
+        user32.PostMessageW(target, WM_MOUSEMOVE, 0, lp)
+        user32.PostMessageW(target, WM_LBUTTONDOWN, 1, lp)
+        user32.PostMessageW(target, WM_LBUTTONUP, 0, lp)
+        return True
+
+    # ================================================================
+    # 控件树查询
+    # ================================================================
+
+    @staticmethod
+    def _class_of(node) -> str:
+        try:
+            return node.ClassName or ""
+        except Exception:
+            return ""
+
+    def _walk(self, root=None):
+        """广度优先遍历控件树，返回 [(深度, 控件)]，受深度与节点预算约束。"""
+        root = self._window if root is None else root
+        if root is None:
+            return []
+        queue, out = [(0, root)], []
+        while queue and len(out) < self.WALK_MAX_NODES:
+            depth, node = queue.pop(0)
+            out.append((depth, node))
+            if depth >= self.WALK_MAX_DEPTH:
+                continue
+            try:
+                for child in node.GetChildren():
+                    queue.append((depth + 1, child))
+            except Exception:
+                continue
+        return out
+
+    def _find_by_class(self, cls: str, root=None):
+        for _, node in self._walk(root):
+            if self._class_of(node) == cls:
+                return node
+        return None
+
+    def _input_box(self):
+        """当前会话的输入框；没有打开任何会话时返回 None。"""
+        return self._find_by_class(self.INPUT_FIELD_CLASS)
+
+    def _input_text(self) -> str:
+        """输入框里当前的文本（拿不到就返回空串）。"""
+        box = self._input_box()
+        if box is None:
+            return ""
+        try:
+            return box.GetValuePattern().Value or ""
+        except Exception:
+            return ""
+
+    def _open_chat_title(self):
+        """当前打开的会话名——输入框的 Name 就是对方的名字。"""
+        box = self._input_box()
+        if box is None:
+            return None
+        try:
+            return box.Name or None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _cell_contact(cell) -> str:
+        """会话项名字的第一行是会话名（后面两行是摘要与时间）。"""
+        try:
+            return (cell.Name or "").split("\n")[0]
+        except Exception:
+            return ""
+
+    def _session_cells(self):
+        return [n for _, n in self._walk()
+                if self._class_of(n) == self.SESSION_CELL_CLASS]
+
+    def _session_summary(self, contact: str):
+        """会话列表里该会话的摘要行，即微信自己渲染的「最后一条消息」。"""
+        for cell in self._session_cells():
+            if self._cell_contact(cell) == contact:
+                parts = (cell.Name or "").split("\n")
+                return parts[1] if len(parts) > 1 else ""
+        return None
 
     # ================================================================
     # 联系人切换
     # ================================================================
 
-    def _search_pane_open(self) -> bool:
-        """检测微信搜索面板是否仍开着。
+    def _select_visible_session(self, contact: str) -> bool:
+        """在会话列表里点开目标会话；列表里没有它时返回 False。
 
-        微信主窗口在打开搜索时会多出一个 'Weixin' 子面板（面板数从 2 变 3），
-        选中联系人/搜索结束后该面板关闭（回到 2）。据此判断"切换是否成功"。
+        坑：重复点击「当前已打开的会话」会把聊天面板清空（控件树从 155 个节点
+        掉到 80）。所以先比对输入框标题，已经是当前会话就直接算命中。
         """
-        try:
-            return len(self._window.GetChildren()) >= 3
-        except Exception:
+        if self._open_chat_title() == contact:
             return True
+        for cell in self._session_cells():
+            if self._cell_contact(cell) != contact:
+                continue
+            if not self._post_click(cell):
+                return False
+            time.sleep(0.9)
+            return self._open_chat_title() == contact
+        return False
+
+    @staticmethod
+    def _native_hwnd(node) -> int:
+        """控件所属的顶层窗口句柄（0 表示拿不到）。"""
+        if node is None:
+            return 0
+        try:
+            return int(node.NativeWindowHandle or 0)
+        except Exception:
+            return 0
+
+    def _search_hit(self, contact: str, popover):
+        """搜索弹层里指向该联系人的**会话结果项**（同名项取最靠上的一个）。
+
+        弹层里同名的项不止一个：搜狗网络结果的名字带后缀（如「文件传输助手
+        打开」），「功能」分区下还有与联系人**完全同名**的动作项（如「发送
+        文件」）。所以只认名字完全相同的项，并排除「功能」标题之下的那些。
+        """
+        if popover is None:
+            return None
+        nodes = self._walk(popover)
+
+        limit = None
+        for _, node in nodes:
+            if (self._class_of(node) in self.SEARCH_RESULT_CLASSES
+                    and (node.Name or "") == self.SEARCH_ACTION_HEADER):
+                try:
+                    limit = node.BoundingRectangle.top
+                except Exception:
+                    pass
+                break
+
+        best = None
+        best_top = None
+        for _, node in nodes:
+            if self._class_of(node) not in self.SEARCH_RESULT_CLASSES:
+                continue
+            if (node.Name or "") != contact:
+                continue
+            try:
+                top = node.BoundingRectangle.top
+            except Exception:
+                continue
+            if limit is not None and top >= limit:
+                continue
+            if best is None or top < best_top:
+                best, best_top = node, top
+        return best
+
+    def _search_and_select(self, contact: str) -> bool:
+        """用主窗口顶部的搜索框找会话并点开（会话列表里没有它时的兜底）。
+
+        搜索框是常驻控件（不是 Ctrl+F 弹层），点一下就能打字。搜索结果项虽然
+        作为 `mmui::SearchContentPopover` 的子节点出现在 UIA 树里，但那个弹层是
+        **独立顶层窗口**（Qt popup，类名 Qt51514QWindowToolSaveBits）——点结果项
+        必须把鼠标消息投给弹层自己的 HWND，投给主窗到不了；这正是「打字能出
+        结果、点了却切不过去」的原因。
+        """
+        user32 = self._user32_inst()
+        field = (self._find_by_class(self.SEARCH_FIELD_CLASS)
+                 or self._find_by_class("mmui::XValidatorTextEdit"))
+        if field is None or not self._post_click(field):
+            return False
+        time.sleep(0.7)
+        for ch in contact:
+            user32.PostMessageW(self._hwnd, WM_CHAR, ord(ch), 1)
+            time.sleep(0.05)
+        time.sleep(1.5)
+
+        popover = self._find_by_class(self.SEARCH_POPOVER_CLASS)
+        hit = self._search_hit(contact, popover) if popover is not None else None
+        if hit is not None:
+            self._post_click(hit, self._native_hwnd(popover))
+            time.sleep(1.0)
+
+        # 退出搜索：先清空关键词，再**在弹层确实还在时**才按 Esc。
+        # 没有弹层时按 Esc，微信会把它当成「关闭主窗口到托盘」——那个窗口再显示
+        # 出来只会重绘界面，无障碍树不会重建（UIA 从此只剩两级节点），只能重启微信。
+        for _ in range(len(contact) + 4):
+            user32.PostMessageW(self._hwnd, WM_KEYDOWN, VK_BACK, 1)
+            user32.PostMessageW(self._hwnd, WM_KEYUP, VK_BACK, KEYUP_LPARAM)
+            time.sleep(0.01)
+        time.sleep(0.4)
+        if self._find_by_class(self.SEARCH_POPOVER_CLASS) is not None:
+            user32.PostMessageW(self._hwnd, WM_KEYDOWN, VK_ESCAPE, 1)
+            user32.PostMessageW(self._hwnd, WM_KEYUP, VK_ESCAPE, KEYUP_LPARAM)
+            time.sleep(0.5)
+        return self._open_chat_title() == contact
 
     def _switch_contact(self, contact: str) -> bool:
-        """
-        切换到指定联系人/群聊的聊天窗口。
+        """把当前会话切到目标联系人（调用前必须已经 _attach_input）。"""
+        if self._select_visible_session(contact):
+            log.info(f"已切到联系人: {contact}")
+            return True
+        if self._search_and_select(contact):
+            log.info(f"已切到联系人（搜索）: {contact}")
+            return True
+        log.error(f"切换联系人 {contact} 失败：会话列表与搜索都未能选中")
+        return False
 
-        流程：激活微信 → Ctrl+F 搜索 → 清空 → 粘贴 → Enter（带等待与校验重试）。
-        微信 4.1.12 搜索结果渲染较慢，旧逻辑 0.3s 后按 Enter 常选不中，
-        这里加长等待，并在 Enter 后检测搜索面板是否关闭；未关闭则重试。
+    def _prepare_target(self, contact: str) -> bool:
+        """发送前把会话切到目标联系人；切不过去返回 False（此次不可发送）。
+
+        只在换目标时切换：同联系人连续发送（麦麦一段话拆成多条回复）沿用当前
+        会话。切换失败必须中止——否则按键会打进当前界面，消息其实没发出去，
+        却照样报发送成功。
         """
+        if not (self.search_enabled and contact and contact != self._last_contact):
+            return True
         if not self._ensure_window():
             return False
-
+        self._attach_input()
         try:
-            import pyperclip
-            auto = self._auto
-        except ImportError:
+            switched = self._switch_contact(contact)
+        finally:
+            self._detach_input()
+        if not switched:
+            self._last_contact = ""
+            log.error(
+                f"[UIA✗] {contact}: 未能切换到该联系人"
+                "（会话列表与搜索都不可用，微信可能未登录），本次发送已取消"
+            )
             return False
-
-        self._activate()
-
-        for attempt in range(3):
-            # Ctrl+F 打开搜索
-            try:
-                auto.SendKeys('{Ctrl}f')
-            except Exception:
-                self._post_key(VK_F, VK_CONTROL)
-            time.sleep(0.6)
-
-            # Ctrl+A 全选 → 清空
-            try:
-                auto.SendKeys('{Ctrl}a')
-            except Exception:
-                self._post_key(VK_A, VK_CONTROL)
-            time.sleep(0.3)
-
-            # 粘贴联系人名
-            pyperclip.copy(contact)
-            time.sleep(0.2)
-            try:
-                auto.SendKeys('{Ctrl}v')
-            except Exception:
-                self._post_key(VK_V, VK_CONTROL)
-            time.sleep(1.4)  # 等待搜索结果渲染（4.1.12 较慢）
-
-            # Enter 选中第一个结果
-            try:
-                auto.SendKeys('{Enter}')
-            except Exception:
-                self._post_key(VK_RETURN)
-            time.sleep(1.3)
-
-            # 验证：搜索面板应关闭（回到 2 个面板）。若仍是 3，说明没切过去。
-            if not self._search_pane_open():
-                break
-            log.warning(f"切换联系人 {contact} 失败（第 {attempt + 1} 次），重试")
-        else:
-            log.error(f"切换联系人 {contact} 失败：搜索面板未关闭")
-            return False
-
-        log.info(f"已切到联系人: {contact}")
+        self._last_contact = contact
         return True
 
     # ================================================================
@@ -522,6 +910,89 @@ class UiaSender(BaseSender):
                 self._invalidate_window()
             return False
 
+    def _clear_input(self) -> bool:
+        """清空输入框（退格逐字符删），并回读确认。"""
+        user32 = self._user32_inst()
+        for _ in range(8):
+            current = self._input_text()
+            if not current:
+                return True
+            for _ in range(len(current) + 4):
+                user32.PostMessageW(self._hwnd, WM_KEYDOWN, VK_BACK, 1)
+                user32.PostMessageW(self._hwnd, WM_KEYUP, VK_BACK, KEYUP_LPARAM)
+                time.sleep(0.01)
+            time.sleep(0.2)
+        left = self._input_text()
+        if left:
+            log.warning(f"输入框未能清空，残留 {left[:40]!r}")
+            return False
+        return True
+
+    def _type_text(self, text: str) -> bool:
+        """逐字符投递 WM_CHAR 并回读校验。
+
+        输入法会扰动字符（实测输入 `t` 落到输入框里变成 `上`），所以打完必须
+        回读比对；不符就清空重打，三次仍不符判定失败。
+        """
+        for _ in range(3):
+            for ch in text:
+                self._post_char(ch)
+                time.sleep(random.uniform(0.02, 0.04))
+            time.sleep(0.3)
+            got = self._input_text()
+            if got == text:
+                return True
+            log.warning(
+                f"输入框回读不符（期望 {text[:40]!r}，实得 {got[:40]!r}），清空重打"
+            )
+            self._clear_input()
+        return False
+
+    def _confirm_sent(self, contact: str, text: str, summary_before: str) -> bool:
+        """按会话列表的摘要行确认消息确实发出去了。
+
+        摘要行是微信渲染的「最后一条消息」，比任何自报都硬。正文可能被截断，
+        所以只比前 20 个非空白字符；再兜一层：输入框已空且摘要确实变了。
+        """
+        probe = "".join(text.split())[:20]
+        for _ in range(8):
+            summary = self._session_summary(contact) or ""
+            if probe and probe in "".join(summary.split()):
+                return True
+            time.sleep(0.35)
+        summary = self._session_summary(contact) or ""
+        if not self._input_text() and summary and summary != summary_before:
+            log.warning(f"{contact}: 摘要未匹配正文，但输入框已清空且摘要已更新")
+            return True
+        return False
+
+    def _paste_clipboard(self, expect_image: bool) -> bool:
+        """用伪造 Ctrl 键态的 Ctrl+V 把剪贴板内容贴进输入框。
+
+        修饰键状态是线程级的，PostMessage 投递的 Ctrl 进不了微信线程的键态，
+        V 会变成字面字符。AttachThreadInput 让两个线程共享输入状态，再用
+        SetKeyboardState 把本线程的 Ctrl 置为按下，微信就能把随后的 V 解析成
+        Ctrl+V。粘贴结果回读校验，不符即当失败。
+        """
+        user32 = self._user32_inst()
+        user32.SetKeyboardState.argtypes = [ctypes.c_char_p]
+        state = bytearray(256)
+        state[VK_CONTROL] = 0x80
+        state[VK_LCONTROL] = 0x80
+        try:
+            user32.SetKeyboardState(bytes(state))
+            self._post_key(VK_V, VK_CONTROL)
+            time.sleep(1.2)
+        finally:
+            state[VK_CONTROL] = 0
+            state[VK_LCONTROL] = 0
+            try:
+                user32.SetKeyboardState(bytes(state))
+            except Exception:
+                pass
+        staged = self._input_text()
+        return self.IMAGE_MARK in staged if expect_image else bool(staged)
+
     def _send_text_impl(self, contact: str, text: str) -> bool:
         """发送文本消息。"""
         with self._lock:
@@ -533,61 +1004,37 @@ class UiaSender(BaseSender):
                 log.warning(f"跳过 PIL 引用消息: {text[:60]}")
                 return False
 
-            # 切换联系人只在换目标时进行：同联系人连续发送（麦麦一段话拆成多条
-            # 回复）时不再抢前台，直接用 PostMessage 在最小化状态下发送。
-            need_switch = self.search_enabled and contact and contact != self._last_contact
-            if need_switch:
-                self._switch_contact(contact)   # 内部会激活窗口（抢前台）
-                self._last_contact = contact
-                time.sleep(0.3)
+            if not self._prepare_target(contact):
+                return False
 
+            self._attach_input()
             try:
-                auto = self._auto
+                summary_before = self._session_summary(contact) or ""
+                if not self._clear_input():
+                    log.error(f"[UIA✗] {contact}: 输入框有清不掉的残留，本次发送已取消")
+                    return False
+                if not self._type_text(text):
+                    self._clear_input()
+                    log.error(f"[UIA✗] {contact}: 文字未能完整进到输入框，本次发送已取消")
+                    return False
+                if self._open_chat_title() != contact:
+                    self._clear_input()
+                    log.error(f"[UIA✗] {contact}: 输入期间会话已改变，本次发送已取消")
+                    return False
 
-                # 切到新联系人时窗口在前台，用 SendKeys 清空输入框（防残留）。
-                if need_switch:
-                    time.sleep(random.uniform(0.2, 0.5))
-                    try:
-                        auto.SendKeys('{Ctrl}a')
-                    except Exception:
-                        self._post_key(VK_A, VK_CONTROL)
-                    time.sleep(0.15)
-                    try:
-                        auto.SendKeys('{Delete}')
-                    except Exception:
-                        self._post_key(VK_DELETE)
-                    time.sleep(0.15)
-                else:
-                    # 同联系人连续发送：微信可能在最小化，不做 SendKeys 清空，
-                    # 直接靠 PostMessage 输入（上一条成功后输入框已清空）。
-                    time.sleep(random.uniform(0.3, 1.0))
+                self._post_key(VK_RETURN)
+                time.sleep(0.6)
 
-                # WM_CHAR 逐字符输入（中文可靠；定向投递，不依赖前台）
-                for ch in text:
-                    self._post_char(ch)
-                    time.sleep(random.uniform(0.02, 0.04))
-
-                # 等待输入完成
-                type_wait = min(len(text) * 0.02, 2.0) + random.uniform(0.3, 0.8)
-                time.sleep(type_wait)
-
-                # Enter 发送（PostMessage 定向微信句柄；窗口最小化时也能触发发送，
-                # 从而同联系人连续发送无需抢前台）
-                try:
-                    self._post_key(VK_RETURN)
-                except Exception:
-                    auto.SendKeys('{Enter}')
-                time.sleep(0.4)
-
-                # 发送后最小化微信（减少打扰；已最小化则无操作）
-                self._restore_foreground()
-
-                log.info(f"[UIA✓] {contact}: {text[:50]}...")
+                if not self._confirm_sent(contact, text, summary_before):
+                    log.error(f"[UIA✗] {contact}: 回车后摘要未更新，消息可能没发出去")
+                    return False
+                log.info(f"[UIA✓] {contact}: {text[:50]}")
                 return True
-
             except Exception as e:
                 log.error(f"[UIA✗] {contact}: {e}")
                 return False
+            finally:
+                self._detach_input()
 
     # ================================================================
     # 发送图片
@@ -604,54 +1051,44 @@ class UiaSender(BaseSender):
             return False
 
     def _send_image_impl(self, contact: str, image_path: str) -> bool:
-        """发送图片（剪贴板 + 粘贴 + Enter）。"""
+        """发送图片（剪贴板 + 后台 Ctrl+V + Enter）。"""
         with self._lock:
             if not os.path.isfile(image_path):
                 log.error(f"图片不存在: {image_path}")
                 return False
+            if not self._ensure_window():
+                return False
+            if not self._prepare_target(contact):
+                return False
+            if not self._copy_image_to_clipboard(image_path):
+                return False
 
+            self._attach_input()
             try:
-                if not self._ensure_window():
+                if not self._clear_input():
+                    log.error(f"[UIA✗] 图片 → {contact}: 输入框有清不掉的残留，本次发送已取消")
+                    return False
+                if not self._paste_clipboard(expect_image=True):
+                    self._clear_input()
+                    log.error(
+                        f"[UIA✗] 图片 → {contact}: 剪贴板图片没能贴进输入框，本次发送已取消"
+                    )
                     return False
 
-                # 确保微信在前台（同联系人连续发送时不会走 _switch_contact）
-                self._activate()
-                if self.search_enabled and contact and contact != self._last_contact:
-                    self._switch_contact(contact)
-                    self._last_contact = contact
+                self._post_key(VK_RETURN)
+                time.sleep(0.8)
 
-                auto = self._auto
-                time.sleep(random.uniform(0.3, 0.8))
-
-                # 再次强制激活微信到前台，确保粘贴目标正确（防止粘贴到其他窗口）
-                self._activate()
-                time.sleep(0.3)
-
-                # PowerShell 复制图片到剪贴板
-                self._copy_image_to_clipboard(image_path)
-                time.sleep(0.3)
-
-                # Ctrl+V 粘贴
-                try:
-                    auto.SendKeys('{Ctrl}v')
-                except Exception:
-                    self._post_key(VK_V, VK_CONTROL)
-                time.sleep(random.uniform(0.8, 1.5))
-
-                # Enter 发送（PostMessage 定向微信句柄，不依赖前台）
-                try:
-                    self._post_key(VK_RETURN)
-                except Exception:
-                    auto.SendKeys('{Enter}')
-
-                self._restore_foreground()
-
+                summary = self._session_summary(contact) or ""
+                if "图片" not in summary:
+                    log.error(f"[UIA✗] 图片 → {contact}: 摘要未显示图片（{summary[:24]!r}）")
+                    return False
                 log.info(f"[UIA✓] 图片 → {contact}: {os.path.basename(image_path)}")
                 return True
-
             except Exception as e:
                 log.error(f"[UIA✗] 图片 → {contact}: {e}")
                 return False
+            finally:
+                self._detach_input()
 
     def send_file(self, contact: str, file_path: str) -> bool:
         """发送文件（mp3 等任意文件）。
@@ -673,92 +1110,92 @@ class UiaSender(BaseSender):
             return False
 
     def _send_file_impl(self, contact: str, file_path: str) -> bool:
-        """发送文件（CF_HDROP 剪贴板 + 粘贴 + Enter）。"""
+        """发送文件（CF_HDROP 剪贴板 + 后台 Ctrl+V + Enter）。"""
         with self._lock:
             if not os.path.isfile(file_path):
                 log.error(f"文件不存在: {file_path}")
                 return False
+            if not self._ensure_window():
+                return False
+            if not self._prepare_target(contact):
+                return False
+            name = os.path.basename(file_path)
+            if not self._copy_file_to_clipboard(file_path):
+                return False
 
+            self._attach_input()
             try:
-                if not self._ensure_window():
+                if not self._clear_input():
+                    log.error(f"[UIA✗] 文件 → {contact}: 输入框有清不掉的残留，本次发送已取消")
+                    return False
+                if not self._paste_clipboard(expect_image=False):
+                    self._clear_input()
+                    log.error(f"[UIA✗] 文件 → {contact}: 文件没能贴进输入框，本次发送已取消")
                     return False
 
-                self._activate()
-                if self.search_enabled and contact and contact != self._last_contact:
-                    self._switch_contact(contact)
-                    self._last_contact = contact
+                self._post_key(VK_RETURN)
+                time.sleep(0.8)
 
-                auto = self._auto
-                time.sleep(random.uniform(0.3, 0.8))
-
-                # 再次强制激活微信到前台，确保粘贴目标正确
-                self._activate()
-                time.sleep(0.3)
-
-                # 把文件路径放到 CF_HDROP 剪贴板（拖入文件的语义）
-                self._copy_file_to_clipboard(file_path)
-                time.sleep(0.3)
-
-                # Ctrl+V 粘贴
-                try:
-                    auto.SendKeys('{Ctrl}v')
-                except Exception:
-                    self._post_key(VK_V, VK_CONTROL)
-                time.sleep(random.uniform(0.8, 1.5))
-
-                # Enter 发送（PostMessage 定向微信句柄，不依赖前台）
-                try:
-                    self._post_key(VK_RETURN)
-                except Exception:
-                    auto.SendKeys('{Enter}')
-
-                self._restore_foreground()
-
-                log.info(f"[UIA✓] 文件 → {contact}: {os.path.basename(file_path)}")
+                summary = self._session_summary(contact) or ""
+                if name not in summary and "文件" not in summary:
+                    log.error(f"[UIA✗] 文件 → {contact}: 摘要未显示该文件（{summary[:24]!r}）")
+                    return False
+                log.info(f"[UIA✓] 文件 → {contact}: {name}")
                 return True
-
             except Exception as e:
                 log.error(f"[UIA✗] 文件 → {contact}: {e}")
                 return False
+            finally:
+                self._detach_input()
 
-    def _copy_file_to_clipboard(self, path: str):
-        """复制文件到剪贴板 CF_HDROP 格式（通过 PowerShell）。
+    def _run_powershell(self, script: str) -> bool:
+        """跑一段 PowerShell（用来写系统剪贴板），成功返回 True。
 
-        CF_HDROP 是 Windows 拖放文件时使用的剪贴板格式。微信收到 Ctrl+V 后
-        会把文件识别为"附件"而非"文本"。
+        不能用 `-WindowStyle Hidden`：Windows PowerShell 5.1 把它与 `-Command`
+        内联脚本组合时会直接以 -1 退出，脚本一行都不执行——图片与文件因此静默
+        发不出去。改用 CREATE_NO_WINDOW 抑制控制台窗口。
+        """
+        try:
+            proc = subprocess.run(
+                ["powershell", "-NoProfile", "-STA", "-NonInteractive", "-Command", script],
+                capture_output=True, timeout=20,
+                creationflags=self.CREATE_NO_WINDOW,
+            )
+        except Exception as e:
+            log.error(f"调用 PowerShell 失败: {e}")
+            return False
+        if proc.returncode != 0:
+            err = (proc.stderr or b"").decode("utf-8", "replace").strip()
+            log.error(f"PowerShell 退出码 {proc.returncode}: {err[:200]}")
+            return False
+        return True
 
-        路径必须先 Resolve-Path 转成绝对路径，否则拖放格式无效。
+    def _copy_file_to_clipboard(self, path: str) -> bool:
+        """把文件放进剪贴板的 CF_HDROP 格式（即「拖入文件」语义）。
+
+        微信收到 Ctrl+V 会把它识别为附件而非文本。路径必须先转成绝对路径，
+        否则拖放格式无效。
+        """
+        abs_path = os.path.abspath(path).replace("'", "''")
+        return self._run_powershell(
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            f"$abs = Resolve-Path -LiteralPath '{abs_path}';"
+            "$col = New-Object System.Collections.Specialized.StringCollection;"
+            "$col.Add($abs.Path);"
+            "[System.Windows.Forms.Clipboard]::SetFileDropList($col)"
+        )
+
+    def _copy_image_to_clipboard(self, path: str) -> bool:
+        """把图片放进系统剪贴板。
+
+        必须显式加载 System.Drawing 程序集，否则 [System.Drawing.Image] 类型
+        找不到，SetImage 会因参数为 null 而失败。
         """
         abs_path = os.path.abspath(path)
-        try:
-            subprocess.run([
-                "powershell", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command",
-                "Add-Type -AssemblyName System.Windows.Forms;"
-                "$abs = Resolve-Path -LiteralPath '" + abs_path.replace("'", "''") + "';"
-                "$col = New-Object System.Collections.Specialized.StringCollection;"
-                "$col.Add($abs.Path);"
-                "[System.Windows.Forms.Clipboard]::SetFileDropList($col)"
-            ], check=True, timeout=10)
-        except Exception as e:
-            log.error(f"复制文件到剪贴板失败: {e}")
-            raise
-
-    def _copy_image_to_clipboard(self, path: str):
-        """复制图片到剪贴板（通过 PowerShell）。
-
-        注意：必须显式加载 System.Drawing 程序集，否则 [System.Drawing.Image]
-        类型找不到，SetImage 会因参数为 null 而失败（图片发不出去）。
-        """
-        abs_path = os.path.abspath(path)
-        try:
-            subprocess.run([
-                "powershell", "-NoProfile", "-STA", "-WindowStyle", "Hidden", "-Command",
-                f"Add-Type -AssemblyName System.Drawing;"
-                f"Add-Type -AssemblyName System.Windows.Forms;"
-                f"$img = [System.Drawing.Image]::FromFile('{abs_path}');"
-                f"[System.Windows.Forms.Clipboard]::SetImage($img);"
-                f"$img.Dispose()"
-            ], check=True, timeout=10)
-        except Exception as e:
-            log.error(f"复制图片到剪贴板失败: {e}")
-            raise
+        return self._run_powershell(
+            "Add-Type -AssemblyName System.Drawing;"
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            f"$img = [System.Drawing.Image]::FromFile('{abs_path}');"
+            "[System.Windows.Forms.Clipboard]::SetImage($img);"
+            "$img.Dispose()"
+        )

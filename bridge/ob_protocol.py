@@ -91,6 +91,25 @@ async def _handle_ob_api(data: dict):
             elif str(target_id).endswith("@chatroom"):
                 log.warning(f"[OB11] 群 {target_id} 未配置群名映射，微信搜索可能失败。请在 config.json 的 group_name_map 中配置群名。")
 
+        sent_count = 0
+        failures: list[str] = []
+
+        async def _send(kind: str, fn, *args) -> bool:
+            """执行一次发送并计数。
+
+            UIA 发送失败（微信未登录、主窗口不可用等）必须在此处如实记账，
+            否则后面的日志与响应都会谎报成功。
+            """
+            nonlocal sent_count
+            ok = bool(await asyncio.to_thread(fn, *args))
+            if ok:
+                sent_count += 1
+                log.info(f"[OB11] {kind}已发送至 {contact}")
+            else:
+                failures.append(kind)
+                log.error(f"[OB11] {kind}发送失败（消息未真正发出）: {contact}")
+            return ok
+
         for seg in message:
             if not isinstance(seg, dict):
                 continue
@@ -105,9 +124,8 @@ async def _handle_ob_api(data: dict):
             if seg_type == "text":
                 text = seg_data.get("text", "")
                 if text:
-                    await asyncio.to_thread(state.sender_instance.send_text, contact, text)
-                    log.info(f"[OB11] 文字已发送至 {contact}: {text[:50]}")
-                    _record_out(contact, is_group, text)
+                    if await _send("文字", state.sender_instance.send_text, contact, text):
+                        _record_out(contact, is_group, text)
 
             elif seg_type == "image":
                 file_val = seg_data.get("file", "")
@@ -138,9 +156,8 @@ async def _handle_ob_api(data: dict):
 
                 if img_path:
                     try:
-                        await asyncio.to_thread(state.sender_instance.send_image, contact, img_path)
-                        log.info(f"[OB11] 图片已发送至 {contact}")
-                        _record_out(contact, is_group, "[图片]")
+                        if await _send("图片", state.sender_instance.send_image, contact, img_path):
+                            _record_out(contact, is_group, "[图片]")
                     finally:
                         if img_path and "tmp" in img_path:
                             try:
@@ -155,9 +172,8 @@ async def _handle_ob_api(data: dict):
                     # 无文件：尝试把 QQ 表情 id 映射为微信自带表情代码（[微笑] 等文本即渲染）
                     face_code = QQ_FACE_TO_WECHAT.get(_safe_int(seg_data.get("id")))
                     if face_code:
-                        await asyncio.to_thread(state.sender_instance.send_text, contact, face_code)
-                        log.info(f"[OB11] QQ表情已转为微信表情发送至 {contact}: {face_code}")
-                        _record_out(contact, is_group, face_code)
+                        if await _send("QQ表情", state.sender_instance.send_text, contact, face_code):
+                            _record_out(contact, is_group, face_code)
                     else:
                         log.debug(f"[OB11] 跳过未知 face 段: {seg_data}")
                     continue
@@ -186,9 +202,8 @@ async def _handle_ob_api(data: dict):
 
                 if face_path:
                     try:
-                        await asyncio.to_thread(state.sender_instance.send_image, contact, face_path)
-                        log.info(f"[OB11] 表情已发送至 {contact}")
-                        _record_out(contact, is_group, "[表情]")
+                        if await _send("表情", state.sender_instance.send_image, contact, face_path):
+                            _record_out(contact, is_group, "[表情]")
                     finally:
                         if face_path and "tmp" in face_path:
                             try:
@@ -235,9 +250,8 @@ async def _handle_ob_api(data: dict):
                             continue
 
                     if voice_path:
-                        await asyncio.to_thread(state.sender_instance.send_file, contact, voice_path)
-                        log.info(f"[OB11] 语音（文件形式）已发送至 {contact}")
-                        _record_out(contact, is_group, "[语音]")
+                        if await _send("语音（文件形式）", state.sender_instance.send_file, contact, voice_path):
+                            _record_out(contact, is_group, "[语音]")
                 finally:
                     # 清理我们写出的临时 mp3（bridge_voice_ 前缀的才是我们的）
                     if voice_path and "bridge_voice_" in voice_path:
@@ -247,6 +261,17 @@ async def _handle_ob_api(data: dict):
                             pass
 
         resp_data["data"] = {"message_id": int(time.time() * 1000) % 1000000000}
+
+        # 一段都没发出去（典型：微信未登录 / 主窗口不可用）时必须回报失败，
+        # 否则调用方会以为消息已送达并把它记进上下文。
+        if failures and not sent_count:
+            resp_data["status"] = "failed"
+            resp_data["retcode"] = 1400
+            resp_data["message"] = "消息未发送：微信未登录或主窗口不可用"
+            log.error(f"[OB11] {len(failures)} 个消息段全部发送失败 [{contact}]")
+        elif failures:
+            resp_data["data"]["failed_segments"] = len(failures)
+            log.warning(f"[OB11] 部分消息段发送失败 [{contact}]：{len(failures)} 段")
 
     elif action == "get_login_info":
         resp_data["data"] = {

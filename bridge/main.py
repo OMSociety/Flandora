@@ -23,6 +23,7 @@ if _REPO_ROOT not in sys.path:
 
 import state
 import config
+import wechat_account
 from senders import create_sender
 from ob_server import _run_ob_server
 from bridge_core import WeFlowBridge
@@ -114,13 +115,18 @@ def _bridge_loop():
         state.bridge_instance = bridge
 
     try:
-        r = requests.get(f"{config.WE_FLOW_BASE_URL}/api/v1/messages?limit=1&access_token={config.ACCESS_TOKEN}", timeout=5)
+        # 探活改用 /api/v1/accounts：Alpha 的 /api/v1/messages 强制要求 talker 参数，
+        # 缺参数返回 400——既不是 200 也不是 401，用它探活拿不到「token 是否有效」的结论。
+        # accounts 同时覆盖连通性与鉴权，且不依赖具体会话。
+        r = requests.get(f"{config.WE_FLOW_BASE_URL}/api/v1/accounts?access_token={config.ACCESS_TOKEN}", timeout=5)
         if r.status_code == 200:
             log.info("✅ WeFlow API 正常")
         elif r.status_code == 401:
             log.error("❌ Access Token 无效")
             state.running = False
             return
+        else:
+            log.warning(f"⚠️ 探活返回 HTTP {r.status_code}，继续尝试连接推送")
     except requests.exceptions.ConnectionError:
         log.error("❌ 无法连接 WeFlow")
         state.running = False
@@ -158,6 +164,48 @@ def _auto_open_webui():
         log.info("[WebUI] 已自动打开浏览器")
     except Exception as e:
         log.warning(f"[WebUI] 自动打开浏览器失败: {e}")
+
+
+# ============ 账号切换兜底 ============
+
+_account_watcher = None
+
+
+def _rebuild_for_account(old, new):
+    """作废并重建只对「某个登录账号」成立的状态。
+
+    密钥、联系人映射、机器人身份都绑定在登录账号上。切换账号后继续沿用旧值，
+    消息会从错的身份发给错的会话，因此这里刻意清空映射——下游拿不到映射会
+    如实报发送失败（ob_protocol 已不再返回假成功），而不是退回上一个账号的
+    联系人。
+    """
+    old_wxid = old.wxid if old else "（未识别）"
+    state._ob_id_to_contact.clear()
+    state._self_id_int = state._wxid_demouser10001(new.wxid)
+    state._self_name = config.SELF_NAME or new.wxid
+    log.warning("=" * 64)
+    log.warning(f"[账号] 微信登录账号已切换：{old_wxid} → {new.wxid}")
+    log.warning(f"[账号] 新账号数据目录：{new.data_dir or '（未找到）'}")
+    log.warning("[账号] 已作废 OneBot 会话映射（联系人 / 群名缓存）")
+    log.warning(f"[账号] 机器人身份已切换为 {new.wxid}（self_id={state._self_id_int}）")
+    log.warning("[账号] 本地库密钥只对上一个账号有效，新账号的库需重新提取密钥后才能读取")
+    log.warning("[账号] 给新账号发消息前请重新确认目标，映射已清空的会话会如实报失败")
+    log.warning("=" * 64)
+
+
+def start_account_watch():
+    """启动登录账号监视。识别不出当前账号时只记一条日志，不影响 bridge 启动。"""
+    global _account_watcher
+    root = config.WECHAT_FILES_ROOT or wechat_account.default_root()
+    current = wechat_account.current_account(root)
+    if current is None:
+        log.warning(f"[账号] 未能在 {root} 下识别当前登录账号，账号切换兜底不生效")
+        return None
+    log.info(f"[账号] {wechat_account.describe(root)}")
+    _account_watcher = wechat_account.AccountWatcher(
+        root=root, on_change=_rebuild_for_account)
+    _account_watcher.start()
+    return _account_watcher
 
 
 # ============ 入口 ============
@@ -224,6 +272,7 @@ if __name__ == "__main__":
         log.info(" WeFlow 微信桥接 (OneBot v11)")
         log.info("=" * 50)
         log.info("Bridge 版本: 2026-08-24 OB11 + WebUI 2.0 (FastAPI)")
+        start_account_watch()
         _start_bridge()
         if getattr(config, "WEBUI_AUTO_OPEN", True):
             threading.Thread(target=_auto_open_webui, daemon=True).start()

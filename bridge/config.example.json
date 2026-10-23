@@ -23,6 +23,8 @@
     "_comment_ob_server_token": "留空 = 不校验鉴权。默认只监听 127.0.0.1（本机回环），保持留空即可；只有把 ob_server_host 改成对外地址时才需要填一串随机字符，并与 MaiBot 微信适配器里的 server.token 填同一个值。",
     "astrbot_ob_url": "ws://127.0.0.1:7999",
     "wechat_hwnd": 0,
+    "wechat_files_root": "",
+    "_comment_wechat_files_root": "微信数据根目录，用于识别当前登录账号并在切换账号时作废缓存。留空 = 自动取系统「文档」目录下的 xwechat_files（文档库被重定向到别的盘也能正确解析）。多开或数据目录被手动挪走时才需要手填。",
     "emoji_learn_enabled": true,
     "emoji_learn_threshold": 15,
     "maibot_webui_url": "http://127.0.0.1:8001",

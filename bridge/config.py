@@ -60,6 +60,8 @@ BOT_WXID = config.get("bot_wxid", "")
 # 多开微信时指定机器人所在窗口句柄（0 = 自动取第一个微信窗口）
 # 注意：微信重启后窗口句柄会变化，需在 WebUI 重新绑定
 WECHAT_HWND = int(config.get("wechat_hwnd", 0) or 0)
+# 微信数据根目录（用于识别当前登录账号；留空 = 自动解析系统「文档」目录下的 xwechat_files）
+WECHAT_FILES_ROOT = config.get("wechat_files_root", "")
 # 发送方式已固定为 UIA 纯键盘模拟
 BUFFER_SECONDS = config.get("buffer_seconds", 5)
 WEB_PORT = config.get("web_port", 8766)

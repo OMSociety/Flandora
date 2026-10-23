@@ -480,16 +480,60 @@ class WeFlowBridge:
                         entry["timer"] = t
                         log.info(f"🔁 {contact} 积压 {len(entry['messages'])} 条，已安排下一轮推送")
 
+    def _resolve_account_id(self) -> str:
+        """取推送订阅需要的 accountId。
+
+        Alpha 的 /api/v1/push/messages 把 accountId 列为必填（缺了返回 400
+        HTTP_API_PUSH_ACCOUNT_REQUIRED），而旧版 WeFlow 不校验该参数。这里先问一次账号列表。
+        """
+        try:
+            resp = requests.get(
+                f"{config.WE_FLOW_BASE_URL}/api/v1/accounts",
+                params={"access_token": config.ACCESS_TOKEN},
+                timeout=10,
+            )
+            if resp.status_code != 200:
+                log.error(f"获取账号列表失败: HTTP {resp.status_code}")
+                return ""
+            data = resp.json()
+        except Exception as e:  # noqa: BLE001
+            log.error(f"获取账号列表异常: {e}")
+            return ""
+
+        accounts = data.get("accounts") if isinstance(data, dict) else None
+        if not isinstance(accounts, list) or not accounts:
+            log.error("账号列表为空，无法确定推送账号")
+            return ""
+        selected = data.get("selected_account_id") or ""
+        if selected:
+            return str(selected)
+        first = accounts[0]
+        if isinstance(first, dict):
+            return str(first.get("id") or first.get("account_id") or "")
+        return ""
+
     def listen_sse(self):
         """连接 WeFlow SSE 推送。"""
-        sse_url = f"{config.WE_FLOW_BASE_URL}/api/v1/push/messages?access_token={config.ACCESS_TOKEN}"
+        account_id = self._resolve_account_id()
+        if not account_id:
+            log.error("未能确定推送账号 accountId，订阅中止")
+            return
+        sse_url = (
+            f"{config.WE_FLOW_BASE_URL}/api/v1/push/messages"
+            f"?access_token={config.ACCESS_TOKEN}&accountId={account_id}"
+        )
         log.info(f"连接 WeFlow 推送服务: {sse_url}")
         headers = {"Accept": "text/event-stream", "Cache-Control": "no-cache"}
 
         try:
             self._sse_session = requests.get(sse_url, headers=headers, stream=True, timeout=None)
             if self._sse_session.status_code != 200:
-                log.error(f"连接失败: HTTP {self._sse_session.status_code}")
+                detail = ""
+                try:
+                    detail = (self._sse_session.text or "")[:200]
+                except Exception:  # noqa: BLE001
+                    pass
+                log.error(f"连接失败: HTTP {self._sse_session.status_code} {detail}")
                 return
             log.info("✅ 已连接到 WeFlow 推送")
 

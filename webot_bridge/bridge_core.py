@@ -8,6 +8,7 @@
 4. 多层消息去重（rawid、内容、自回复）
 """
 
+import base64
 import json
 import logging
 import os
@@ -17,6 +18,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from datetime import datetime
+from pathlib import Path
 
 import requests
 
@@ -28,10 +30,37 @@ from .ob_protocol import push_event, make_message_event
 
 try:
     from .webui import monitor
+
 except Exception:
     monitor = None
 
 log = logging.getLogger("ob11-bridge")
+
+# OneBot v11 图片段的大小上限受 base64 膨胀与各客户端解析能力约束；超出时退回
+# 文件路径引用（file://），让客户端自行读取，避免把几 MB 图塞进一条事件。
+MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
+
+
+def _image_segment(image_path: str) -> dict | None:
+    """把收件侧已解出的图片文件转成 OneBot v11 的 image 段。
+
+    桥接只做协议转换：图片按原样交给客户端，不在这一层理解图片内容。
+    """
+    try:
+        if not image_path or not os.path.isfile(image_path):
+            return None
+        size = os.path.getsize(image_path)
+        if size <= 0:
+            return None
+        if size <= MAX_INLINE_IMAGE_BYTES:
+            with open(image_path, "rb") as fh:
+                encoded = base64.b64encode(fh.read()).decode("ascii")
+            return {"type": "image", "data": {"file": f"base64://{encoded}"}}
+        # 过大时改用本地文件引用，文件名取原名，便于客户端缓存与显示
+        return {"type": "image", "data": {"file": Path(image_path).as_uri()}}
+    except OSError as exc:
+        log.warning(f"读取图片失败，已跳过图片段: {exc}")
+        return None
 
 
 # ============ 桥接核心 ============
@@ -89,7 +118,7 @@ class WeBotBridge:
 
         # 日志：content 以 @ 开头但未匹配到任何昵称（便于排查）
         if (content.startswith("@") or content.startswith("＠")) and len(content) > 1:
-            log.debug(f"⚠️ content 以@开头但未匹配昵称: content={content[:40]!r} nicknames={config.BOT_NICKNAMES}")
+            log.debug(f"content 以 @ 开头但未匹配昵称: content={content[:40]!r} nicknames={config.BOT_NICKNAMES}")
 
         return False
 
@@ -121,20 +150,13 @@ class WeBotBridge:
             "ts": time.time(),
         })
 
-        # 表情学习：采集消息里的微信自带表情代码（[捂脸] 等）
-        try:
-            from . import emoji_learner
-            emoji_learner.record_message(content, sender_for_history, session_id_data)
-        except Exception:
-            pass
-
         # 本地库收件会把解出的图片路径接在占位符后面，因此按前缀判断。
         if content == "[图片]" or content.startswith("[图片] "):
             # 图片消息（mention 模式下需 @ 才处理）
             if is_group and state.group_reply_mode == "mention" and not self._is_mentioned(data):
                 # 先图后文：暂存图片，等后续同人发 @ 文字时合并
                 self._pending_mention_images[session_id_data] = {"data": data, "time": time.time()}
-                log.info(f"📸 暂存图片，等待关联 @ 文字 (session={session_id_data})")
+                log.info(f"收到图片，暂存等待关联的 @ 文字 (session={session_id_data})")
                 return
             threading.Thread(target=self.process_image_message,
                            args=(data,), daemon=True).start()
@@ -146,7 +168,7 @@ class WeBotBridge:
             if is_group and state.group_reply_mode == "mention" and not self._is_mentioned(data):
                 # 先图后文：暂存表情，等后续同人发 @ 文字时合并
                 self._pending_mention_images[session_id_data] = {"data": data, "time": time.time()}
-                log.info(f"😀 暂存表情，等待关联 @ 文字 (session={session_id_data})")
+                log.info(f"收到表情，暂存等待关联的 @ 文字 (session={session_id_data})")
                 return
             threading.Thread(target=self.process_emoji_message,
                            args=(data,), daemon=True).start()
@@ -155,7 +177,7 @@ class WeBotBridge:
         if content == "[语音]":
             # 语音消息：先 ASR 转文字，再走 buffer（mention 模式下同样需要 @ 才处理）
             if is_group and state.group_reply_mode == "mention" and not self._is_mentioned(data):
-                log.debug(f"🎤 mention 模式跳过未 @ 的语音 (session={session_id_data})")
+                log.debug(f"mention 模式跳过未 @ 的语音 (session={session_id_data})")
                 return
             threading.Thread(target=self.process_audio_message,
                            args=(data,), daemon=True).start()
@@ -163,14 +185,14 @@ class WeBotBridge:
 
         now = time.time()
         if content and content in self._sent_recently and now - self._sent_recently[content] < 120:
-            log.info(f"⏭️ 自回复去重跳过: {content[:30]}")
+            log.info(f"自回复去重跳过: {content[:30]}")
             return
 
         sender_in_group = data.get("senderName", "") or data.get("sender", "") or data.get("sourceName", "")
 
         if is_group:
             if state.group_reply_mode == "mention" and not self._is_mentioned(data):
-                log.debug(f"⏭️ mention 模式跳过（未检测到 @）: data keys={list(data.keys())} nickname={config.BOT_NICKNAMES} content={content[:40]}")
+                log.debug(f"mention 模式跳过（未检测到 @）: data keys={list(data.keys())} nickname={config.BOT_NICKNAMES} content={content[:40]}")
                 return
             group_raw = group_name_raw or source_name
             base_name = re.sub(r'\s*\(\d+\)\s*$', '', group_raw).strip()
@@ -222,7 +244,7 @@ class WeBotBridge:
                     cached = self._pending_mention_images.pop(session_id_data, None)
                     if cached and time.time() - cached["time"] < 15:
                         has_pending_image = True
-                        log.info(f"📸 检测到关联图片，延长缓冲等待描述")
+                        log.info(f"检测到关联图片，延长缓冲等待处理")
                         # 异步下载并描述图片，完成后注入 buffer
                         threading.Thread(
                             target=self._inject_cached_image,
@@ -232,7 +254,7 @@ class WeBotBridge:
                         ).start()
 
                 buffer_delay = 15 if has_pending_image else config.BUFFER_SECONDS
-                log.info(f"📩 收到来自 {contact} 的消息，等待 {buffer_delay}s 后统一推送")
+                log.info(f"收到来自 {contact} 的消息，等待 {buffer_delay}s 后统一推送")
                 timer = threading.Timer(buffer_delay, lambda v=version, sid=buffer_key: self.process_sender(sid, v))
                 timer.daemon = True
                 timer.start()
@@ -270,7 +292,7 @@ class WeBotBridge:
         for e in entries:
             lines.append(f'{e["name"]}：{e["text"]}')
         lines.append("——— 以上是该群最近的聊天记录，供你了解上下文 ———")
-        log.info(f"📚 附带上文 {len(entries)} 条 (session={session_id})")
+        log.info(f"上下文 附带上文 {len(entries)} 条 (session={session_id})")
         return "\n".join(lines) + "\n"
 
     def _backfill_history(self, session_id: str, limit: int):
@@ -303,9 +325,9 @@ class WeBotBridge:
                 existing.add(text)
                 count += 1
             if count:
-                log.info(f"📚 已回填 {session_id} 历史 {count} 条")
+                log.info(f"上下文 已回填 {session_id} 历史 {count} 条")
         except Exception as e:  # noqa: BLE001
-            log.warning(f"📚 历史回填失败 (session={session_id}): {e}")
+            log.warning(f"上下文 历史回填失败 (session={session_id}): {e}")
 
     def _resolve_names(self, session_id: str) -> dict:
         """解析会话成员 wxid → 显示名（带 10 分钟缓存）。
@@ -324,13 +346,13 @@ class WeBotBridge:
             try:
                 names = dict(store.display_names())
             except Exception as e:  # noqa: BLE001
-                log.warning(f"📚 读取联系人失败 (session={session_id}): {e}")
+                log.warning(f"上下文 读取联系人失败 (session={session_id}): {e}")
         self._member_cache[session_id] = (now, names)
         return names
 
 
     def process_sender(self, sender_id, version=None):
-        """缓冲到期：通过 OneBot 事件推送给 AstrBot。"""
+        """缓冲到期：通过 OneBot 事件推送。"""
         with self.buffer_lock:
             if sender_id not in self.pending_buffers:
                 return
@@ -340,6 +362,8 @@ class WeBotBridge:
             if not entry["messages"]:
                 return
             msgs = entry["messages"].copy()
+            # 图片段取出后清空，避免下一轮重复下发同一批图片
+            image_segments = entry.pop("image_segments", []) or []
             entry["messages"] = []
             entry["processing"] = True
             if entry["timer"]:
@@ -400,6 +424,7 @@ class WeBotBridge:
                     msg_segments = [
                         {"type": "text", "data": {"text": formatted}},
                     ]
+                msg_segments.extend(image_segments)
                 event = make_message_event("group", user_id, msg_segments,
                                            group_id=group_id,
                                            group_name=entry.get("group_name", contact),
@@ -408,8 +433,10 @@ class WeBotBridge:
                 event["is_mentioned"] = bool(self._is_mentioned(entry.get("raw_data", {})))
             else:
                 sender_name = entry.get("source_name", contact)
+                private_segments = [{"type": "text", "data": {"text": combined}}]
+                private_segments.extend(image_segments)
                 event = make_message_event("private", user_id,
-                                           [{"type": "text", "data": {"text": combined}}],
+                                           private_segments,
                                            nickname=sender_name)
 
             # 记录 user_id → contact 映射，供 API 回复时查找
@@ -421,11 +448,11 @@ class WeBotBridge:
 
             sent = push_event(event)
             if sent > 0:
-                log.info(f"✅ 已推送至 {sent} 个 AstrBot 客户端 [{contact}]")
+                log.info(f"已推送至 {sent} 个 OneBot 客户端 [{contact}]")
                 if monitor is not None:
                     monitor.bump("pushed")
             else:
-                log.warning(f"⚠️ 无 AstrBot 客户端在线 [{contact}]")
+                log.warning(f"无 OneBot 客户端在线 [{contact}]")
 
         except Exception as e:
             # 推送链路任何异常都不能让缓冲区卡死（processing 必须复位）
@@ -447,7 +474,7 @@ class WeBotBridge:
                         t.daemon = True
                         t.start()
                         entry["timer"] = t
-                        log.info(f"🔁 {contact} 积压 {len(entry['messages'])} 条，已安排下一轮推送")
+                        log.info(f"{contact} 积压 {len(entry['messages'])} 条，已安排下一轮推送")
 
     def _ingest(self, data):
         """一条消息进入缓冲区的唯一入口。
@@ -464,12 +491,12 @@ class WeBotBridge:
             return False
         if data.get("sessionType", "") == "group" or "@chatroom" in data.get("sessionId", ""):
             content = data.get("content", "")
-            log.info(f"📩 群消息 [{data.get('sourceName','')}]: {content[:60]}")
+            log.info(f"收到群消息 [{data.get('sourceName','')}]: {content[:60]}")
             if state.group_reply_mode == "mention":
                 mentioned = any(f"@{n}" in content for n in config.BOT_NICKNAMES)
                 log.info(f"   @={mentioned}")
         else:
-            log.info(f"📩 收到: {data.get('sourceName','')} → {data.get('content','')[:50]}")
+            log.info(f"收到: {data.get('sourceName','')}: {data.get('content','')[:50]}")
         self.add_to_buffer(data)
         return True
 
@@ -503,39 +530,32 @@ class WeBotBridge:
             log.info("本地库收件已停止")
 
     def process_image_message(self, data):
-        """处理图片消息：收件侧已解出的图 → ollama 描述 → 注入缓冲区"""
+        """处理图片消息：把收件侧已解出的图片按 OneBot image 段交给客户端。
+
+        桥接不解读图片内容：图片原样下发，是否描述、如何描述由客户端决定。
+        """
         session_id = data.get("sessionId", "")
         source_name = data.get("sourceName", "") or "未知"
         group_name = data.get("groupName", "")
         rawid = data.get("rawid", "")
 
-        log.info(f"🖼️ 收到图片: {source_name}" +
+        log.info(f"收到图片: {source_name}" +
                  (f" (群:{group_name})" if group_name else ""))
 
         talker_id = data.get("talkerId", "") or data.get("sessionId", "")
         is_group = bool(group_name) or "@chatroom" in session_id
 
-        # 注册待处理的图片（ollama 完成前标记为 pending）
         img_event = threading.Event()
         self._pending_image[talker_id] = {"caption": None, "event": img_event}
 
         try:
-            # 图片在收件侧就已解出，路径随消息带下来
+            # 图片在收件侧就已解出，路径随消息带下来；解不出时只保留占位文本。
             image_path = data.get("imagePath") or ""
-            caption = None
-            if image_path:
-                caption = caption_image_via_ollama(image_path)
+            segment = _image_segment(image_path)
+            placeholder = "[图片]"
 
-            caption_text = caption if caption else None
-            if caption_text:
-                log.info(f"📝 图片描述: {caption_text[:60]}...")
-            else:
-                log.info("⚠️ 图片描述失败")
-                caption_text = "（图片内容无法描述）"
-
-            # 注入图片描述到缓冲区
             with self.buffer_lock:
-                self._pending_image[talker_id] = {"caption": caption_text, "event": img_event}
+                self._pending_image[talker_id] = {"caption": placeholder, "event": img_event}
 
                 # 批处理模式用群共享 key
                 if is_group and state.group_reply_mode == "batch" and group_name:
@@ -543,13 +563,15 @@ class WeBotBridge:
                     batch_key = f"__batch__{g_base}"
                     if batch_key in self.pending_buffers:
                         entry = self.pending_buffers[batch_key]
-                        entry["messages"].insert(0, f'成员"{source_name}"在群"{group_name}"中对你说：[图片: {caption_text}]')
+                        entry["messages"].insert(
+                            0, f'成员"{source_name}"在群"{group_name}"中对你说：{placeholder}')
+                        if segment:
+                            entry.setdefault("image_segments", []).append(segment)
                         entry["image_ready"] = True
-                        log.info(f"📝 图片已注入批处理队列")
                         return
-                    # 没有文字排队，用 batch key 创建独立条目
                     self.pending_buffers[batch_key] = {
-                        "messages": [f'成员"{source_name}"在群"{group_name}"中对你说：[图片: {caption_text}]'],
+                        "messages": [f'成员"{source_name}"在群"{group_name}"中对你说：{placeholder}'],
+                        "image_segments": [segment] if segment else [],
                         "timer": None,
                         "timer_version": 0,
                         "processing": False,
@@ -560,7 +582,6 @@ class WeBotBridge:
                         "group_name": group_name,
                         "sender_in_group": source_name,
                     }
-                    log.info(f"📩 图片无文本跟随，创建批处理图片条目")
                     version = 1
                     timer = threading.Timer(5, lambda v=version, sid=batch_key: self.process_sender(sid, v))
                     timer.daemon = True
@@ -568,16 +589,16 @@ class WeBotBridge:
                     self.pending_buffers[batch_key]["timer"] = timer
                     self.pending_buffers[batch_key]["timer_version"] = version
                 elif talker_id in self.pending_buffers:
-                    # 已有文本在排队，注入图片上下文
                     entry = self.pending_buffers[talker_id]
-                    entry["messages"].insert(0, f"[图片: {caption_text}]")
+                    entry["messages"].insert(0, placeholder)
+                    if segment:
+                        entry.setdefault("image_segments", []).append(segment)
                     entry["image_ready"] = True
-                    log.info(f"📝 图片已注入待处理文本队列")
                 else:
                     # 没有文本排队，创建单条图片消息处理
-                    log.info(f"📩 图片无文本跟随，直接处理")
                     self.pending_buffers[talker_id] = {
-                        "messages": [f"[图片: {caption_text}]"],
+                        "messages": [placeholder],
+                        "image_segments": [segment] if segment else [],
                         "timer": None,
                         "timer_version": 0,
                         "processing": False,
@@ -615,27 +636,27 @@ class WeBotBridge:
         sender_in_group = data.get("senderName", "") or data.get("sourceName", "")
 
         log.info(
-            f"🎤 收到语音: {source_name}" +
+            f"收到语音: {source_name}" +
             (f" (群:{group_name})" if group_name else "")
         )
 
         log.warning(
-            "🎤 跳过语音推送：本地库收件模式下微信语音未还原"
+            "跳过语音推送：本地库收件模式下微信语音未还原"
             "（.dat 封装尚未解出，见 docs/known-limits-dat-format.md）"
         )
         return
 
         text = transcribe_audio_via_fun_asr("")
         if not text:
-            log.warning("🎤 语音转写失败，跳过推送")
+            log.warning("语音转写失败，跳过推送")
             return
 
-        log.info(f"🎤 语音转写: {text[:80]}...")
+        log.info(f"语音转写: {text[:80]}...")
 
         # 推给麦麦（沿用 add_to_buffer 流程，但 content 用转写结果）
         # 用 _dispatch_message_to_buffer 复用 buffer 创建/调度逻辑
         new_data = dict(data)
-        new_data["content"] = f"🎤 语音消息：{text}"
+        new_data["content"] = f"语音消息：{text}"
         new_data["senderName"] = sender_in_group
         self._dispatch_message_to_buffer(new_data)
 
@@ -645,101 +666,64 @@ class WeBotBridge:
         self.add_to_buffer(data)
 
     def process_emoji_message(self, data):
-        """处理表情包消息：下载图片、收纳到 MaiBot 表情库、描述后转发"""
+        """处理表情包消息：以 image 段转发图片。
+
+        是否解读表情含义由客户端决定，桥接只负责把图片交出去。
+        """
         session_id = data.get("sessionId", "")
         source_name = data.get("sourceName", "") or "未知"
         group_name = data.get("groupName", "")
         content = data.get("content", "[表情]")
 
-        log.info(f"😀 收到表情包: {source_name}" +
+        log.info(f"收到表情包: {source_name}" +
                  (f" (群:{group_name})" if group_name else ""))
 
         talker_id = data.get("talkerId", "") or data.get("sessionId", "")
         is_group = bool(group_name) or "@chatroom" in session_id
 
-        # 有解好的图片就描述并收纳，没有就保留原文
         try:
             image_path = data.get("imagePath") or ""
-            if image_path:
-                # 收纳到 MaiBot 表情库（复制到 data/emoji/，定时维护会自动注册）
-                self._save_emoji_to_maibot(image_path)
-                caption = caption_image_via_ollama(image_path)
-                if caption:
-                    content = f"[表情: {caption}]"
-                    log.info(f"😀 表情包已描述: {caption[:60]}...")
-                else:
-                    log.info("😀 表情包图片描述失败，保留原文")
-            else:
-                log.info("😀 表情包无可用图片，保留原文")
+            segment = _image_segment(image_path)
 
-            # 直接注入缓冲区（不等待，立即推送）
+            # 直接注入缓冲区（不等待，立即推送），图片段随事件一并下发
             self.add_text_to_buffer(talker_id, source_name, group_name,
-                                    session_id, content, is_group, talker_id)
+                                    session_id, content, is_group, talker_id,
+                                    image_segment=segment)
         except Exception as e:
-            log.warning(f"😀 表情包处理异常: {e}")
+            log.warning(f"表情包处理异常: {e}")
             # 异常时也保底发送原文
             self.add_text_to_buffer(talker_id, source_name, group_name,
                                     session_id, content, is_group, talker_id)
 
-    def _save_emoji_to_maibot(self, image_path: str) -> bool:
-        """复制微信表情图到 MaiBot 的 data/emoji/ 目录，供其定时维护自动注册收纳。
-
-        文件名用 sha256 哈希（MaiBot 的 register_emoji_by_filename 会据此去重）。
-        """
-        try:
-            import hashlib
-            import shutil
-            if not image_path or not os.path.isfile(image_path):
-                return False
-            with open(image_path, "rb") as f:
-                img_bytes = f.read()
-            if not img_bytes:
-                return False
-            hash_hex = hashlib.sha256(img_bytes).hexdigest()
-            ext = os.path.splitext(image_path)[1].lower() or ".jpg"
-            emoji_dir = os.path.join(config.MAIBOT_EMOJI_DIR, "")
-            os.makedirs(emoji_dir, exist_ok=True)
-            target = os.path.join(emoji_dir, f"{hash_hex}{ext}")
-            if os.path.exists(target):
-                log.debug(f"😀 表情已存在，跳过: {os.path.basename(target)}")
-                return True
-            with open(target, "wb") as f:
-                f.write(img_bytes)
-            log.info(f"😀 已收纳表情到 MaiBot 表情库: {os.path.basename(target)}")
-            return True
-        except Exception as e:
-            log.warning(f"😀 收纳表情到 MaiBot 失败: {e}")
-            return False
-
     def _inject_cached_image(self, image_path, buffer_key, version):
-        """描述暂存的图片 → 注入到 buffer 条目（在缓冲计时器到期前完成）"""
+        """把暂存的图片以 image 段注入 buffer 条目（在缓冲计时器到期前完成）"""
         try:
-            img_path = image_path
-            caption = None
-            if img_path:
-                caption = caption_image_via_ollama(img_path)
-            text = f"[图片: {caption or '无法描述'}]"
-
+            segment = _image_segment(image_path)
+            if not segment:
+                return
             with self.buffer_lock:
                 if buffer_key in self.pending_buffers:
                     entry = self.pending_buffers[buffer_key]
                     # 版本匹配才注入（版本变了说明被新消息重置过）
                     if entry.get("timer_version") == version:
-                        entry["messages"].insert(0, text)
-                        log.info(f"📸 缓存图片已注入: {text[:60]}")
+                        entry.setdefault("image_segments", []).append(segment)
+                        entry["messages"].insert(0, "[图片]")
+                        log.info("关联图片已注入缓冲")
                     else:
-                        log.info(f"📸 缓存图片跳过（buffer 版本已变更）")
+                        log.info("关联图片跳过（缓冲版本已变更）")
         except Exception as e:
-            log.warning(f"📸 缓存图片处理异常: {e}")
+            log.warning(f"关联图片处理异常: {e}")
 
     def add_text_to_buffer(self, session_id_data, source_name, group_name,
-                           session_id, content, is_group, sender_key):
-        """通用：将一段文本直接加入缓冲队列（供表情/图片等异步处理完后调用）"""
+                           session_id, content, is_group, sender_key,
+                           image_segment: dict | None = None):
+        """通用：将一段文本（可选附带图片段）加入缓冲队列。"""
         with self.buffer_lock:
             buffer_key = sender_key
             if buffer_key not in self.pending_buffers:
                 self.pending_buffers[buffer_key] = {
                     "messages": [],
+                    "image_segments": [],
                     "timer": None,
                     "timer_version": 0,
                     "processing": False,
@@ -752,6 +736,8 @@ class WeBotBridge:
                 }
             entry = self.pending_buffers[buffer_key]
             entry["messages"].append(content)
+            if image_segment:
+                entry.setdefault("image_segments", []).append(image_segment)
 
             if not entry["processing"]:
                 if entry["timer"]:
@@ -764,79 +750,6 @@ class WeBotBridge:
                 timer.start()
                 entry["timer"] = timer
                 entry["timer_version"] = version
-def caption_image_via_ollama(image_path: str) -> str | None:
-    """对图片进行文字描述，支持 ollama 和 OpenAI 兼容 API 两种后端。"""
-    try:
-        import base64
-        with open(image_path, "rb") as f:
-            img_b64 = base64.b64encode(f.read()).decode("utf-8")
-
-        if state.image_caption_provider == "openai":
-            if not state.image_caption_api_base:
-                log.warning("⚠️ provider=openai 但未配置 api_base，跳过图片描述")
-                return None
-            # OpenAI 兼容 API
-            resp = requests.post(
-                f"{state.image_caption_api_base}/chat/completions",
-                headers={
-                    "Authorization": f"Bearer {state.image_caption_api_key}",
-                    "Content-Type": "application/json",
-                },
-                json={
-                    "model": state.image_caption_model,
-                    "messages": [{
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": state.image_caption_prompt},
-                            {"type": "image_url", "image_url": {
-                                "url": f"data:image/jpeg;base64,{img_b64}"
-                            }},
-                        ],
-                    }],
-                    # 推理模型（如 deepseek-v4-flash-vision-exp）的推理过程
-                    # 会占用输出 token 预算，给太小会导致正文为空、静默失败
-                    "max_tokens": 3000,
-                },
-                timeout=60,
-            )
-            if resp.status_code == 200:
-                choice = resp.json()["choices"][0]
-                caption = (choice.get("message", {}).get("content") or "").strip()
-                if caption:
-                    log.info(f"🖼️ 图片描述: {caption[:80]}...")
-                    return caption
-                # 200 但正文为空：通常是推理预算被思考烧光（finish_reason=length）
-                log.warning(
-                    f"⚠️ 图片描述返回空内容 (finish_reason={choice.get('finish_reason')}, "
-                    f"usage={resp.json().get('usage', {})})"
-                )
-            else:
-                log.warning(f"OpenAI API 返回 HTTP {resp.status_code}: {resp.text[:200]}")
-        else:
-            # ollama 原生 API
-            resp = requests.post(
-                f"{state.ollama_base_url}/api/generate",
-                json={
-                    "model": state.image_caption_model,
-                    "prompt": state.image_caption_prompt,
-                    "images": [img_b64],
-                    "stream": False,
-                },
-                timeout=state.ollama_timeout,
-            )
-            if resp.status_code == 200:
-                caption = resp.json().get("response", "").strip()
-                if caption:
-                    log.info(f"🖼️ 图片描述: {caption[:80]}...")
-                    return caption
-            else:
-                log.warning(f"ollama 返回 HTTP {resp.status_code}: {resp.text[:100]}")
-
-    except requests.Timeout:
-        log.warning(f"图片描述超时 (30s)")
-    except Exception as e:
-        log.warning(f"图片描述失败: {e}")
-    return None
 
 
 def transcribe_audio_via_fun_asr(audio_path: str) -> str | None:
@@ -863,7 +776,7 @@ def transcribe_audio_via_fun_asr(audio_path: str) -> str | None:
             data = f.read()
         size_mb = len(data) / 1024 / 1024
         if size_mb > 10:
-            log.warning(f"🎤 音频过大 ({size_mb:.1f}MB)，超过 DashScope 同步接口限制")
+            log.warning(f"音频过大 ({size_mb:.1f}MB)，超过 DashScope 同步接口限制")
             return None
         data_uri = f"data:{mime};base64,{base64.b64encode(data).decode()}"
 
@@ -876,7 +789,7 @@ def transcribe_audio_via_fun_asr(audio_path: str) -> str | None:
             host = f"https://{workspace_id}.cn-beijing.maas.aliyuncs.com"
 
         if not workspace_id or not api_key:
-            log.warning("🎤 FunASR 未配置（fun_asr_workspace_id / fun_asr_api_key），跳过转写")
+            log.warning("FunASR 未配置（fun_asr_workspace_id / fun_asr_api_key），跳过转写")
             return None
 
         url = f"{host}/api/v1/services/aigc/multimodal-generation/generation"
@@ -901,7 +814,7 @@ def transcribe_audio_via_fun_asr(audio_path: str) -> str | None:
         }
         resp = requests.post(url, json=payload, headers=headers, timeout=60)
         if resp.status_code != 200:
-            log.warning(f"🎤 FunASR HTTP {resp.status_code}: {resp.text[:200]}")
+            log.warning(f"FunASR HTTP {resp.status_code}: {resp.text[:200]}")
             return None
 
         body = resp.json()
@@ -916,11 +829,11 @@ def transcribe_audio_via_fun_asr(audio_path: str) -> str | None:
             text = body.get("text", "") or body.get("output", {}).get("text", "")
         text = (text or "").strip()
         if not text:
-            log.warning(f"🎤 FunASR 返回空文本: {json.dumps(body)[:300]}")
+            log.warning(f"FunASR 返回空文本: {json.dumps(body)[:300]}")
             return None
         return text
     except requests.Timeout:
-        log.warning("🎤 FunASR 转写超时 (60s)")
+        log.warning("FunASR 转写超时 (60s)")
     except Exception as e:
-        log.warning(f"🎤 FunASR 转写失败: {e}")
+        log.warning(f"FunASR 转写失败: {e}")
     return None

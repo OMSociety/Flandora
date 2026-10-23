@@ -1,0 +1,39 @@
+# Product
+
+<!-- impeccable:product-schema 1 -->
+
+## Platform
+
+web
+
+## Users
+
+在 Windows 上自行部署 WeBot-Bridge 的使用者。他们通过浏览器检查桥接运行状态、调整连接与消息配置、观察消息和日志，并完成微信取钥与发送测试。
+
+## Product Purpose
+
+将个人微信的消息收发射成标准 OneBot v11 通道，供 MaiBot 使用。WebUI 使本机桥接的运行、诊断和首次配置可以在一个控制台内完成。
+
+## Positioning
+
+桥接直接读取登录账号的本地数据库副本，通过 UI 自动化向真实微信窗口发送内容，并对外提供 OneBot v11 WebSocket 服务。
+
+## Operating Context
+
+本地 Windows 桌面与浏览器；微信 4.x、MaiBot 及其微信适配器。高频工作是查看连接与收发状态、检索消息日志、保存配置；低频但高风险的工作是窗口绑定、取钥、启停与重启。
+
+## Capabilities and Constraints
+
+保留仪表盘、取钥向导、消息、日志、配置、微信画面与发送测试七个功能入口及现有后端接口。项目使用 Vue 3 和 Vite。配置、密钥、消息及运行数据属于用户本机数据，重构不改变其语义或生命周期。危险操作保持明确确认与可见失败反馈。界面需要覆盖桌面与手机浏览器，支持键盘和减少动效。
+
+## Brand Commitments
+
+产品名 WeBot-Bridge，描述为「微信 ↔ 麦麦 桥接控制台」。本次视觉参考为用户指定的 SnowLuma WebUI；主题采用绿色与白色／黑色，默认跟随系统，并允许手动切换明暗。
+
+## Evidence on Hand
+
+仓库 README、Vue 前端实现、后端 API 和 WebSocket 实现。功能页面使用真实运行数据，不编造运行状态、消息、性能数字或账号信息。
+
+## Product Principles
+
+运行状态与下一步行动优先；高频扫描信息保持紧凑、对齐与可筛选；配置和危险操作必须含义明确；诊断信息完整保留；所有视觉表达服从真实任务与真实状态。

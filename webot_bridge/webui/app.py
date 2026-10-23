@@ -45,12 +45,6 @@ VERSION = __version__
 WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(WEBUI_DIR, "dist")
 
-# 保存后即时生效：写入 state 的运行时字段
-HOT_STATE_KEYS = (
-    "image_caption_provider", "image_caption_model", "image_caption_api_key",
-    "image_caption_api_base", "image_caption_prompt", "ollama_base_url",
-    "ollama_timeout",
-)
 # 保存后即时生效：写入 config 模块属性（bridge_core 等运行时实时读取）
 HOT_CONFIG_ATTRS = {
     "bot_nicknames": "BOT_NICKNAMES",
@@ -59,9 +53,6 @@ HOT_CONFIG_ATTRS = {
     "group_name_map": "GROUP_NAME_MAP",
     "self_name": "SELF_NAME",
     "context_messages": "CONTEXT_MESSAGES",
-    "emoji_learn_enabled": "EMOJI_LEARN_ENABLED",
-    "emoji_learn_threshold": "EMOJI_LEARN_THRESHOLD",
-    "maibot_webui_url": "MAIBOT_WEBUI_URL",
 }
 # 需要重启桥接才生效的字段
 RESTART_KEYS = (
@@ -218,11 +209,6 @@ def api_put_config(payload: dict):
         if "group_reply_mode" in payload and payload["group_reply_mode"] in VALID_MODES:
             state.group_reply_mode = payload["group_reply_mode"]
 
-        # 即时生效：state 运行时字段
-        for key in HOT_STATE_KEYS:
-            if key in payload:
-                setattr(state, key, payload[key])
-
         # 即时生效：config 模块属性
         for key, attr in HOT_CONFIG_ATTRS.items():
             if key in payload:
@@ -321,31 +307,6 @@ def api_contacts():
     return {"contacts": contacts}
 
 
-# ============ 表情学习 ============
-
-
-@app.get("/api/emoji-learning")
-def api_emoji_learning():
-    """表情学习状态：样本统计、热榜、最近学到的表达方式。"""
-    try:
-        from .. import emoji_learner
-        return {"ok": True, **emoji_learner.get_stats()}
-    except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
-
-
-@app.post("/api/emoji-learning/run")
-def api_emoji_learning_run():
-    """手动触发一次「蒸馏 + 投喂麦麦」（后台线程执行，立即返回）。"""
-    from .. import emoji_learner
-    import threading
-    if emoji_learner._distill_running.is_set():
-        return {"ok": False, "error": "已有学习任务在运行中"}
-    threading.Thread(target=emoji_learner.distill_and_push,
-                     kwargs={"trigger": "manual"}, daemon=True).start()
-    return {"ok": True, "msg": "学习任务已启动，完成后见日志与结果"}
-
-
 # ============ 测试发送 ============
 
 
@@ -360,7 +321,7 @@ async def api_send(payload: dict):
     if not state.running or sender is None:
         return JSONResponse({"ok": False, "error": "桥接未运行，请先启动"}, 400)
 
-    log.info(f"[WebUI] 测试发送 → {contact}: {text[:50]}")
+    log.info(f"[WebUI] 测试发送 -> {contact}: {text[:50]}")
     try:
         ok = await asyncio.to_thread(sender.send_text, contact, text)
     except Exception as e:
@@ -369,9 +330,9 @@ async def api_send(payload: dict):
 
     if ok:
         monitor.record_outbound(contact, "manual", text)
-        log.info(f"[WebUI] 测试发送成功 → {contact}")
+        log.info(f"[WebUI] 测试发送成功 -> {contact}")
     else:
-        log.warning(f"[WebUI] 测试发送失败 → {contact}")
+        log.warning(f"[WebUI] 测试发送失败 -> {contact}")
     return {"ok": bool(ok)}
 
 

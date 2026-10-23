@@ -3,263 +3,99 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import { get, post } from '../api'
 import { toast } from '../store'
 import { useDesktopShot } from '../useDesktopShot'
-
-const status = ref(null)
+import AppIcon from '../components/AppIcon.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+const desktopStatus = ref(null)
 const busy = ref(false)
+const stopDialog = ref(false)
 const autoRefresh = ref(true)
-
-const {
-  imgUrl, lastError, shotAt, natural,
-  refresh: refreshShot, onImgLoad, click, clear,
-} = useDesktopShot()
-
+const { imgUrl, lastError, shotAt, natural, refresh: refreshShot, onImgLoad, click, clear } = useDesktopShot()
 let timer = null
-
-const enabled = computed(() => !!(status.value && status.value.enabled))
-const running = computed(() => !!(status.value && status.value.running))
-const loggedIn = computed(() => !!(status.value && status.value.logged_in))
-const state = computed(() => (status.value && status.value.state) || 'absent')
-
-const stateLabel = computed(() => {
-  switch (state.value) {
-    case 'chat':
-      return '已登录，正在使用'
-    case 'login':
-      return '停在登录界面，等待扫码或手机确认'
-    case 'absent':
-      return '微信未运行'
-    default:
-      return '状态未知'
-  }
-})
-
+let refreshing = false
+const enabled = computed(() => !!desktopStatus.value?.enabled)
+const running = computed(() => !!desktopStatus.value?.running)
+const state = computed(() => desktopStatus.value?.state || 'absent')
+const stateLabel = computed(() => ({ chat: '已登录，正在使用', login: '等待扫码或手机确认', absent: '微信未运行' }[state.value] || '状态未知'))
 async function loadStatus() {
   const res = await get('/api/desktop/status', true)
-  if (res.ok && res.data && res.data.ok) {
-    status.value = res.data
-  } else if (res.data && res.data.error) {
-    lastError.value = res.data.error
-  }
+  if (res.ok && res.data?.ok) desktopStatus.value = res.data
+  else if (res.data?.error) lastError.value = res.data.error
 }
-
-async function onClickShot(e) {
-  const err = await click(e)
-  if (err) toast(err, 'error')
+async function onClickShot(event) {
+  const error = await click(event)
+  if (error) toast(error, 'error')
   setTimeout(refreshShot, 300)
 }
-
 async function startWeChat() {
   busy.value = true
   const res = await post('/api/desktop/start', {}, true)
   busy.value = false
-  if (res.ok && res.data && res.data.ok) {
-    toast('微信已在隔离桌面上启动', 'success')
-    await loadStatus()
-    await refreshShot()
-  } else {
-    toast((res.data && res.data.error) || '启动失败', 'error')
-  }
+  if (res.ok && res.data?.ok) { toast('微信已在隔离桌面上启动', 'success'); await loadStatus(); await refreshShot() }
+  else toast(res.data?.error || '启动失败', 'error')
 }
-
 async function stopWeChat() {
+  stopDialog.value = false
   busy.value = true
   const res = await post('/api/desktop/stop', {}, true)
   busy.value = false
-  if (res.ok && res.data && res.data.ok) {
-    toast('已结束隔离桌面上的微信', 'success')
-    clear()
-    await loadStatus()
-  } else {
-    toast((res.data && res.data.error) || '停止失败', 'error')
-  }
+  if (res.ok && res.data?.ok) { toast('已结束隔离桌面上的微信', 'success'); clear(); await loadStatus() }
+  else toast(res.data?.error || '停止失败', 'error')
 }
-
 onMounted(async () => {
   await loadStatus()
   await refreshShot()
   timer = setInterval(async () => {
-    if (!autoRefresh.value) return
-    await loadStatus()
-    await refreshShot()
+    if (!autoRefresh.value || refreshing || document.hidden) return
+    refreshing = true
+    try { await loadStatus(); await refreshShot() }
+    catch (error) { lastError.value = '自动刷新失败：' + (error?.message || error) }
+    finally { refreshing = false }
   }, 2000)
 })
-
-onBeforeUnmount(() => {
-  if (timer) clearInterval(timer)
-})
+onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 </script>
-
 <template>
   <div class="desktop-page">
-    <div v-if="!enabled" class="banner">
-      隔离桌面模式未开启。开启后微信由本程序在另一张 Windows 桌面上启动，向它投递输入时
-      切换的前台只发生在那张桌面上，用户自己的桌面不受打扰，发送通道可以长期开着。
-      请在「配置」里把 <code>isolated_desktop</code> 设为 true 并重启。
-    </div>
-
-    <div class="card">
-      <div class="card-title">状态</div>
-      <div class="kv">
-        <div class="kv-item">
-          <span class="kv-k">模式</span>
-          <span class="kv-v">{{ enabled ? '隔离桌面' : '未开启' }}</span>
-        </div>
-        <div class="kv-item">
-          <span class="kv-k">微信</span>
-          <span class="kv-v">{{ running ? '运行中' : '未运行' }}</span>
-        </div>
-        <div class="kv-item">
-          <span class="kv-k">登录</span>
-          <span class="kv-v" :class="{ warn: state === 'login' }">{{ stateLabel }}</span>
-        </div>
-        <div class="kv-item">
-          <span class="kv-k">桌面</span>
-          <span class="kv-v">{{ status ? status.desktop : '-' }}</span>
-        </div>
-        <div class="kv-item">
-          <span class="kv-k">画面尺寸</span>
-          <span class="kv-v">
-            {{ natural.w ? natural.w + ' × ' + natural.h : '-' }}
-          </span>
-        </div>
-      </div>
-
-      <div v-if="status && status.error" class="err">{{ status.error }}</div>
-
-      <div class="btn-row">
-        <button class="btn btn-pink" :disabled="busy" @click="startWeChat()">
-          {{ running ? '重新确认启动' : '启动微信' }}
-        </button>
-        <button class="btn" :disabled="busy || !running" @click="stopWeChat()">
-          结束微信
-        </button>
-        <label class="chk">
-          <input type="checkbox" v-model="autoRefresh" />
-          每 2 秒自动刷新
-        </label>
-        <button class="btn btn-ghost" @click="refreshShot()">立即刷新</button>
-      </div>
-    </div>
-
-    <div class="card">
-      <div class="card-title">
-        微信画面
-        <span v-if="shotAt" class="shot-at">更新于 {{ shotAt }}</span>
-      </div>
-
-      <div v-if="lastError" class="err">{{ lastError }}</div>
-
-      <div class="shot-wrap">
-        <img
-          v-if="imgUrl"
-          :src="imgUrl"
-          class="shot"
-          alt="隔离桌面上的微信窗口画面"
-          @load="onImgLoad"
-          @click="onClickShot"
-        />
-        <div v-else class="shot-empty">还没有画面</div>
-      </div>
-
-      <div class="hint">
-        这张画面就是微信窗口的实况，点击它会转发到微信上——首次登录时在这里点「登录」，
-        然后按提示用手机扫码或确认。登录完成后本页会显示已登录状态。
-      </div>
-    </div>
+    <div class="page-intro"><div><h2>微信的另一张桌面，近在眼前。</h2><p>查看隔离桌面实况，完成登录和必要的窗口操作。</p></div><span class="badge" :class="running ? 'badge-green' : 'badge-gray'">{{ stateLabel }}</span></div>
+    <div v-if="!enabled" class="banner"><AppIcon name="Info" :size="17" /><span>隔离桌面模式未开启。请在「桥接配置」中将 <code>isolated_desktop</code> 设为 true 并重启。开启后，自动化操作不会抢占你正在使用的桌面。</span></div>
+    <section class="card viewer-card"><div class="viewer-toolbar"><div class="viewer-title"><AppIcon name="Monitor" :size="17" /><strong>隔离桌面实况</strong><span v-if="desktopStatus?.desktop" class="desktop-name">{{ desktopStatus.desktop }}</span></div><div class="viewer-actions"><label class="chk"><input v-model="autoRefresh" type="checkbox" />自动刷新</label><button class="icon-btn" title="立即刷新" aria-label="立即刷新微信画面" @click="refreshShot"><AppIcon name="RefreshCw" :size="16" /></button><button class="btn btn-outline btn-sm" :disabled="busy" @click="startWeChat"><AppIcon name="Play" :size="13" />{{ running ? '重新确认启动' : '启动微信' }}</button><button v-if="running" class="btn btn-outline-danger btn-sm" :disabled="busy" @click="stopDialog = true"><AppIcon name="Square" :size="12" />结束</button></div></div><div v-if="lastError || desktopStatus?.error" class="viewer-error"><AppIcon name="CircleAlert" :size="16" />{{ lastError || desktopStatus.error }}</div><div class="shot-wrap"><img v-if="imgUrl" :src="imgUrl" class="shot" alt="隔离桌面上的微信窗口，点击可转发操作" @load="onImgLoad" @click="onClickShot" /><div v-else class="shot-empty"><div class="empty-screen"><AppIcon name="Monitor" :size="32" /></div><strong>{{ running ? '正在等待微信画面' : '微信尚未启动' }}</strong><span>{{ running ? '画面将在就绪后自动显示。' : '点击「启动微信」开始查看隔离桌面。' }}</span></div></div><div class="viewer-footer"><span><AppIcon name="Info" :size="13" />点击画面可将操作转发到微信</span><div><span v-if="natural.w">{{ natural.w }} × {{ natural.h }}</span><span v-if="shotAt">更新于 {{ shotAt }}</span></div></div></section>
+    <section class="desktop-info"><div><span class="info-label">运行模式</span><strong>{{ enabled ? '隔离桌面' : '未开启' }}</strong></div><div><span class="info-label">微信进程</span><strong>{{ running ? '运行中' : '未运行' }}</strong></div><div><span class="info-label">登录状态</span><strong :class="{ warning: state === 'login' }">{{ stateLabel }}</strong></div><p>登录时在画面中点击「登录」，然后按微信提示使用手机扫码或确认。</p></section>
+    <ConfirmDialog
+      :open="stopDialog"
+      title="结束隔离桌面上的微信"
+      message="结束微信会断开当前登录与发送通道，未发送的内容可能丢失。确定结束吗？"
+      confirm-text="结束微信"
+      :danger="true"
+      @cancel="stopDialog = false"
+      @confirm="stopWeChat"
+    />
   </div>
 </template>
-
 <style scoped>
-.desktop-page {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.banner {
-  background: #fff8e1;
-  border: 1px solid var(--amber-soft);
-  color: #b26a00;
-  border-radius: var(--radius);
-  padding: 12px 16px;
-  font-size: 13px;
-  line-height: 1.6;
-}
-.kv {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 26px;
-}
-.kv-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.kv-k {
-  font-size: 12px;
-  color: var(--faint);
-}
-.kv-v {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text);
-}
-.kv-v.warn {
-  color: #b26a00;
-}
-.btn-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 14px;
-  flex-wrap: wrap;
-}
-.chk {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: var(--muted);
-  cursor: pointer;
-}
-.shot-at {
-  font-size: 11px;
-  color: var(--faint);
-  font-weight: 400;
-  margin-left: 8px;
-}
-.shot-wrap {
-  display: flex;
-  justify-content: center;
-  padding: 12px 0;
-}
-.shot {
-  max-width: 100%;
-  max-height: 70vh;
-  border-radius: 10px;
-  border: 1px solid var(--border);
-  cursor: crosshair;
-  background: #1e1e1e;
-}
-.shot-empty {
-  font-size: 13px;
-  color: var(--faint);
-  padding: 48px 0;
-}
-.err {
-  margin-top: 10px;
-  background: #ffebee;
-  border: 1px solid #ffcdd2;
-  color: #c62828;
-  border-radius: var(--radius);
-  padding: 10px 14px;
-  font-size: 12px;
-  line-height: 1.6;
-}
-.hint {
-  font-size: 12px;
-  color: var(--faint);
-  line-height: 1.7;
-  border-top: 1px solid var(--border);
-  padding-top: 10px;
-}
+.desktop-page { display:flex; flex-direction:column; gap:18px; }
+.viewer-card { padding:0; overflow:hidden; box-shadow:none; }
+.viewer-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); }
+.viewer-title, .viewer-actions { display:flex; align-items:center; gap:9px; }
+.viewer-title > .app-icon { color:var(--primary-deep); }
+.viewer-title strong { font-size:12px; font-weight:500; }
+.desktop-name { color:var(--muted); font-size:10px; padding-left:8px; border-left:1px solid var(--border); }
+.viewer-actions .chk { font-size:10px; }
+.viewer-error { display:flex; align-items:center; gap:8px; padding:10px 16px; color:var(--danger); background:var(--danger-soft); font-size:11px; }
+.shot-wrap { display:flex; align-items:center; justify-content:center; min-height:400px; padding:20px; background:var(--inset); }
+.shot { display:block; max-width:100%; max-height:65dvh; border:1px solid var(--border-strong); border-radius:6px; background:var(--media-bg); cursor:crosshair; box-shadow:0 8px 28px rgb(0 0 0 / .12); }
+.shot-empty { display:flex; align-items:center; flex-direction:column; gap:8px; min-height:330px; justify-content:center; color:var(--muted); }
+.empty-screen { display:grid; place-items:center; width:66px; height:54px; margin-bottom:9px; border:1px solid var(--border-strong); border-radius:8px; color:var(--faint); }
+.shot-empty strong { color:var(--text); font-size:13px; font-weight:500; }
+.shot-empty span { font-size:11px; }
+.viewer-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 16px; color:var(--muted); font-size:10px; }
+.viewer-footer > span, .viewer-footer > div { display:flex; align-items:center; gap:7px; }
+.viewer-footer > div { gap:16px; }
+.desktop-info { display:flex; align-items:center; gap:36px; padding:3px 3px 0; }
+.desktop-info > div { display:flex; flex-direction:column; gap:4px; }
+.info-label { font-size:10px; color:var(--muted); }
+.desktop-info strong { font-size:12px; font-weight:500; }
+.desktop-info strong.warning { color:var(--warning); }
+.desktop-info > p { margin-left:auto; max-width:330px; font-size:10px; color:var(--muted); line-height:1.7; }
+@media(max-width:1000px) { .viewer-toolbar { align-items:flex-start; } .viewer-actions { flex-wrap:wrap; justify-content:flex-end; } .desktop-info { flex-wrap:wrap; gap:20px; } .desktop-info > p { width:100%; margin-left:0; max-width:none; } }
+@media(max-width:767px) { .viewer-toolbar { flex-direction:column; } .viewer-actions { width:100%; justify-content:flex-start; } .viewer-actions .btn { font-size:10px; } .shot-wrap { min-height:310px; padding:12px; } .shot-empty { min-height:260px; } .viewer-footer { align-items:flex-start; flex-direction:column; gap:6px; } .desktop-info { gap:18px; } }
 </style>

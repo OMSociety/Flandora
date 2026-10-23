@@ -721,7 +721,7 @@ class UiaSender(BaseSender):
         if self.allow_foreground_steal:
             return True
         log.error(
-            f"[UIA✗] {contact}: 发送通道未启用——发送会把微信窗口提到前台。"
+            f"[UIA失败] {contact}: 发送通道未启用，发送会把微信窗口提到前台。"
             "确认可以接受后，把 config.json 里的 allow_foreground_steal 设为 true "
             "并重启 bridge"
         )
@@ -1074,7 +1074,7 @@ class UiaSender(BaseSender):
         if not switched:
             self._last_contact = ""
             log.error(
-                f"[UIA✗] {contact}: 未能切换到该联系人"
+                f"[UIA失败] {contact}: 未能切换到该联系人"
                 "（会话列表与搜索都不可用，微信可能未登录），本次发送已取消"
             )
             return False
@@ -1098,7 +1098,7 @@ class UiaSender(BaseSender):
             try:
                 return self._send_text_impl(contact, text)
             except Exception as e:
-                log.error(f"[UIA✗] {contact}: 发送异常（窗口可能已失效）: {e}")
+                log.error(f"[UIA失败] {contact}: 发送异常（窗口可能已失效）: {e}")
                 with self._lock:
                     self._invalidate_window()
                 return False
@@ -1217,17 +1217,17 @@ class UiaSender(BaseSender):
             try:
                 summary_before = self._session_summary(contact) or ""
                 if not self._clear_input():
-                    log.error(f"[UIA✗] {contact}: 输入框有清不掉的残留，本次发送已取消")
+                    log.error(f"[UIA失败] {contact}: 输入框有清不掉的残留，本次发送已取消")
                     return False
                 self._release_foreground()
                 if not self._type_text(text):
                     self._clear_input()
-                    log.error(f"[UIA✗] {contact}: 文字未能完整进到输入框，本次发送已取消")
+                    log.error(f"[UIA失败] {contact}: 文字未能完整进到输入框，本次发送已取消")
                     return False
                 self._release_foreground()
                 if self._open_chat_title() != contact:
                     self._clear_input()
-                    log.error(f"[UIA✗] {contact}: 输入期间会话已改变，本次发送已取消")
+                    log.error(f"[UIA失败] {contact}: 输入期间会话已改变，本次发送已取消")
                     return False
 
                 self._post_key(VK_RETURN)
@@ -1235,12 +1235,12 @@ class UiaSender(BaseSender):
                 time.sleep(0.6)
 
                 if not self._confirm_sent(contact, text, summary_before):
-                    log.error(f"[UIA✗] {contact}: 回车后摘要未更新，消息可能没发出去")
+                    log.error(f"[UIA失败] {contact}: 回车后摘要未更新，消息可能没发出去")
                     return False
-                log.info(f"[UIA✓] {contact}: {text[:50]}")
+                log.info(f"[UIA成功] {contact}: {text[:50]}")
                 return True
             except Exception as e:
-                log.error(f"[UIA✗] {contact}: {e}")
+                log.error(f"[UIA失败] {contact}: {e}")
                 return False
             finally:
                 self._detach_input()
@@ -1262,7 +1262,7 @@ class UiaSender(BaseSender):
             try:
                 return self._send_image_impl(contact, image_path)
             except Exception as e:
-                log.error(f"[UIA✗] 图片 → {contact}: 发送异常（窗口可能已失效）: {e}")
+                log.error(f"[UIA失败] 图片 -> {contact}: 发送异常（窗口可能已失效）: {e}")
                 with self._lock:
                     self._invalidate_window()
                 return False
@@ -1287,13 +1287,13 @@ class UiaSender(BaseSender):
             self._attach_input()
             try:
                 if not self._clear_input():
-                    log.error(f"[UIA✗] 图片 → {contact}: 输入框有清不掉的残留，本次发送已取消")
+                    log.error(f"[UIA失败] 图片 -> {contact}: 输入框有清不掉的残留，本次发送已取消")
                     return False
                 self._release_foreground()
                 if not self._paste_clipboard(expect_image=True):
                     self._clear_input()
                     log.error(
-                        f"[UIA✗] 图片 → {contact}: 剪贴板图片没能贴进输入框，本次发送已取消"
+                        f"[UIA失败] 图片 -> {contact}: 剪贴板图片没能贴进输入框，本次发送已取消"
                     )
                     return False
                 self._release_foreground()
@@ -1304,12 +1304,12 @@ class UiaSender(BaseSender):
 
                 summary = self._session_summary(contact) or ""
                 if "图片" not in summary:
-                    log.error(f"[UIA✗] 图片 → {contact}: 摘要未显示图片（{summary[:24]!r}）")
+                    log.error(f"[UIA失败] 图片 -> {contact}: 摘要未显示图片（{summary[:24]!r}）")
                     return False
-                log.info(f"[UIA✓] 图片 → {contact}: {os.path.basename(image_path)}")
+                log.info(f"[UIA成功] 图片 -> {contact}: {os.path.basename(image_path)}")
                 return True
             except Exception as e:
-                log.error(f"[UIA✗] 图片 → {contact}: {e}")
+                log.error(f"[UIA失败] 图片 -> {contact}: {e}")
                 return False
             finally:
                 self._detach_input()
@@ -1334,7 +1334,7 @@ class UiaSender(BaseSender):
             try:
                 return self._send_file_impl(contact, file_path)
             except Exception as e:
-                log.error(f"[UIA✗] 文件 → {contact}: 发送异常（窗口可能已失效）: {e}")
+                log.error(f"[UIA失败] 文件 -> {contact}: 发送异常（窗口可能已失效）: {e}")
                 with self._lock:
                     self._invalidate_window()
                 return False
@@ -1360,12 +1360,12 @@ class UiaSender(BaseSender):
             self._attach_input()
             try:
                 if not self._clear_input():
-                    log.error(f"[UIA✗] 文件 → {contact}: 输入框有清不掉的残留，本次发送已取消")
+                    log.error(f"[UIA失败] 文件 -> {contact}: 输入框有清不掉的残留，本次发送已取消")
                     return False
                 self._release_foreground()
                 if not self._paste_clipboard(expect_image=False):
                     self._clear_input()
-                    log.error(f"[UIA✗] 文件 → {contact}: 文件没能贴进输入框，本次发送已取消")
+                    log.error(f"[UIA失败] 文件 -> {contact}: 文件没能贴进输入框，本次发送已取消")
                     return False
                 self._release_foreground()
 
@@ -1375,12 +1375,12 @@ class UiaSender(BaseSender):
 
                 summary = self._session_summary(contact) or ""
                 if name not in summary and "文件" not in summary:
-                    log.error(f"[UIA✗] 文件 → {contact}: 摘要未显示该文件（{summary[:24]!r}）")
+                    log.error(f"[UIA失败] 文件 -> {contact}: 摘要未显示该文件（{summary[:24]!r}）")
                     return False
-                log.info(f"[UIA✓] 文件 → {contact}: {name}")
+                log.info(f"[UIA成功] 文件 -> {contact}: {name}")
                 return True
             except Exception as e:
-                log.error(f"[UIA✗] 文件 → {contact}: {e}")
+                log.error(f"[UIA失败] 文件 -> {contact}: {e}")
                 return False
             finally:
                 self._detach_input()

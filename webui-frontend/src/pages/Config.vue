@@ -1,446 +1,175 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, computed } from 'vue'
 import { get, put } from '../api'
 import { toast } from '../store'
 import PasswordInput from '../components/PasswordInput.vue'
+import AppIcon from '../components/AppIcon.vue'
 
-// 表单各部分缺失时的默认值（保证 v-model 可写）
 const DEFAULTS = {
-  bot_nicknames: [], bot_wxid: '', self_name: '',
-  send_method: 'uia', buffer_seconds: 5, context_messages: 0, web_port: 8766, group_reply_mode: 'mention',
-  ob_server_host: '127.0.0.1', ob_server_port: 7998, ob_server_token: '', astrbot_ob_url: '',
-  astrbot_attachments: '', image_caption_provider: 'ollama', image_caption_model: '',
-  image_caption_api_key: '', image_caption_api_base: '', image_caption_prompt: '',
-  ollama_base_url: '', ollama_timeout: 60,
+  bot_nicknames: [], bot_wxid: '', self_name: '', send_method: 'uia', buffer_seconds: 5,
+  context_messages: 0, web_port: 8766, group_reply_mode: 'mention', ob_server_host: '127.0.0.1',
+  ob_server_port: 7998, ob_server_token: '', astrbot_ob_url: '', astrbot_attachments: '',
 }
-
-const NUMERIC = ['buffer_seconds', 'context_messages', 'web_port', 'ob_server_port', 'ollama_timeout']
-
+const NUMERIC = ['buffer_seconds', 'context_messages', 'web_port', 'ob_server_port']
+const categories = [
+  { id: 'bot', label: '收件与身份', icon: 'MessageCircle', description: '昵称与显示名称' },
+  { id: 'onebot', label: 'OneBot 连接', icon: 'Zap', description: '服务端与鉴权' },
+  { id: 'bridge', label: '消息与桥接', icon: 'SlidersHorizontal', description: '缓冲、回复与发送' },
+  { id: 'groups', label: '群名映射', icon: 'MessagesSquare', description: '群 ID 与显示名称' },
+]
+const activeCategory = ref('bot')
+const activeLabel = computed(() => categories.find((c) => c.id === activeCategory.value)?.label)
 const cfg = reactive({})
 const loaded = ref(false)
+const loadError = ref('')
 const saving = ref(false)
+const saved = ref(false)
 const jsonMode = ref(false)
 const jsonText = ref('')
 const jsonValid = ref(true)
-
 const groupRows = reactive([])
 const nickInput = ref('')
-
-const modeOptions = [
-  { value: 'mention', label: '仅@回复' },
-  { value: 'all', label: '全部回复' },
-  { value: 'batch', label: '批处理' },
-]
-const providerOptions = [
-  { value: 'ollama', label: 'Ollama 本地' },
-  { value: 'openai', label: 'OpenAI 兼容' },
-  { value: 'none', label: '关闭' },
-]
+const modeOptions = [{ value: 'mention', label: '仅 @ 回复' }, { value: 'all', label: '全部回复' }, { value: 'batch', label: '批处理' }]
 
 function applyConfig(obj) {
   Object.keys(cfg).forEach((k) => delete cfg[k])
   Object.assign(cfg, JSON.parse(JSON.stringify(obj || {})))
-  for (const k of Object.keys(DEFAULTS)) {
-    if (!(k in cfg)) cfg[k] = k === 'bot_nicknames' ? [] : DEFAULTS[k]
-  }
+  Object.keys(DEFAULTS).forEach((key) => { if (!(key in cfg)) cfg[key] = key === 'bot_nicknames' ? [] : DEFAULTS[key] })
   if (!Array.isArray(cfg.bot_nicknames)) cfg.bot_nicknames = []
-  if (!cfg.group_name_map || typeof cfg.group_name_map !== 'object' || Array.isArray(cfg.group_name_map)) {
-    cfg.group_name_map = {}
-  }
+  if (!cfg.group_name_map || typeof cfg.group_name_map !== 'object' || Array.isArray(cfg.group_name_map)) cfg.group_name_map = {}
   rebuildGroupRows()
 }
-
-function rebuildGroupRows() {
-  groupRows.splice(0, groupRows.length)
-  const gm = cfg.group_name_map || {}
-  Object.keys(gm).forEach((k) => groupRows.push({ key: k, value: gm[k] }))
-}
-
-function buildGroupMap() {
-  const gm = {}
-  groupRows.forEach((r) => {
-    if (r.key) gm[r.key] = r.value
-  })
-  return gm
-}
-
+function rebuildGroupRows() { groupRows.splice(0, groupRows.length, ...Object.keys(cfg.group_name_map || {}).map((key) => ({ key, value: cfg.group_name_map[key] }))) }
+function buildGroupMap() { return Object.fromEntries(groupRows.filter((row) => row.key).map((row) => [row.key, row.value])) }
 function addRow() { groupRows.push({ key: '', value: '' }) }
 function removeRow(i) { groupRows.splice(i, 1) }
-
-// ---- bot nicknames (tag input) ----
 function addNick() {
-  const v = nickInput.value.trim()
-  if (v && !cfg.bot_nicknames.includes(v)) cfg.bot_nicknames.push(v)
+  const value = nickInput.value.trim()
+  if (value && !cfg.bot_nicknames.includes(value)) cfg.bot_nicknames.push(value)
   nickInput.value = ''
 }
-function addNickFromKey(e) {
-  if (e.key === 'Enter' || e.key === ',' || e.key === '，') {
-    e.preventDefault()
-    addNick()
-  }
+function addNickFromKey(event) {
+  if (['Enter', ',', '，'].includes(event.key)) { event.preventDefault(); addNick() }
 }
-function removeNick(i) { cfg.bot_nicknames.splice(i, 1) }
-
-// ---- JSON mode ----
-function showJson() {
-  cfg.group_name_map = buildGroupMap()
-  jsonText.value = JSON.stringify(cfg, null, 2)
-  jsonValid.value = true
-  jsonMode.value = true
-}
+function showJson() { cfg.group_name_map = buildGroupMap(); jsonText.value = JSON.stringify(cfg, null, 2); jsonValid.value = true; jsonMode.value = true }
 function hideJson() {
-  try {
-    applyConfig(JSON.parse(jsonText.value))
-    jsonValid.value = true
-    jsonMode.value = false
-  } catch (e) {
-    toast('JSON 格式错误，无法切换到表单模式', 'error')
-  }
+  try { applyConfig(JSON.parse(jsonText.value)); jsonValid.value = true; jsonMode.value = false }
+  catch { toast('JSON 格式错误，请修正后切换回表单', 'error') }
 }
 function onJsonInput() {
-  try {
-    const parsed = JSON.parse(jsonText.value)
-    applyConfig(parsed)
-    jsonValid.value = true
-  } catch (e) {
-    jsonValid.value = false
-  }
+  try { applyConfig(JSON.parse(jsonText.value)); jsonValid.value = true }
+  catch { jsonValid.value = false }
 }
-
 async function save() {
   if (saving.value) return
   let payload
   if (jsonMode.value) {
-    if (!jsonValid.value) { toast('JSON 格式错误，无法保存', 'error'); return }
-    try {
-      payload = JSON.parse(jsonText.value)
-    } catch (e) {
-      toast('JSON 格式错误，无法保存', 'error')
-      return
-    }
+    try { payload = JSON.parse(jsonText.value) }
+    catch { toast('JSON 格式错误，无法保存', 'error'); return }
   } else {
     cfg.group_name_map = buildGroupMap()
     payload = JSON.parse(JSON.stringify(cfg))
   }
-  NUMERIC.forEach((k) => {
-    if (k in payload) payload[k] = Number(payload[k]) || 0
-  })
-
+  NUMERIC.forEach((key) => { if (key in payload) payload[key] = Number(payload[key]) || 0 })
   saving.value = true
+  saved.value = false
   const res = await put('/api/config', payload)
   saving.value = false
-
   if (res.ok && res.data && res.data.ok !== false) {
+    saved.value = true
+    setTimeout(() => { saved.value = false }, 3000)
     toast('配置已保存', 'success')
-    const rr = res.data.restart_required
-    if (Array.isArray(rr) && rr.length) {
-      toast('部分配置需重启桥接生效：' + rr.join('、'), 'info', 6500)
-    }
-  } else {
-    const errMsg = (res.data && res.data.error) || (res.status ? `HTTP ${res.status}` : '请求失败')
-    toast('保存失败：' + errMsg, 'error')
-  }
+    if (Array.isArray(res.data.restart_required) && res.data.restart_required.length) toast('部分配置需重启桥接生效：' + res.data.restart_required.join('、'), 'info', 6500)
+  } else toast('保存失败：' + (res.data?.error || (res.status ? `HTTP ${res.status}` : '请求失败')), 'error')
 }
-
 async function load() {
+  loaded.value = false
+  loadError.value = ''
   const res = await get('/api/config')
-  loaded.value = true
-  if (res.ok && res.data) {
+  if (res.ok && res.data && typeof res.data === 'object' && !Array.isArray(res.data)) {
     applyConfig(res.data)
+    loaded.value = true
   } else {
-    const errMsg = (res.data && res.data.error) || '加载失败'
-    toast('加载配置失败：' + errMsg, 'error')
+    // 读不到就停在错误态：若渲染出只含 DEFAULTS 的空表单，一次保存就会覆盖真实配置。
+    loadError.value = res.data?.error || (res.status ? `HTTP ${res.status}` : '无法连接桥接服务')
+    toast('加载配置失败：' + loadError.value, 'error')
   }
 }
-
 onMounted(load)
 </script>
 
 <template>
   <div class="config-page">
-    <div class="card config-head">
-      <div class="head-left">
-        <span class="card-title" style="margin-bottom: 0; border: none; padding: 0">配置编辑</span>
-        <span class="head-file">config.json</span>
+    <div class="page-intro"><div><h2>让桥接按你的方式工作。</h2><p>管理机器人身份、OneBot 连接和消息处理选项。</p></div><button class="btn btn-outline" @click="jsonMode ? hideJson() : showJson()"><AppIcon :name="jsonMode ? 'SlidersHorizontal' : 'FileText'" :size="15" />{{ jsonMode ? '返回表单' : '编辑原始 JSON' }}</button></div>
+    <div v-if="!loaded && !loadError" class="card empty"><AppIcon name="LoaderCircle" :size="25" />正在读取配置…</div>
+    <div v-else-if="loadError" class="card load-error"><AppIcon name="CircleAlert" :size="26" /><h3>无法读取配置</h3><p>{{ loadError }}</p><p class="hint">为避免用空值覆盖 config.json，配置编辑已停用。请确认桥接服务正在运行后重试。</p><button class="btn btn-outline" @click="load"><AppIcon name="RefreshCw" :size="15" />重新读取</button></div>
+    <div v-else-if="jsonMode" class="card json-panel"><div class="section-head"><div><h3 class="card-title">config.json</h3><p class="card-description">直接编辑完整配置，保存前请确认 JSON 语法有效。</p></div><span class="badge" :class="jsonValid ? 'badge-green' : 'badge-red'">{{ jsonValid ? '格式有效' : '格式错误' }}</span></div><textarea v-model="jsonText" class="textarea json-text" aria-label="原始 JSON 配置" @input="onJsonInput" spellcheck="false"></textarea></div>
+    <div v-else class="config-layout">
+      <nav class="config-nav card" aria-label="配置分类"><button v-for="category in categories" :key="category.id" :class="{ active: activeCategory === category.id }" :aria-current="activeCategory === category.id ? 'page' : undefined" @click="activeCategory = category.id"><AppIcon :name="category.icon" :size="17" /><span><strong>{{ category.label }}</strong><small>{{ category.description }}</small></span><AppIcon name="ChevronRight" :size="14" /></button></nav>
+      <div class="config-content">
+        <section v-show="activeCategory === 'bot'" class="card config-section"><div class="section-head"><div><h3 class="card-title">收件与身份</h3><p class="card-description">昵称用于判断群消息是否 @ 了机器人；自我称呼是推送给客户端时显示的发送者名。</p></div><AppIcon name="MessageCircle" :size="19" /></div><div class="form-grid"><div class="field span-full"><label for="bot-nicknames">机器人昵称</label><div class="nick-editor"><span v-for="(n, i) in cfg.bot_nicknames" :key="i" class="chip">{{ n }}<button type="button" class="chip-x" :aria-label="`删除昵称 ${n}`" @click="cfg.bot_nicknames.splice(i, 1)"><AppIcon name="X" :size="12" /></button></span><input id="bot-nicknames" v-model="nickInput" class="nick-input" placeholder="输入昵称，回车或逗号添加" @keydown="addNickFromKey" @blur="addNick" /></div><p class="hint">可添加多个昵称；群聊中 @ 其中任意昵称即可触发。</p></div><div class="field"><label for="bot-wxid">机器人 wxid</label><input id="bot-wxid" v-model="cfg.bot_wxid" class="input" placeholder="留空以自动识别" /></div><div class="field"><label for="self-name">自我称呼</label><input id="self-name" v-model="cfg.self_name" class="input" placeholder="推送给客户端时显示的发送者名" /></div></div></section>
+        <section v-show="activeCategory === 'onebot'" class="card config-section"><div class="section-head"><div><h3 class="card-title">OneBot 服务端</h3><p class="card-description">任意 OneBot v11 客户端通过这些信息连接到桥接。</p></div><AppIcon name="Zap" :size="19" /></div><div class="form-grid"><div class="field"><label for="ob-host">监听 Host</label><input id="ob-host" v-model="cfg.ob_server_host" class="input" placeholder="127.0.0.1" /><p class="hint">本机使用建议保持回环地址。</p></div><div class="field"><label for="ob-port">监听端口</label><input id="ob-port" v-model.number="cfg.ob_server_port" class="input" type="number" min="1" max="65535" /></div><div class="field"><label for="ob-token">访问令牌</label><PasswordInput id="ob-token" v-model="cfg.ob_server_token" placeholder="与客户端配置保持一致，留空则不校验" /></div><div class="field"><label for="ob-url">AstrBot OB 地址</label><input id="ob-url" v-model="cfg.astrbot_ob_url" class="input" placeholder="ws://127.0.0.1:7999" /></div></div><div class="endpoint-preview"><span class="mini-dot"></span>OneBot v11 正向 WebSocket<span class="mono">ws://{{ cfg.ob_server_host }}:{{ cfg.ob_server_port }}</span></div></section>
+        <section v-show="activeCategory === 'bridge'" class="card config-section"><div class="section-head"><div><h3 class="card-title">消息与桥接</h3><p class="card-description">控制消息上下文、回复方式和发送通道。</p></div><AppIcon name="SlidersHorizontal" :size="19" /></div><div class="form-grid"><div class="field"><label for="buffer-seconds">消息缓冲（秒）</label><input id="buffer-seconds" v-model.number="cfg.buffer_seconds" class="input" type="number" min="0" /><p class="hint">合并同一联系人在此时间内的连续消息。</p></div><div class="field"><label for="context-messages">上下文附带条数</label><input id="context-messages" v-model.number="cfg.context_messages" class="input" type="number" min="0" /><p class="hint">将被 @ 消息前的最近 N 条群聊记录作为上下文，0 为关闭。</p></div><div class="field"><label for="reply-mode">群聊回复模式</label><select id="reply-mode" v-model="cfg.group_reply_mode" class="select"><option v-for="o in modeOptions" :key="o.value" :value="o.value">{{ o.label }}</option></select></div><div class="field"><label for="web-port">Web 面板端口</label><input id="web-port" v-model.number="cfg.web_port" class="input" type="number" min="1" max="65535" /></div><div class="field"><label for="send-method">发送方式</label><input id="send-method" value="UI 自动化（uia）" class="input" disabled /></div><div class="field"><label for="attachments">客户端附件目录</label><input id="attachments" v-model="cfg.astrbot_attachments" class="input" placeholder="D:\attachments" /></div></div></section>
+        <section v-show="activeCategory === 'groups'" class="card config-section"><div class="section-head"><div><h3 class="card-title">群名映射</h3><p class="card-description">把微信群 ID 映射为易读的真实群名。</p></div><button class="btn btn-outline btn-sm" @click="addRow"><AppIcon name="Plus" :size="14" />添加映射</button></div><div v-if="groupRows.length" class="mapping-head"><span>群 ID @chatroom</span><span>微信中显示的群名</span><span></span></div><div v-for="(row, i) in groupRows" :key="i" class="mapping-row"><input v-model="row.key" class="input" :aria-label="`第 ${i + 1} 行群 ID`" placeholder="群ID@chatroom" /><input v-model="row.value" class="input" :aria-label="`第 ${i + 1} 行群名`" placeholder="微信中显示的群名" /><button class="icon-btn" :aria-label="`删除第 ${i + 1} 行映射`" @click="removeRow(i)"><AppIcon name="Trash2" :size="16" /></button></div><div v-if="!groupRows.length" class="empty"><AppIcon name="MessagesSquare" :size="24" />尚未添加群名映射</div><p class="hint mapping-hint">发送测试中的群聊应填写这里配置的真实群名。</p></section>
       </div>
-      <label class="json-toggle">
-        <input type="checkbox" :checked="jsonMode" @change="jsonMode ? hideJson() : showJson()" />
-        <span>原始 JSON</span>
-      </label>
     </div>
-
-    <div v-if="!loaded" class="empty">加载配置中...</div>
-
-    <!-- JSON 模式 -->
-    <template v-else-if="jsonMode">
-      <div class="card">
-        <div class="json-status" :class="jsonValid ? 'ok' : 'err'">
-          {{ jsonValid ? '✅ JSON 格式有效，可保存' : '❌ JSON 格式错误，无法保存' }}
-        </div>
-        <textarea v-model="jsonText" class="textarea json-text" @input="onJsonInput" spellcheck="false"></textarea>
-      </div>
-    </template>
-
-    <!-- 表单模式 -->
-    <template v-else>
-      <div class="card">
-        <div class="card-title">机器人</div>
-        <div class="grid-2">
-          <div class="field" style="grid-column: 1 / -1">
-            <label>机器人昵称（多个，回车或逗号添加）</label>
-            <div class="nick-editor">
-              <span v-for="(n, i) in cfg.bot_nicknames" :key="i" class="chip">
-                {{ n }} <span class="chip-x" @click="removeNick(i)">×</span>
-              </span>
-              <input
-                v-model="nickInput"
-                class="input nick-input"
-                placeholder="输入昵称后回车"
-                @keydown="addNickFromKey"
-                @blur="addNick"
-              />
-            </div>
-          </div>
-          <div class="field">
-            <label>机器人 wxid</label>
-            <input v-model="cfg.bot_wxid" class="input" placeholder="wxid_xxx" />
-          </div>
-          <div class="field">
-            <label>自我称呼（self_name）</label>
-            <input v-model="cfg.self_name" class="input" placeholder="小E" />
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">OneBot 服务端（MaiBot 连接）</div>
-        <div class="grid-2">
-          <div class="field">
-            <label>监听 Host</label>
-            <input v-model="cfg.ob_server_host" class="input" placeholder="127.0.0.1" />
-          </div>
-          <div class="field">
-            <label>监听端口</label>
-            <input v-model.number="cfg.ob_server_port" class="input" type="number" />
-          </div>
-          <div class="field">
-            <label>ob_server_token</label>
-            <password-input v-model="cfg.ob_server_token" placeholder="与 adapter 一致" />
-          </div>
-          <div class="field">
-            <label>AstrBot OB 地址</label>
-            <input v-model="cfg.astrbot_ob_url" class="input" placeholder="ws://127.0.0.1:7999" />
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">桥接</div>
-        <div class="grid-3">
-          <div class="field">
-            <label>消息缓冲（秒）</label>
-            <input v-model.number="cfg.buffer_seconds" class="input" type="number" />
-          </div>
-          <div class="field">
-            <label>上下文附带条数</label>
-            <input v-model.number="cfg.context_messages" class="input" type="number" placeholder="5" />
-            <span class="cfg-hint">mention 模式下，把被 @ 消息之前的最近 N 条群聊记录一并推给麦麦当上下文；0 = 关闭</span>
-          </div>
-          <div class="field">
-            <label>群聊回复模式</label>
-            <select v-model="cfg.group_reply_mode" class="select">
-              <option v-for="o in modeOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>Web 面板端口</label>
-            <input v-model.number="cfg.web_port" class="input" type="number" />
-          </div>
-          <div class="field">
-            <label>发送方式（固定）</label>
-            <input :value="'uia'" class="input" disabled />
-          </div>
-          <div class="field">
-            <label>AstrBot 附件目录</label>
-            <input v-model="cfg.astrbot_attachments" class="input" placeholder="E:\\MaiBot\\attachments" />
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">图片描述</div>
-        <div class="grid-3">
-          <div class="field">
-            <label>描述服务</label>
-            <select v-model="cfg.image_caption_provider" class="select">
-              <option v-for="o in providerOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-            </select>
-          </div>
-          <div class="field">
-            <label>模型名</label>
-            <input v-model="cfg.image_caption_model" class="input" placeholder="deepseek-v4-flash-vision-exp" />
-          </div>
-          <div class="field">
-            <label>API Key</label>
-            <password-input v-model="cfg.image_caption_api_key" placeholder="sk-xxx (OpenAI 模式时)" />
-          </div>
-          <div class="field">
-            <label>API 地址</label>
-            <input v-model="cfg.image_caption_api_base" class="input" placeholder="https://api.deepseek.com/v1" />
-          </div>
-          <div class="field">
-            <label>Ollama 地址</label>
-            <input v-model="cfg.ollama_base_url" class="input" placeholder="http://127.0.0.1:61000" />
-          </div>
-          <div class="field">
-            <label>Ollama 超时（秒）</label>
-            <input v-model.number="cfg.ollama_timeout" class="input" type="number" />
-          </div>
-          <div class="field" style="grid-column: 1 / -1">
-            <label>描述提示词</label>
-            <textarea v-model="cfg.image_caption_prompt" class="textarea" rows="2" placeholder="请用中文简短描述这张图片的内容"></textarea>
-          </div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">群名映射（群ID@chatroom → 群显示名）</div>
-        <div class="gm-editor">
-          <div v-for="(r, i) in groupRows" :key="i" class="gm-row">
-            <input v-model="r.key" class="input gm-key" placeholder="群ID@chatroom" />
-            <span class="gm-arrow">→</span>
-            <input v-model="r.value" class="input gm-val" placeholder="微信中显示的群名" />
-            <button class="btn btn-ghost btn-sm gm-del" @click="removeRow(i)">删除</button>
-          </div>
-          <button class="btn btn-outline btn-sm" @click="addRow()">+ 添加一行</button>
-          <div class="hint">群聊测试发送请填写此处配置的真实群名。</div>
-        </div>
-      </div>
-    </template>
-
-    <!-- 保存栏 -->
-    <div v-if="loaded" class="save-bar">
-      <div class="spacer"></div>
-      <button class="btn btn-pink" :disabled="saving" @click="save()">
-        {{ saving ? '保存中...' : '💾 保存配置' }}
-      </button>
-    </div>
+    <div v-if="loaded" class="save-bar"><div><strong>{{ jsonMode ? '完整配置' : activeLabel }}</strong><span>部分配置需要重启桥接后生效</span></div><button class="btn save-btn" :disabled="saving || (jsonMode && !jsonValid)" @click="save"><AppIcon :name="saving ? 'LoaderCircle' : saved ? 'Check' : 'CheckCheck'" :size="16" />{{ saving ? '正在保存…' : saved ? '已保存' : '保存配置' }}</button></div>
   </div>
 </template>
 
 <style scoped>
-.config-page {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.config-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 16px;
-}
-.head-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.head-file {
-  font-size: 12px;
-  color: var(--muted);
-  background: var(--pink-tint-2);
-  padding: 2px 10px;
-  border-radius: 20px;
-}
-.json-toggle {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  font-size: 13px;
-  color: var(--text);
-  cursor: pointer;
-  font-weight: 600;
-}
-.json-toggle input {
-  accent-color: var(--pink);
-  width: 16px;
-  height: 16px;
-}
-.json-status {
-  font-size: 12px;
-  margin-bottom: 8px;
-  padding: 6px 12px;
-  border-radius: 8px;
-}
-.json-status.ok {
-  background: #e8f5e9;
-  color: #2e7d32;
-}
-.json-status.err {
-  background: var(--red-soft);
-  color: #c62828;
-}
-.json-text {
-  min-height: 420px;
-  font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.5;
-}
-.nick-editor {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-  align-items: center;
-  padding: 8px;
-  border: 1.5px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: #fff;
-}
-.nick-input {
-  border: none;
-  flex: 1;
-  min-width: 140px;
-  padding: 4px 6px;
-}
-.nick-input:focus {
-  box-shadow: none;
-}
-.gm-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-.gm-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.gm-key {
-  flex: 1;
-}
-.gm-arrow {
-  color: var(--muted);
-}
-.gm-val {
-  flex: 1;
-}
-.gm-del {
-  flex-shrink: 0;
-}
-.hint {
-  margin-top: 6px;
-  font-size: 12px;
-  color: var(--faint);
-}
-.save-bar {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-top: 4px;
-}
-.cfg-hint {
-  font-size: 11px;
-  color: var(--faint);
-  line-height: 1.5;
+.config-page { display:flex; flex-direction:column; gap:18px; }
+.config-layout { display:grid; grid-template-columns:220px minmax(0,1fr); gap:18px; align-items:start; }
+.config-nav { padding:8px; box-shadow:none; position:sticky; top:0; }
+.config-nav button { display:flex; align-items:center; gap:10px; width:100%; padding:12px 10px; border:0; border-radius:8px; background:transparent; color:var(--muted); text-align:left; cursor:pointer; }
+.config-nav button:hover { background:var(--inset); }
+.config-nav button.active { background:var(--primary-soft); color:var(--primary-deep); }
+.config-nav button > span { display:flex; flex-direction:column; gap:2px; flex:1; }
+.config-nav strong { font-size:12px; font-weight:500; color:var(--text); }
+.config-nav button.active strong { color:var(--primary-deep); }
+.config-nav small { font-size:9px; color:var(--muted); white-space:nowrap; }
+.config-section { min-height:390px; box-shadow:none; padding:24px; }
+.section-head > .app-icon { color:var(--faint); }
+.section-head .card-description { margin-bottom:0; }
+.form-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:22px 18px; margin-top:24px; }
+.nick-editor { display:flex; gap:6px; flex-wrap:wrap; align-items:center; padding:7px; min-height:43px; border:1px solid var(--border-strong); border-radius:8px; background:var(--card); }
+.nick-editor:focus-within { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
+.nick-input { border:0; outline:0; background:transparent; color:var(--text-strong); flex:1; min-width:170px; padding:5px; font-size:12px; }
+.endpoint-preview { display:flex; align-items:center; gap:8px; margin-top:26px; padding:14px; border-radius:8px; background:var(--inset); font-size:11px; color:var(--muted); }
+.endpoint-preview .mini-dot { width:6px; height:6px; border-radius:50%; background:var(--primary); }
+.endpoint-preview .mono { margin-left:auto; color:var(--text); }
+.mapping-head, .mapping-row { display:grid; grid-template-columns:1fr 1fr 36px; gap:10px; align-items:center; }
+.mapping-head { margin:24px 0 8px; font-size:10px; color:var(--muted); }
+.mapping-row { margin-bottom:10px; }
+.mapping-hint { margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
+.save-bar { display:flex; justify-content:space-between; align-items:center; gap:16px; padding:15px 18px; border:1px solid var(--border); border-radius:10px; background:var(--card); box-shadow:var(--shadow); }
+.save-bar > div { display:flex; flex-direction:column; gap:2px; }
+.save-bar strong { font-size:12px; font-weight:500; }
+.save-bar span { font-size:10px; color:var(--muted); }
+.save-btn { min-width:125px; }
+.json-panel { box-shadow:none; }
+.load-error { display:flex; flex-direction:column; align-items:center; gap:9px; padding:48px 24px; text-align:center; box-shadow:none; }
+.load-error > .app-icon { color:var(--danger); }
+.load-error h3 { font-size:14px; font-weight:600; }
+.load-error p { max-width:420px; font-size:12px; color:var(--muted); line-height:1.8; }
+.load-error .btn { margin-top:8px; }
+.json-text { min-height:55vh; font-family:var(--mono); font-size:12px; line-height:1.7; tab-size:2; }
+@media(max-width:1000px) { .config-layout { grid-template-columns:185px minmax(0,1fr); } .config-nav small { display:none; } .config-section { padding:20px; } }
+@media(max-width:767px) {
+  .page-intro .btn { padding-inline:10px; font-size:11px; }
+  .config-layout { display:flex; flex-direction:column; gap:12px; }
+  .config-nav { display:flex; gap:5px; width:100%; overflow-x:auto; position:static; padding:5px; }
+  .config-nav button { width:auto; flex-shrink:0; padding:8px 11px; }
+  .config-nav button > .app-icon:last-child, .config-nav small { display:none; }
+  .config-nav strong { font-size:11px; }
+  .config-section { min-height:0; padding:17px; }
+  .form-grid { grid-template-columns:1fr; gap:18px; }
+  .endpoint-preview { align-items:flex-start; flex-wrap:wrap; }
+  .endpoint-preview .mono { width:100%; margin-left:14px; overflow-wrap:anywhere; }
+  .mapping-head { display:none; }
+  .mapping-row { grid-template-columns:1fr 36px; gap:8px; margin-bottom:16px; }
+  .mapping-row .input:first-child { grid-column:1/-1; }
+  .save-bar { padding:13px; }
+  .save-bar span { max-width:140px; }
 }
 </style>

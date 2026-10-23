@@ -1,6 +1,8 @@
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import Sidebar from './components/Sidebar.vue'
+import AppIcon from './components/AppIcon.vue'
+import BrandMark from './components/BrandMark.vue'
 import ToastContainer from './components/ToastContainer.vue'
 import Dashboard from './pages/Dashboard.vue'
 import Messages from './pages/Messages.vue'
@@ -9,74 +11,114 @@ import Config from './pages/Config.vue'
 import Desktop from './pages/Desktop.vue'
 import Wizard from './pages/Wizard.vue'
 import TestSend from './pages/TestSend.vue'
-
 import { wsState, connectWS, on } from './ws'
-import { startStatusPolling, stopStatusPolling, refreshStatus, setMessages, setLogs, addMessage, addLog } from './store'
+import { startStatusPolling, stopStatusPolling, refreshStatus, setMessages, setLogs, addMessage, addLog, status } from './store'
+import { PAGE_MAP, pageFromHash } from './navigation'
+import { useTheme } from './useTheme'
+import { pushOverlay, popOverlay } from './overlayStack'
 
-const tab = ref('dashboard')
+const drawerOverlayId = Symbol('drawer')
 
-const wsLabel = computed(() => {
-  switch (wsState.state) {
-    case 'connected':
-      return 'WebSocket 已连接'
-    case 'reconnecting':
-      return 'WebSocket 重连中'
-    case 'closed':
-      return 'WebSocket 已断开'
-    default:
-      return 'WebSocket 连接中'
+const tab = ref(pageFromHash(window.location.hash))
+const drawerOpen = ref(false)
+const sidebarCollapsed = ref(localStorage.getItem('webot-sidebar') === 'collapsed')
+const { theme, toggleTheme } = useTheme()
+const page = computed(() => PAGE_MAP[tab.value])
+const wsLabel = computed(() => ({ connected: '实时连接正常', reconnecting: '正在重新连接', closed: '实时连接已断开' }[wsState.state] || '正在连接服务'))
+const wsClass = computed(() => ({ connected: 'connected', reconnecting: 'reconnecting', closed: 'disconnected' }[wsState.state] || 'connecting'))
+
+function changePage(id) {
+  tab.value = id
+  window.location.hash = `/${id}`
+  drawerOpen.value = false
+}
+function onHashChange(event) {
+  const hash = window.location.hash
+  // #main-content 这类页内锚点不是路由，交给浏览器自己滚动，不能重置当前页面。
+  if (hash && !hash.startsWith('#/')) return
+  tab.value = pageFromHash(hash)
+}
+function toggleSidebar() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  localStorage.setItem('webot-sidebar', sidebarCollapsed.value ? 'collapsed' : 'expanded')
+}
+const drawerEl = ref(null)
+function closeDrawer() { drawerOpen.value = false }
+function onKeydown(event) {
+  if (!drawerOpen.value) return
+  if (event.key === 'Escape') { event.preventDefault(); closeDrawer(); return }
+  if (event.key !== 'Tab' || !drawerEl.value) return
+  const focusable = [...drawerEl.value.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), [tabindex="0"]')]
+  if (!focusable.length) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+}
+watch(drawerOpen, async (open) => {
+  if (open) {
+    pushOverlay(drawerOverlayId)
+    await nextTick()
+    document.querySelector('.mobile-nav .nav-item')?.focus()
+  } else {
+    popOverlay(drawerOverlayId)
   }
 })
-
-const wsClass = computed(() => {
-  switch (wsState.state) {
-    case 'connected':
-      return 'dot-connected'
-    case 'reconnecting':
-      return 'dot-reconnecting'
-    case 'closed':
-      return 'dot-disconnected'
-    default:
-      return 'dot-connecting'
-  }
-})
+function skipToMain(event) {
+  event.preventDefault()
+  const main = document.getElementById('main-content')
+  main?.focus()
+  main?.scrollIntoView({ block: 'start' })
+}
 
 onMounted(() => {
   startStatusPolling()
-
-  on('msg', (d) => addMessage(d))
-  on('log', (d) => addLog(d))
-  on('snapshot', (d) => {
-    if (d.messages) setMessages(d.messages)
-    if (d.logs) setLogs(d.logs)
+  on('msg', addMessage)
+  on('log', addLog)
+  on('snapshot', (data) => {
+    if (data.messages) setMessages(data.messages)
+    if (data.logs) setLogs(data.logs)
   })
   on('status', () => refreshStatus(true))
-
   connectWS()
+  window.addEventListener('hashchange', onHashChange)
+  window.addEventListener('keydown', onKeydown)
 })
-
 onBeforeUnmount(() => {
   stopStatusPolling()
+  popOverlay(drawerOverlayId)
+  window.removeEventListener('hashchange', onHashChange)
+  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
-  <div class="app">
-    <Sidebar :active="tab" @change="(t) => (tab = t)" />
+  <div class="app-shell">
+    <a href="#main-content" class="skip-link" @click="skipToMain">跳到主要内容</a>
+    <aside class="desktop-sidebar" :class="{ collapsed: sidebarCollapsed }"><Sidebar :active="tab" :collapsed="sidebarCollapsed" @change="changePage" /></aside>
+    <Teleport to="body">
+      <div v-if="drawerOpen" class="drawer-mask" @click.self="closeDrawer">
+        <aside ref="drawerEl" class="mobile-nav" role="dialog" aria-modal="true" aria-label="控制台导航">
+          <button class="icon-btn drawer-close" aria-label="关闭导航" @click="closeDrawer"><AppIcon name="X" /></button>
+          <Sidebar :active="tab" @change="changePage" />
+        </aside>
+      </div>
+    </Teleport>
 
-    <div class="main">
+    <div class="main-canvas">
       <header class="topbar">
-        <div class="title-wrap">
-          <h1 class="title">WeBot-Bridge</h1>
-          <div class="subtitle">微信 ↔ 麦麦 桥接控制台</div>
-        </div>
-        <div class="conn">
-          <span class="dot" :class="wsClass"></span>
-          <span class="conn-text">{{ wsLabel }}</span>
+        <button class="icon-btn mobile-menu" aria-label="打开导航" @click="drawerOpen = true"><AppIcon name="Menu" :size="21" /></button>
+        <button class="icon-btn desktop-menu" :aria-label="sidebarCollapsed ? '展开侧栏' : '收起侧栏'" :title="sidebarCollapsed ? '展开侧栏' : '收起侧栏'" @click="toggleSidebar"><AppIcon :name="sidebarCollapsed ? 'PanelLeftOpen' : 'PanelLeftClose'" :size="17" /></button>
+        <div class="mobile-brand"><BrandMark :size="28" /></div>
+        <div class="page-heading"><AppIcon :name="page.icon" :size="18" /><h1>{{ page.label }}</h1><span>{{ page.description }}</span></div>
+        <div class="top-actions">
+          <span class="conn-status" :class="wsClass" role="status"><span class="status-dot"></span>{{ wsLabel }}</span>
+          <span class="bridge-state" :class="{ online: status.running }">{{ status.running ? '服务运行中' : '服务未运行' }}</span>
+          <button class="icon-btn" :aria-label="theme === 'dark' ? '切换为浅色主题' : '切换为深色主题'" :title="theme === 'dark' ? '浅色主题' : '深色主题'" @click="toggleTheme"><AppIcon :name="theme === 'dark' ? 'Sun' : 'Moon'" :size="18" /></button>
         </div>
       </header>
 
-      <main class="page">
+      <main id="main-content" class="page" tabindex="-1">
         <Dashboard v-if="tab === 'dashboard'" />
         <Messages v-else-if="tab === 'messages'" />
         <Logs v-else-if="tab === 'logs'" />
@@ -86,66 +128,6 @@ onBeforeUnmount(() => {
         <TestSend v-else-if="tab === 'test'" />
       </main>
     </div>
-
     <ToastContainer />
   </div>
 </template>
-
-<style scoped>
-.app {
-  display: flex;
-  width: 100vw;
-  height: 100vh;
-  overflow: hidden;
-}
-.main {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  height: 100vh;
-  overflow: hidden;
-}
-.topbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 18px 28px 12px;
-}
-.title-wrap {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
-}
-.title {
-  font-size: 24px;
-  font-weight: 800;
-  background: linear-gradient(135deg, #e8436e, var(--pink));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  letter-spacing: 0.5px;
-}
-.subtitle {
-  font-size: 13px;
-  color: var(--muted);
-  font-weight: 500;
-}
-.conn {
-  display: flex;
-  align-items: center;
-  background: #fff;
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  padding: 7px 14px;
-  font-size: 12px;
-  color: var(--muted);
-  box-shadow: var(--shadow);
-  white-space: nowrap;
-}
-.page {
-  flex: 1;
-  overflow-y: auto;
-  padding: 6px 28px 28px;
-}
-</style>

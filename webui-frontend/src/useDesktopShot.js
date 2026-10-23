@@ -49,6 +49,12 @@ export function useDesktopShot() {
         return
       }
       const blob = await res.blob()
+      // 后端异常时可能返回 JSON 或 HTML 错误页，直接当图会渲染成破图占位。
+      if (!blob.type.startsWith('image/')) {
+        lastError.value = '取画面失败：响应不是图片'
+        clear()
+        return
+      }
       const url = URL.createObjectURL(blob)
       revoke()
       currentUrl = url

@@ -22,6 +22,11 @@ dist/
 config.json
 *.user.json
 
+# 前端测试与设计验收产物
+webui-frontend/test-results/
+webui-frontend/playwright-report/
+.impeccable/review/
+
 # IDE
 .vscode/
 .idea/

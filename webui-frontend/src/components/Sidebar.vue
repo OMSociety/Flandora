@@ -1,113 +1,83 @@
 <script setup>
-const props = defineProps({
-  active: { type: String, required: true },
-})
-const emit = defineEmits(['change'])
+import AppIcon from './AppIcon.vue'
+import BrandMark from './BrandMark.vue'
+import { NAV_GROUPS } from '../navigation'
 
-const tabs = [
-  { id: 'dashboard', icon: '📊', label: '仪表盘' },
-  { id: 'wizard', icon: '🔑', label: '取钥向导' },
-  { id: 'messages', icon: '💬', label: '消息' },
-  { id: 'logs', icon: '📜', label: '日志' },
-  { id: 'config', icon: '⚙️', label: '配置' },
-  { id: 'desktop', icon: '🖥️', label: '微信画面' },
-  { id: 'test', icon: '✈️', label: '发送测试' },
-]
+defineProps({ active: { type: String, required: true }, collapsed: { type: Boolean, default: false } })
+const emit = defineEmits(['change'])
 </script>
 
 <template>
-  <aside class="sidebar">
-    <div class="logo">💎</div>
-    <div class="logo-text">WeBot-Bridge</div>
+  <div class="sidebar-inner" :class="{ collapsed }">
+    <div class="brand">
+      <BrandMark :size="36" />
+      <div class="brand-copy">
+        <strong>WeBot-Bridge</strong>
+        <span>OneBot v11 适配器</span>
+      </div>
+    </div>
 
-    <nav class="nav">
-      <button
-        v-for="t in tabs"
-        :key="t.id"
-        class="nav-item"
-        :class="{ active: active === t.id }"
-        @click="emit('change', t.id)"
-      >
-        <span class="nav-icon">{{ t.icon }}</span>
-        <span class="nav-label">{{ t.label }}</span>
-      </button>
+    <nav class="nav" aria-label="控制台导航">
+      <section v-for="group in NAV_GROUPS" :key="group.label" class="nav-group">
+        <h2>{{ group.label }}</h2>
+        <button
+          v-for="item in group.items" :key="item.id" type="button"
+          class="nav-item" :class="{ active: active === item.id }"
+          :aria-current="active === item.id ? 'page' : undefined"
+          :aria-label="item.label"
+          :title="collapsed ? item.label : undefined"
+          @click="emit('change', item.id)"
+        >
+          <span class="nav-icon"><AppIcon :name="item.icon" :size="19" /></span>
+          <span class="nav-copy"><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
+        </button>
+      </section>
     </nav>
 
-    <div class="sidebar-foot">v1.0</div>
-  </aside>
+    <div class="sidebar-foot">
+      <span class="local-dot"></span>
+      <div class="foot-copy"><strong>本地服务</strong><span>OneBot v11 · v1.0</span></div>
+    </div>
+  </div>
 </template>
 
 <style scoped>
-.sidebar {
-  width: 150px;
-  min-width: 150px;
-  background: linear-gradient(180deg, #fce4ec, #f8e8f0);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 22px 0 16px;
-  gap: 4px;
-  border-right: 1px solid rgba(240, 98, 146, 0.1);
-  overflow: hidden;
-}
-.logo {
-  font-size: 30px;
-  line-height: 1;
-  margin-bottom: 6px;
-}
-.logo-text {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 1px;
-  color: var(--pink-deep);
-  text-align: center;
-  margin-bottom: 22px;
-  text-shadow: 0 1px 3px rgba(214, 51, 110, 0.15);
-  line-height: 1.4;
-}
-.nav {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  width: 100%;
-  padding: 0 10px;
-}
-.nav-item {
-  width: 100%;
-  height: 52px;
-  border-radius: 14px;
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  cursor: pointer;
-  transition: all 0.2s;
-  color: #b06c7a;
-  border: none;
-  background: transparent;
-  padding: 0 12px;
-  font-family: inherit;
-}
-.nav-item:hover {
-  background: rgba(240, 98, 146, 0.08);
-  color: #d4567a;
-}
-.nav-item.active {
-  background: linear-gradient(135deg, #f48fb1, #f06292);
-  color: #fff;
-  box-shadow: 0 4px 12px rgba(240, 98, 146, 0.25);
-}
-.nav-icon {
-  font-size: 17px;
-}
-.nav-label {
-  font-size: 12px;
-  font-weight: 600;
-  flex: 1;
-  text-align: left;
-}
-.sidebar-foot {
-  margin-top: auto;
-  font-size: 10px;
-  color: var(--faint);
-}
+.sidebar-inner { display:flex; flex-direction:column; height:100%; width:240px; overflow:hidden; color:var(--sidebar-text); }
+/* 折叠后内层必须真的收窄：外层 aside 只有 64px 且 overflow:hidden，
+   若内层仍按 240px 排版，图标中心会落在裁剪区外而整排消失。 */
+.sidebar-inner.collapsed { width:64px; }
+.brand { display:flex; align-items:center; gap:11px; height:76px; flex-shrink:0; padding:0 20px; color:var(--primary); }
+.brand svg { flex-shrink:0; }
+.brand-copy { display:flex; flex-direction:column; gap:2px; white-space:nowrap; }
+.brand-copy strong { font-size:15px; letter-spacing:-.025em; color:var(--text-strong); }
+.brand-copy span { font-size:11px; color:var(--muted); }
+.nav { flex:1; min-height:0; overflow-y:auto; padding:8px 12px; }
+.nav-group { margin:0 0 22px; }
+.nav-group h2 { padding:0 10px; margin:0 0 7px; font-size:11px; font-weight:500; color:var(--muted); letter-spacing:.04em; white-space:nowrap; }
+.nav-item { position:relative; display:flex; align-items:center; width:100%; height:52px; padding:0; border:0; border-radius:9px; background:transparent; color:var(--muted); font:inherit; text-align:left; cursor:pointer; transition:background .18s ease,color .18s ease; }
+.nav-item:hover { background:var(--sidebar-hover); color:var(--text-strong); }
+.nav-item.active { background:var(--primary-soft); color:var(--primary-deep); }
+.nav-item.active::before { content:''; position:absolute; left:-12px; width:3px; height:22px; border-radius:0 3px 3px 0; background:var(--primary); }
+.nav-icon { display:grid; place-items:center; flex-shrink:0; width:48px; }
+.nav-item.active .nav-icon { color:var(--primary); }
+.nav-copy { display:flex; flex-direction:column; gap:2px; white-space:nowrap; }
+.nav-copy strong { font-size:13px; font-weight:600; }
+.nav-copy small { font-size:10.5px; color:var(--muted); }
+.nav-item.active small { color:var(--primary-deep); opacity:.8; }
+.sidebar-foot { display:flex; align-items:center; gap:11px; min-height:69px; margin:0 16px; padding:12px 8px; border-top:1px solid var(--border); }
+.local-dot { width:8px; height:8px; margin-left:8px; border-radius:50%; background:var(--primary); box-shadow:0 0 0 4px var(--primary-soft); flex-shrink:0; }
+.foot-copy { display:flex; flex-direction:column; gap:2px; white-space:nowrap; }
+.foot-copy strong { font-size:12px; font-weight:500; }
+.foot-copy span { font-size:10px; color:var(--muted); }
+.collapsed .nav-item { height:46px; justify-content:center; padding:0; transition:background .18s ease,color .18s ease; }
+.collapsed .nav-copy, .collapsed .foot-copy, .collapsed .brand-copy { display:none; }
+.collapsed .nav-icon { width:auto; }
+.collapsed .nav-group { margin-bottom:12px; }
+.collapsed .nav-group h2 { height:0; margin:0; overflow:hidden; opacity:0; }
+.collapsed .brand { justify-content:center; padding:0; }
+.collapsed .nav { padding-inline:8px; }
+.collapsed .nav-item.active::before { display:none; }
+.collapsed .sidebar-foot { min-height:56px; padding:10px 0; margin-inline:12px; justify-content:center; }
+.collapsed .local-dot { margin-left:0; }
+@media(max-width:767px) { .sidebar-inner { width:260px; } .brand { height:76px; } .nav { padding-inline:14px; } }
 </style>

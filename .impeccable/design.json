@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-24T05:40:00+08:00",
+  "title": "Design System: WeBot-Bridge",
+  "extensions": {
+    "colorMeta": {
+      "primary": { "role": "primary", "displayName": "微信绿", "canonical": "#07c160", "tonalRamp": ["#e7f7ee", "#c8f0d8", "#7fdcA8", "#07c160", "#0b7f46", "#087f45"] },
+      "canvas": { "role": "neutral", "displayName": "冷白画布", "canonical": "#f7f9f7", "tonalRamp": ["#ffffff", "#f7f9f7", "#f4f6f4", "#f0f3f0", "#e4e8e4", "#d7ded8"] },
+      "sidebar": { "role": "neutral", "displayName": "浅灰导航", "canonical": "#f0f3f0", "tonalRamp": ["#f7f9f7", "#f0f3f0", "#e6ebe6"] },
+      "text": { "role": "neutral", "displayName": "绿黑正文", "canonical": "#30352f", "tonalRamp": ["#171b18", "#30352f", "#5f6861", "#67706a"] },
+      "warning": { "role": "secondary", "displayName": "琥珀提示", "canonical": "#8a5200", "tonalRamp": ["#fff5dc", "#8a5200"] },
+      "danger": { "role": "secondary", "displayName": "危险红", "canonical": "#c03434", "tonalRamp": ["#fff0f0", "#c03434"] },
+      "info": { "role": "secondary", "displayName": "信息蓝", "canonical": "#2a6a96", "tonalRamp": ["#edf5fa", "#2a6a96"] }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "页首引导语", "purpose": "每页唯一的单句页面标题，仅出现一次。" },
+      "title": { "displayName": "卡片标题", "purpose": "卡片与页头层级标题。" },
+      "body": { "displayName": "正文", "purpose": "表单值、列表正文。" },
+      "label": { "displayName": "标签", "purpose": "字段名、状态徽标、辅助说明。" },
+      "mono": { "displayName": "数据等宽", "purpose": "日志、时间戳、端口、PID、句柄。" }
+    },
+    "shadows": [
+      { "name": "card-ambient", "value": "0 1px 2px rgb(21 38 25 / .03), 0 10px 28px -22px rgb(21 38 25 / .28)", "purpose": "需要浮起感的面板；数据面板显式关闭。" },
+      { "name": "canvas-inset", "value": "-3px 0 16px rgb(25 45 30 / .025)", "purpose": "画布与侧栏之间的极浅分隔光。" },
+      { "name": "modal", "value": "0 24px 70px rgb(0 0 0 / .22)", "purpose": "模态框与确认弹窗。" },
+      { "name": "toast", "value": "0 10px 30px rgb(0 0 0 / .1)", "purpose": "右下角操作结果提示。" }
+    ],
+    "motion": [
+      { "name": "ease-out-state", "value": "cubic-bezier(0.2, 0.8, 0.2, 1)", "purpose": "侧栏宽度与状态过渡。" },
+      { "name": "toast-in", "value": "200ms ease-out", "purpose": "提示条入场，位移加淡入。" },
+      { "name": "reduced-motion", "value": "prefers-reduced-motion: reduce", "purpose": "系统要求减少动效时，全站动画与过渡压到 0.01ms。" }
+    ],
+    "breakpoints": [
+      { "name": "mobile", "value": "767px" },
+      { "name": "tablet", "value": "1100px" }
+    ],
+    "narrative": {
+      "northStar": "微信原生运维台",
+      "rules": [
+        "One Green Rule：一屏只有一个强调色，只表达状态与下一步操作。",
+        "Flat-Data Rule：数据面板与配置分组保持近平，阴影只留给浮起内容。",
+        "系统字体承担 UI，等宽字体只承担真实数据。"
+      ],
+      "dos": [
+        "破坏性操作走应用内确认弹窗并说明后果。",
+        "空状态给出下一步动作。",
+        "明暗主题共用语义变量，组件内不写死颜色。"
+      ],
+      "donts": [
+        "不用渐变文字、彩色左边框或发光阴影表达层级。",
+        "不用 emoji 充当图标。",
+        "浅色主题不用 #07c160 作按钮底色承载白字。"
+      ]
+    }
+  }
+}

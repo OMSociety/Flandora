@@ -76,7 +76,7 @@ async def _ws_handler(ws):
     from .ob_protocol import _handle_ob_api  # 延迟导入，避免循环
 
     peer = ws.remote_address
-    log.info(f"[OB11] ✅ MaiBot 客户端已连接: {peer}")
+    log.info(f"[OB11] OneBot 客户端已连接: {peer}")
     _clients.add(ws)
     _ws_ready.set()
     try:

@@ -2,157 +2,76 @@
 import { ref, computed, onMounted } from 'vue'
 import { messages, loadInitialMessages, clearMessages } from '../store'
 import { formatClock, kindLabel } from '../utils/format'
+import AppIcon from '../components/AppIcon.vue'
 
 const dir = ref('')
 const kind = ref('')
 const search = ref('')
-
-const kindCls = { private: 'badge-pink', group: 'badge-blue', manual: 'badge-amber' }
-
+const confirmingClear = ref(false)
+const kindCls = { private: 'badge-green', group: 'badge-blue', manual: 'badge-amber' }
 const filtered = computed(() => {
-  const q = search.value.trim().toLowerCase()
-  return messages.filter((m) => {
-    if (dir.value && m.dir !== dir.value) return false
-    if (kind.value && m.kind !== kind.value) return false
-    if (q) {
-      const hay = `${m.contact || ''} ${m.sender || ''} ${m.text || ''}`.toLowerCase()
-      if (!hay.includes(q)) return false
-    }
+  const query = search.value.trim().toLowerCase()
+  return messages.filter((message) => {
+    if (dir.value && message.dir !== dir.value) return false
+    if (kind.value && message.kind !== kind.value) return false
+    if (query && !`${message.contact || ''} ${message.sender || ''} ${message.text || ''}`.toLowerCase().includes(query)) return false
     return true
   })
 })
-
-onMounted(() => {
-  loadInitialMessages(200)
-})
+function confirmClear() {
+  if (!confirmingClear.value) { confirmingClear.value = true; setTimeout(() => { confirmingClear.value = false }, 4000); return }
+  clearMessages()
+  confirmingClear.value = false
+}
+onMounted(() => loadInitialMessages(200))
 </script>
-
 <template>
-  <div class="messages">
-    <div class="card filter-bar">
-      <div class="filter-field">
-        <label>方向</label>
-        <select v-model="dir" class="select">
-          <option value="">全部</option>
-          <option value="in">接收</option>
-          <option value="out">发送</option>
-        </select>
-      </div>
-      <div class="filter-field">
-        <label>类型</label>
-        <select v-model="kind" class="select">
-          <option value="">全部</option>
-          <option value="private">私聊</option>
-          <option value="group">群聊</option>
-          <option value="manual">手动</option>
-        </select>
-      </div>
-      <div class="filter-field grow">
-        <label>搜索</label>
-        <input v-model="search" class="input" type="text" placeholder="搜索联系人 / 内容..." />
-      </div>
-      <button class="btn btn-ghost btn-sm" @click="clearMessages()">🧹 清空</button>
-      <span class="count">{{ filtered.length }} 条 / 共 {{ messages.length }} 条</span>
-    </div>
-
-    <div class="card feed">
-      <div v-if="!messages.length" class="empty">暂无消息记录</div>
-      <div v-else-if="!filtered.length" class="empty">没有匹配的消息</div>
-      <div v-else class="msg-list">
-        <div v-for="(m, i) in filtered" :key="i" class="msg-item" :class="m.dir">
-          <span class="time mono">{{ formatClock(m.ts) }}</span>
-          <span class="badge" :class="m.dir === 'in' ? 'badge-pink' : 'badge-blue'">
-            {{ m.dir === 'in' ? '接收' : '发送' }}
-          </span>
-          <span class="badge" :class="kindCls[m.kind] || 'badge-gray'">{{ kindLabel(m.kind) }}</span>
-          <span class="contact">
-            {{ m.contact || '--' }}
-            <span v-if="m.sender" class="sender">· {{ m.sender }}</span>
-            <span v-else-if="m.dir === 'out'" class="sender">· 我</span>
-          </span>
-          <span class="text">{{ m.text }}</span>
-        </div>
-      </div>
-    </div>
+  <div class="messages-page">
+    <div class="page-intro"><div><h2>每一条消息，都有迹可循。</h2><p>实时查看微信与 OneBot 客户端之间的消息往来。</p></div><span class="live-label"><i></i>实时更新</span></div>
+    <section class="card filter-panel" aria-label="消息筛选"><div class="search-field"><AppIcon name="Search" :size="17" /><input v-model="search" type="search" aria-label="搜索消息" placeholder="搜索联系人、发送者或消息内容" /><span v-if="search" class="result-count">{{ filtered.length }} 条结果</span></div><div class="filter-bottom"><div class="seg" role="group" aria-label="按消息方向筛选"><button :class="{ active: dir === '' }" @click="dir = ''">全部</button><button :class="{ active: dir === 'in' }" @click="dir = 'in'">接收</button><button :class="{ active: dir === 'out' }" @click="dir = 'out'">发送</button></div><select v-model="kind" class="select kind-filter" aria-label="按会话类型筛选"><option value="">全部类型</option><option value="private">私聊</option><option value="group">群聊</option><option value="manual">手动</option></select><span class="spacer"></span><button v-if="messages.length" class="btn btn-ghost btn-sm clear-btn" :class="{ confirming: confirmingClear }" @click="confirmClear"><AppIcon name="Trash2" :size="14" />{{ confirmingClear ? '再次点击确认清空' : '清空记录' }}</button></div></section>
+    <section class="card feed-panel" aria-label="消息列表"><div class="feed-head"><h3>消息流</h3><span>{{ filtered.length }} / {{ messages.length }} 条</span></div><div v-if="!messages.length" class="empty"><AppIcon name="MessagesSquare" :size="30" /><strong>还没有消息</strong><span>桥接收到或发送消息后，会实时出现在这里。</span></div><div v-else-if="!filtered.length" class="empty"><AppIcon name="Search" :size="28" /><strong>没有匹配的消息</strong><span>试试调整方向、类型或搜索关键词。</span></div><div v-else class="message-list"><article v-for="(m, i) in filtered" :key="`${m.ts}-${i}`" class="message-item"><div class="message-avatar" :class="m.dir"><AppIcon :name="m.dir === 'in' ? 'ArrowDownToLine' : 'ArrowUpRight'" :size="17" /></div><div class="message-body"><div class="message-meta"><strong>{{ m.contact || '未知联系人' }}</strong><span v-if="m.sender" class="sender">{{ m.sender }}</span><span v-else-if="m.dir === 'out'" class="sender">我</span><span class="badge" :class="kindCls[m.kind] || 'badge-gray'">{{ kindLabel(m.kind) }}</span><time class="mono">{{ formatClock(m.ts) }}</time></div><p>{{ m.text }}</p></div><span class="direction-label" :class="m.dir">{{ m.dir === 'in' ? '接收' : '发送' }}</span></article></div></section>
   </div>
 </template>
-
 <style scoped>
-.messages {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-.filter-bar {
-  display: flex;
-  gap: 12px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  padding: 14px 16px;
-}
-.filter-field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-.filter-field label {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--muted);
-}
-.filter-field.grow {
-  flex: 1;
-  min-width: 200px;
-}
-.count {
-  align-self: center;
-  font-size: 12px;
-  color: var(--muted);
-  white-space: nowrap;
-  padding-bottom: 4px;
-}
-.feed {
-  padding: 8px;
-}
-.msg-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  max-height: calc(100vh - 260px);
-  overflow-y: auto;
-}
-.msg-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: 10px;
-  font-size: 12.5px;
-}
-.msg-item.in { background: #fdf2f5; }
-.msg-item.out { background: #f5f9ff; }
-.time {
-  color: var(--faint);
-  font-size: 11px;
-  flex-shrink: 0;
-}
-.contact {
-  font-weight: 600;
-  color: var(--text-strong);
-  flex-shrink: 0;
-  max-width: 180px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sender {
-  font-weight: 400;
-  color: var(--muted);
-  font-size: 11px;
-}
-.text {
-  flex: 1;
-  color: var(--text);
-  word-break: break-word;
+.messages-page { display:flex; flex-direction:column; gap:18px; }
+.live-label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; white-space:nowrap; }
+.live-label i { width:6px; height:6px; border-radius:50%; background:var(--primary); }
+.filter-panel { padding:13px 16px; box-shadow:none; }
+.search-field { display:flex; align-items:center; gap:10px; padding:3px 0 13px; border-bottom:1px solid var(--border); color:var(--muted); }
+.search-field input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:var(--text-strong); font-size:12px; }
+.search-field input::placeholder { color:var(--faint); }
+.result-count { font-size:10px; white-space:nowrap; }
+.filter-bottom { display:flex; align-items:center; gap:10px; padding-top:12px; }
+.kind-filter { width:130px; min-height:34px; padding-block:5px; font-size:11px; }
+.clear-btn.confirming { color:var(--danger); background:var(--danger-soft); }
+.feed-panel { padding:0; box-shadow:none; overflow:hidden; }
+.feed-head { display:flex; align-items:center; justify-content:space-between; padding:17px 20px; border-bottom:1px solid var(--border); }
+.feed-head h3 { font-size:13px; font-weight:600; }
+.feed-head span { color:var(--muted); font-size:10px; }
+.message-item { display:flex; align-items:flex-start; gap:13px; padding:16px 20px; border-bottom:1px solid var(--border); }
+.message-item:last-child { border:0; }
+.message-item:hover { background:var(--inset); }
+.message-avatar { display:grid; place-items:center; width:32px; height:32px; flex-shrink:0; border-radius:9px; color:var(--primary-deep); background:var(--primary-soft); }
+.message-avatar.out { color:var(--info); background:var(--info-soft); }
+.message-body { flex:1; min-width:0; }
+.message-meta { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+.message-meta strong { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; font-weight:600; color:var(--text-strong); }
+.sender { color:var(--muted); font-size:10px; }
+.message-meta time { margin-left:auto; color:var(--muted); font-size:10px; }
+.message-body p { margin-top:5px; font-size:12px; line-height:1.7; color:var(--text); white-space:pre-wrap; overflow-wrap:anywhere; }
+.direction-label { flex-shrink:0; margin-top:3px; font-size:10px; color:var(--success); }
+.direction-label.out { color:var(--info); }
+@media(max-width:767px) {
+  .filter-panel { padding:12px; }
+  .filter-bottom { flex-wrap:wrap; }
+  .kind-filter { flex:1; min-width:110px; }
+  .clear-btn { padding-inline:6px; }
+  .feed-head { padding:15px; }
+  .message-item { gap:10px; padding:14px; }
+  .message-avatar { width:28px; height:28px; }
+  .message-meta { gap:5px; }
+  .message-meta time { order:2; }
+  .direction-label { display:none; }
+  .message-body p { font-size:12px; }
 }
 </style>

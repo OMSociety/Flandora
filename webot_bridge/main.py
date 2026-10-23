@@ -114,7 +114,7 @@ def _bridge_loop():
             log.error(f"本地库收件异常：{e}")
         if not state.running:
             break
-        log.warning("⚠️ 本地库收件未就绪，10s 后重试")
+        log.warning("本地库收件未就绪，10s 后重试")
         for _ in range(10):
             if not state.running:
                 break
@@ -159,7 +159,7 @@ def _rebuild_for_account(old, new):
     state._self_id_int = state._wxid_demouser10001(new.wxid)
     state._self_name = config.SELF_NAME or new.wxid
     log.warning("=" * 64)
-    log.warning(f"[账号] 微信登录账号已切换：{old_wxid} → {new.wxid}")
+    log.warning(f"[账号] 微信登录账号已切换：{old_wxid} -> {new.wxid}")
     log.warning(f"[账号] 新账号数据目录：{new.data_dir or '（未找到）'}")
     log.warning("[账号] 已作废 OneBot 会话映射（联系人 / 群名缓存）")
     log.warning(f"[账号] 机器人身份已切换为 {new.wxid}（self_id={state._self_id_int}）")
@@ -193,15 +193,6 @@ def main() -> int:
     state._self_name = config.SELF_NAME
     state.group_reply_mode = config.GROUP_REPLY_MODE
 
-    # 初始化运行时可变的图片描述配置
-    state.image_caption_provider = config.IMAGE_CAPTION_PROVIDER
-    state.image_caption_model = config.IMAGE_CAPTION_MODEL
-    state.image_caption_api_key = config.IMAGE_CAPTION_API_KEY
-    state.image_caption_api_base = config.IMAGE_CAPTION_API_BASE
-    state.image_caption_prompt = config.IMAGE_CAPTION_PROMPT
-    state.ollama_base_url = config.OLLAMA_BASE_URL
-    state.ollama_timeout = config.OLLAMA_TIMEOUT
-
     # 初始化运行时可变的 FunASR 配置
     state.fun_asr_workspace_id = config.FUN_ASR_WORKSPACE_ID
     state.fun_asr_region = config.FUN_ASR_REGION
@@ -213,7 +204,7 @@ def main() -> int:
     # 判重交给内核对象；句柄存模块级变量，进程活着期间不能释放
     _instance_mutex, _already_running = acquire_mutex()
     if _already_running:
-        log.error("⚠️ 已有一个 bridge 在运行")
+        log.error("已有一个 bridge 在运行")
         sys.exit(1)
 
     # pid 文件只作人工排查用（谁在跑、pid 是多少）

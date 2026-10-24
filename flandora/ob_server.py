@@ -1,143 +1,50 @@
-"""
-OneBot v11 WebSocket 服务端模块（对接 OneBot v11 客户端）。
+"""OneBot v11 网络入口的启动器。
 
-任意 OneBot v11 客户端作为 WS 客户端连接本服务端：
-- 接收客户端发来的 action 请求（send_msg 等），处理后响应 echo
-- 向所有已连接的客户端推送 OneBot 事件（消息等）
-- 支持 Bearer token 校验
+入口本身（HTTP 服务端 / WS 服务端 / 反向 WS / HTTP 上报）在 ``ob_network`` 里，
+这里只负责：起一个专用事件循环线程，把 ``config.OB_NETWORKS`` 交给管理器，
+然后守着循环直到进程退出。
 """
 
 import asyncio
-import json
 import logging
-from urllib.parse import parse_qs, urlparse
 
-import websockets
-from websockets.asyncio.server import serve
-
-from . import config, ws_pool
-from .ws_pool import _clients, _ws_ready, broadcast
+from . import config, ob_network, state
 
 log = logging.getLogger("ob11-bridge")
 
-# 兼容旧引用
-push_event_broadcast = broadcast
-
 
 def _run_ob_server():
-    """后台线程：运行 OneBot WS 服务端。"""
-    ws_pool._loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(ws_pool._loop)
+    """后台线程：运行 OneBot 网络入口。"""
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
     try:
-        ws_pool._loop.run_until_complete(_ob_server_main())
+        loop.run_until_complete(_ob_server_main())
+    except Exception as e:  # noqa: BLE001
+        log.error(f"[OB11] 网络入口线程退出：{e}")
     finally:
         try:
-            ws_pool._loop.close()
-        except Exception:
+            loop.run_until_complete(ob_network.manager().stop())
+        except Exception:  # noqa: BLE001
             pass
-        _ws_ready.clear()
-
-
-def _request_query(request) -> dict:
-    """取出握手请求的 query 参数。
-
-    websockets 13 起的新版协议栈（websockets.asyncio）里，Request 只有 path 与 headers
-    两个字段，没有 query；query 必须自己从 path 上解析。旧版 legacy 协议栈才提供 query
-    映射，这里一并兼容，避免依赖具体版本。
-    """
-    legacy = getattr(request, "query", None)
-    if legacy:
-        return {str(k): str(v) for k, v in dict(legacy).items()}
-    path = getattr(request, "path", "") or ""
-    return {k: v[0] for k, v in parse_qs(urlparse(path).query).items() if v}
-
-
-def _token_ok(connection, request):
-    """校验 Authorization: Bearer <token> 请求头，或 ?access_token= 查询参数。"""
-    if not config.OB_SERVER_TOKEN:
-        return None
-    auth = request.headers.get("Authorization", "")
-    expected = f"Bearer {config.OB_SERVER_TOKEN}"
-    if auth == expected:
-        return None
-    # 也兼容 ?access_token= 形式
-    if _request_query(request).get("access_token") == config.OB_SERVER_TOKEN:
-        return None
-    log.warning(f"[OB11] 鉴权失败: Authorization={auth!r}")
-    from websockets.datastructures import Headers
-    from websockets.http11 import Response
-
-    return Response(401, "Unauthorized", Headers({"Connection": "close"}), b"Unauthorized")
-
-
-async def _ws_handler(ws):
-    """处理单个 WS 客户端连接。"""
-    from .ob_protocol import _handle_ob_api  # 延迟导入，避免循环
-
-    peer = ws.remote_address
-    log.info(f"[OB11] OneBot 客户端已连接: {peer}")
-    _clients.add(ws)
-    _ws_ready.set()
-    try:
-        from .webui import monitor
-
-        monitor.notify_status()
-    except Exception:
-        pass
-    try:
-        async for raw in ws:
-            try:
-                data = json.loads(raw)
-            except json.JSONDecodeError:
-                log.warning("[OB11] 收到无效 JSON")
-                continue
-            # 直接 await 处理，把响应发回给发起者（同一连接）
-            try:
-                resp = await _handle_ob_api(data)
-                if resp is not None:
-                    await ws.send(json.dumps(resp, ensure_ascii=False))
-            except Exception as e:
-                log.error(f"[OB11] 处理 API 异常: {e}")
-                # 尝试回错误响应避免客户端超时
-                try:
-                    await ws.send(
-                        json.dumps(
-                            {
-                                "status": "failed",
-                                "retcode": 1,
-                                "data": {},
-                                "echo": data.get("echo", ""),
-                            },
-                            ensure_ascii=False,
-                        )
-                    )
-                except Exception:
-                    pass
-    except websockets.exceptions.ConnectionClosed:
-        log.info(f"[OB11] 客户端断开: {peer}")
-    except Exception as e:
-        log.error(f"[OB11] 连接异常: {e}")
-    finally:
-        _clients.discard(ws)
-        log.info(f"[OB11] 剩余客户端: {len(_clients)}")
         try:
-            from .webui import monitor
-
-            monitor.notify_status()
-        except Exception:
+            loop.close()
+        except Exception:  # noqa: BLE001
             pass
+        state._ob_ws_ready.clear()
 
 
 async def _ob_server_main():
-    """WebSocket 服务端主协程。"""
-    host = config.OB_SERVER_HOST
-    port = config.OB_SERVER_PORT
-    log.info(f"[OB11] OneBot WS 服务端监听 {host}:{port}（token={config.OB_SERVER_TOKEN or '无'}）")
-    async with serve(
-        _ws_handler,
-        host,
-        port,
-        process_request=_token_ok,
-        max_size=16 * 1024 * 1024,  # 16MB，允许大图片 base64
-    ) as server:
-        await server.serve_forever()
+    """按配置起所有入口，然后常驻。取消即停。"""
+    mgr = ob_network.manager()
+    mgr.configure(config.OB_NETWORKS)
+    mgr.start(asyncio.get_running_loop())
+    state._ob_ws_ready.set()
+    for node in mgr.nodes():
+        log.info(
+            f"[OB11] 入口 {node['name']}（{node['type']}，role={node['role']}，"
+            f"{'启用' if node['enabled'] else '未启用'}）"
+        )
+    try:
+        await asyncio.Future()
+    finally:
+        await mgr.stop()

@@ -32,8 +32,8 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__, config, state
-from ..ws_pool import _clients
+from .. import __version__, config, ob_network, state
+from ..ob_network import manager as ob_networks
 from . import monitor
 from .monitor import bus
 
@@ -56,6 +56,7 @@ RESTART_KEYS = (
     "ob_server_host",
     "ob_server_port",
     "ob_server_token",
+    "ob_networks",
     "web_port",
     "astrbot_ob_url",
     "astrbot_attachments",
@@ -110,8 +111,9 @@ def get_status() -> dict:
         "ob": {
             "host": config.OB_SERVER_HOST,
             "port": config.OB_SERVER_PORT,
-            "connected": len(_clients) > 0,
-            "clients": len(_clients),
+            "connected": sum(n["connections"] for n in ob_networks().status()) > 0,
+            "clients": sum(n["connections"] for n in ob_networks().status()),
+            "nodes": ob_networks().status(),
         },
         "inbound": {
             "source": "local",
@@ -193,6 +195,18 @@ def api_put_config(payload: dict):
             )
         payload = dict(payload, ob_message_format=fmt)
         config.OB_MESSAGE_FORMAT = fmt
+    if "ob_networks" in payload:
+        try:
+            nodes = ob_network.normalize_nodes(payload.get("ob_networks"))
+        except ob_network.NetworkConfigError as e:
+            return JSONResponse({"ok": False, "error": f"网络入口配置不合法：{e}"}, 400)
+        payload = dict(payload, ob_networks=nodes)
+        # 入口清空等于「什么都不监听」，退回旧单入口，避免面板上配空了就连不上
+        config.OB_NETWORKS = nodes or [
+            ob_network.legacy_node(
+                config.OB_SERVER_HOST, config.OB_SERVER_PORT, config.OB_SERVER_TOKEN
+            )
+        ]
     try:
         current = _read_config_file()
         current.update(payload)
@@ -232,6 +246,12 @@ def api_messages(limit: int = 100):
     with bus._lock:
         msgs = list(bus.messages)[:limit]
     return {"messages": msgs}
+
+
+@app.get("/api/networks")
+def api_networks():
+    """各个 OneBot 网络入口的运行态。"""
+    return {"networks": ob_networks().status()}
 
 
 @app.get("/api/logs")

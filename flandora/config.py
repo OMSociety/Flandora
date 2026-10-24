@@ -152,6 +152,25 @@ SELF_NAME = config.get("self_name", "wechat-bot")
 _OB_FORMAT_RAW = str(config.get("ob_message_format", "array") or "array").strip().lower()
 OB_MESSAGE_FORMAT = _OB_FORMAT_RAW if _OB_FORMAT_RAW in ("array", "string") else "array"
 
+# 网络入口：一份数组，每项是一个 HTTP/WS 入口（见 flandora/ob_network.py）。
+# 没有配 ob_networks 时按旧的 ob_server_host/port/token 造一个 WS 服务端，
+# 旧配置因此可以原样继续用。
+_RAW_NETWORKS = config.get("ob_networks")
+_NETWORKS_ERROR = ""
+try:
+    from . import ob_network as _ob_network
+
+    if not _RAW_NETWORKS:
+        OB_NETWORKS = [_ob_network.legacy_node(OB_SERVER_HOST, OB_SERVER_PORT, OB_SERVER_TOKEN)]
+    else:
+        OB_NETWORKS = _ob_network.normalize_nodes(_RAW_NETWORKS)
+except Exception as _e:  # noqa: BLE001
+    # 配置写错不能悄悄退化成「什么都不监听」：记下原因、退回旧单入口，启动日志会打出来
+    from . import ob_network as _ob_network
+
+    _NETWORKS_ERROR = f"{type(_e).__name__}: {_e}"
+    OB_NETWORKS = [_ob_network.legacy_node(OB_SERVER_HOST, OB_SERVER_PORT, OB_SERVER_TOKEN)]
+
 # ====== 隔离桌面模式 ======
 # 默认开启：微信由 bridge 启动在一个独立的 Windows 桌面上，向它投递输入时切换的
 # 是那张桌面的前台，用户自己所在的桌面完全不受打扰——发送通道因此可以长期开着。
@@ -190,4 +209,12 @@ log = logging.getLogger("ob11-bridge")
 if _OB_FORMAT_RAW != OB_MESSAGE_FORMAT:
     log.warning(
         "ob_message_format=%r 不认识，已按 array 处理（可选：array / string）", _OB_FORMAT_RAW
+    )
+
+if _NETWORKS_ERROR:
+    log.error(
+        "ob_networks 配置不合法（%s），已退回单个 WS 服务端 %s:%s",
+        _NETWORKS_ERROR,
+        OB_SERVER_HOST,
+        OB_SERVER_PORT,
     )

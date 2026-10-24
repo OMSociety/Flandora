@@ -15,7 +15,7 @@ import tempfile
 import time
 
 from . import __version__, action_catalog, config, ob_ids, ob_segments, ob_store, state
-from .ws_pool import broadcast as push_event_broadcast
+from .ob_network import broadcast as push_event_broadcast
 
 try:
     from .webui import monitor

@@ -163,13 +163,48 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | `self_name` | 字符串 | `wechat-bot` | 推送给客户端时显示的发送者名 |
 | `group_name_map` | 对象 | `{}` | 群 ID 到群名的映射。微信搜索框搜不到 `@chatroom` 结尾的群 ID，发群消息要靠它换名 |
 
-### OneBot 服务端
+### 网络入口
+
+一个入口是「一个方向的 OneBot 连接」。`ob_networks` 是入口数组，可以同时开多个；留空（或没有这一项）时按 `ob_server_host`、`ob_server_port`、`ob_server_token` 起一个正向 WebSocket 服务端，旧配置可以原样继续用。
+
+| 类型 | 方向 | 谁发起连接 | 说明 |
+| --- | --- | --- | --- |
+| `ws_server` | 正向 WebSocket | 机器人框架连过来 | 最常用，AstrBot 等填 `ws://127.0.0.1:7999/` |
+| `http_server` | 正向 HTTP | 机器人框架调过来 | 同时收 GET 查询串与 POST JSON，响应体是 OneBot 标准响应 |
+| `ws_client` | 反向 WebSocket | 桥接连出去 | 适配只会起服务端的框架，断了按 `reconnect_interval_ms` 重连 |
+| `http_client` | 反向 HTTP | 桥接连出去 | 事件用 POST 上报到框架，不做 API |
+
+每个入口的字段：
+
+| 字段 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `type` | 字符串 | 必填 | `ws_server`、`http_server`、`ws_client`、`http_client` 之一 |
+| `name` | 字符串 | 必填 | 入口名字，同一份配置里不能重复 |
+| `enabled` | 布尔 | `true` | 关掉后这个入口不启动 |
+| `role` | 字符串 | `universal` | `universal` 收动作也推事件；`api` 只收动作；`event` 只推事件 |
+| `host` / `port` | 字符串 / 整数 | `127.0.0.1` / 见下 | 仅服务端类入口 |
+| `path` | 字符串 | `/` | 仅服务端类入口，握手路径 |
+| `url` | 字符串 | 必填 | 仅客户端类入口，`ws://` 或 `http://` |
+| `access_token` | 字符串 | 空 | Bearer 头或 `?access_token=` 都认，留空不校验 |
+| `message_format` | 字符串 | 空 | 该入口的事件形态，留空跟随全局 `ob_message_format` |
+| `timeout_ms` | 整数 | `5000` | 仅 `http_client`，上报超时 |
+| `reconnect_interval_ms` | 整数 | `5000` | 仅 `ws_client`，重连间隔 |
+
+```json
+{
+  "ob_networks": [
+    {"type": "ws_server", "name": "default", "host": "127.0.0.1", "port": 7999, "path": "/", "role": "universal"},
+    {"type": "ws_client", "name": "astrbot", "url": "ws://127.0.0.1:6199/ws", "role": "universal", "access_token": "换成一串随机值"}
+  ],
+  "ob_message_format": "array"
+}
+```
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `ob_server_host` | 字符串 | `127.0.0.1` | 监听地址，都在本机就保持回环 |
-| `ob_server_port` | 整数 | `7999` | 正向 WebSocket 端口 |
-| `ob_server_token` | 字符串 | 空 | 握手鉴权 token，留空不校验 |
+| `ob_server_host` | 字符串 | `127.0.0.1` | 没有 `ob_networks` 时的监听地址；都在本机就保持回环 |
+| `ob_server_port` | 整数 | `7999` | 没有 `ob_networks` 时的正向 WebSocket 端口 |
+| `ob_server_token` | 字符串 | 空 | 没有 `ob_networks` 时的握手 token，留空不校验 |
 | `ob_message_format` | 字符串 | `array` | 事件里 `message` 的形态：`array` 为消息段数组，`string` 为 CQ 码字符串。`raw_message` 始终是 CQ 码字符串，发送方向两种都收 |
 | `astrbot_attachments` | 字符串 | 空 | 客户端附件目录的绝对路径。填了之后图片与文件的本地路径按该目录（及其 `wechat_images` 子目录）拼出来 |
 

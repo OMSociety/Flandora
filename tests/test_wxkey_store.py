@@ -4,6 +4,7 @@
 所有用户已保存的密文都会解不开，且现场表现是「口令文件是在别的账户生成的」这种
 会误导人的提示。这里把熵值本身钉死，改动它会立刻让测试变红。
 """
+
 import os
 import sys
 import tempfile
@@ -19,8 +20,7 @@ from flandora.wxkey.store import KeyStore, KeyStoreError
 def test_entropy_is_frozen_format_constant():
     """熵值必须保持首发版本的值，改它等于让所有既有密文失效。"""
     assert store_mod.ENTROPY == b"WeBot-Bridge/wxkey/v1", (
-        "DPAPI 额外熵被改动，既有用户的口令文件将无法解密："
-        f"当前为 {store_mod.ENTROPY!r}"
+        f"DPAPI 额外熵被改动，既有用户的口令文件将无法解密：当前为 {store_mod.ENTROPY!r}"
     )
 
 
@@ -52,6 +52,7 @@ def test_tampered_cipher_raises():
         ks.save(bytes(range(32)), wxid="wxid_demo")
         with open(path, encoding="utf-8") as fh:
             import json
+
             payload = json.load(fh)
         raw = bytearray(__import__("base64").b64decode(payload["cipher"]))
         raw[0] ^= 0xFF

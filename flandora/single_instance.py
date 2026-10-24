@@ -14,6 +14,7 @@
 
 返回的 `handle` 必须一直持有：提前释放等于把互斥量交出去，判重随即失效。
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -44,14 +45,14 @@ def acquire_mutex(name: str = SINGLE_INSTANCE_NAME):
         return None, False
 
     kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-    kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL,
-                                      wintypes.LPCWSTR)
+    kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
     kernel32.CreateMutexW.restype = wintypes.HANDLE
 
     handle = kernel32.CreateMutexW(None, False, name)
     if not handle:
-        log.warning("创建互斥量 %s 失败（err=%s），本次跳过重复启动检查",
-                    name, ctypes.get_last_error())
+        log.warning(
+            "创建互斥量 %s 失败（err=%s），本次跳过重复启动检查", name, ctypes.get_last_error()
+        )
         return None, False
 
     return handle, ctypes.get_last_error() == ERROR_ALREADY_EXISTS

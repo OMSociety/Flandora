@@ -14,9 +14,7 @@ import os
 import tempfile
 import time
 
-
-from . import state
-from . import config
+from . import config, state
 from .ws_pool import broadcast as push_event_broadcast
 
 try:
@@ -42,11 +40,28 @@ def _safe_int(v):
 
 # QQ 表情 id → 微信自带表情文字代码（常见款；微信端发送代码文本即渲染为小黄豆）
 QQ_FACE_TO_WECHAT = {
-    0: "[惊讶]", 1: "[撇嘴]", 2: "[色]", 3: "[发呆]", 4: "[得意]",
-    5: "[流泪]", 6: "[害羞]", 7: "[闭嘴]", 8: "[睡]", 9: "[大哭]",
-    10: "[尴尬]", 11: "[发怒]", 12: "[调皮]", 13: "[呲牙]", 14: "[微笑]",
-    15: "[难过]", 18: "[抓狂]", 19: "[吐]", 20: "[偷笑]", 22: "[白眼]",
-    23: "[傲慢]", 26: "[汗]",
+    0: "[惊讶]",
+    1: "[撇嘴]",
+    2: "[色]",
+    3: "[发呆]",
+    4: "[得意]",
+    5: "[流泪]",
+    6: "[害羞]",
+    7: "[闭嘴]",
+    8: "[睡]",
+    9: "[大哭]",
+    10: "[尴尬]",
+    11: "[发怒]",
+    12: "[调皮]",
+    13: "[呲牙]",
+    14: "[微笑]",
+    15: "[难过]",
+    18: "[抓狂]",
+    19: "[吐]",
+    20: "[偷笑]",
+    22: "[白眼]",
+    23: "[傲慢]",
+    26: "[汗]",
 }
 
 
@@ -88,7 +103,9 @@ async def _handle_ob_api(data: dict):
                 contact = mapped_name
                 log.info(f"[OB11] 群名映射: {target_id} -> {mapped_name}")
             elif str(target_id).endswith("@chatroom"):
-                log.warning(f"[OB11] 群 {target_id} 未配置群名映射，微信搜索可能失败。请在 config.json 的 group_name_map 中配置群名。")
+                log.warning(
+                    f"[OB11] 群 {target_id} 未配置群名映射，微信搜索可能失败。请在 config.json 的 group_name_map 中配置群名。"
+                )
 
         sent_count = 0
         failures: list[str] = []
@@ -117,7 +134,7 @@ async def _handle_ob_api(data: dict):
 
             if seg_type == "reply":
                 # 引用回复段：微信 UIA 无法直接构造引用，跳过（后续 text 段正常发送）
-                log.info(f"[OB11] 跳过 reply 段")
+                log.info("[OB11] 跳过 reply 段")
                 continue
 
             if seg_type == "text":
@@ -171,7 +188,9 @@ async def _handle_ob_api(data: dict):
                     # 无文件：尝试把 QQ 表情 id 映射为微信自带表情代码（[微笑] 等文本即渲染）
                     face_code = QQ_FACE_TO_WECHAT.get(_safe_int(seg_data.get("id")))
                     if face_code:
-                        if await _send("QQ表情", state.sender_instance.send_text, contact, face_code):
+                        if await _send(
+                            "QQ表情", state.sender_instance.send_text, contact, face_code
+                        ):
                             _record_out(contact, is_group, face_code)
                     else:
                         log.debug(f"[OB11] 跳过未知 face 段: {seg_data}")
@@ -201,7 +220,9 @@ async def _handle_ob_api(data: dict):
 
                 if face_path:
                     try:
-                        if await _send("表情", state.sender_instance.send_image, contact, face_path):
+                        if await _send(
+                            "表情", state.sender_instance.send_image, contact, face_path
+                        ):
                             _record_out(contact, is_group, "[表情]")
                     finally:
                         if face_path and "tmp" in face_path:
@@ -239,7 +260,9 @@ async def _handle_ob_api(data: dict):
                         ) as tmp:
                             tmp.write(audio_bytes)
                             voice_path = tmp.name
-                        log.info(f"[OB11] voice 已解码: {os.path.basename(voice_path)} ({len(audio_bytes)} bytes)")
+                        log.info(
+                            f"[OB11] voice 已解码: {os.path.basename(voice_path)} ({len(audio_bytes)} bytes)"
+                        )
                     else:
                         # 已经是本地路径（兼容场景：bridge 之前做过 ASR 等）
                         if os.path.isfile(file_val):
@@ -249,7 +272,9 @@ async def _handle_ob_api(data: dict):
                             continue
 
                     if voice_path:
-                        if await _send("语音（文件形式）", state.sender_instance.send_file, contact, voice_path):
+                        if await _send(
+                            "语音（文件形式）", state.sender_instance.send_file, contact, voice_path
+                        ):
                             _record_out(contact, is_group, "[语音]")
                 finally:
                     # 清理我们写出的临时 mp3（bridge_voice_ 前缀的才是我们的）
@@ -302,10 +327,21 @@ async def _handle_ob_api(data: dict):
         msgs = await asyncio.to_thread(_fetch_history_ob, talker, is_g, count)
         resp_data["data"] = {"messages": msgs}
 
-    elif action in ("get_group_member_info", "get_group_member_list", "get_stranger_info",
-                    "get_group_honor_info", "get_group_at_all_remain", "get_friend_info",
-                    "get_msg", "get_forward_msg",
-                    "get_cookies", "get_csrf_token", "get_credentials", "get_record", "get_image"):
+    elif action in (
+        "get_group_member_info",
+        "get_group_member_list",
+        "get_stranger_info",
+        "get_group_honor_info",
+        "get_group_at_all_remain",
+        "get_friend_info",
+        "get_msg",
+        "get_forward_msg",
+        "get_cookies",
+        "get_csrf_token",
+        "get_credentials",
+        "get_record",
+        "get_image",
+    ):
         resp_data["data"] = {}
 
     elif action in ("send_group_forward_msg", "send_private_forward_msg"):
@@ -315,12 +351,24 @@ async def _handle_ob_api(data: dict):
     elif action == "set_msg_emoji_like":
         resp_data["data"] = {}
 
-    elif action in ("set_group_kick", "set_group_ban", "set_group_anonymous_ban",
-                    "set_group_whole_ban", "set_group_admin", "set_group_anonymous",
-                    "set_group_card", "set_group_name", "set_group_leave",
-                    "set_group_special_title", "set_friend_add_request",
-                    "set_group_add_request", "set_essence_msg", "delete_msg",
-                    "send_like", "set_friend_add_request"):
+    elif action in (
+        "set_group_kick",
+        "set_group_ban",
+        "set_group_anonymous_ban",
+        "set_group_whole_ban",
+        "set_group_admin",
+        "set_group_anonymous",
+        "set_group_card",
+        "set_group_name",
+        "set_group_leave",
+        "set_group_special_title",
+        "set_friend_add_request",
+        "set_group_add_request",
+        "set_essence_msg",
+        "delete_msg",
+        "send_like",
+        "set_friend_add_request",
+    ):
         resp_data["data"] = {}
 
     else:
@@ -331,9 +379,14 @@ async def _handle_ob_api(data: dict):
     return resp_data
 
 
-def make_message_event(message_type: str, user_id: int, message: list,
-                       group_id: int = 0, group_name: str = "",
-                       nickname: str = "") -> dict:
+def make_message_event(
+    message_type: str,
+    user_id: int,
+    message: list,
+    group_id: int = 0,
+    group_name: str = "",
+    nickname: str = "",
+) -> dict:
     """构造 OneBot v11 消息事件"""
     event = {
         "time": int(time.time()),
@@ -346,8 +399,7 @@ def make_message_event(message_type: str, user_id: int, message: list,
         event["user_id"] = user_id
         event["message"] = message
         event["raw_message"] = "".join(
-            seg.get("data", {}).get("text", "") for seg in message
-            if seg.get("type") == "text"
+            seg.get("data", {}).get("text", "") for seg in message if seg.get("type") == "text"
         )
         event["sender"] = {"user_id": user_id, "nickname": nickname or str(user_id)}
         event["group_name"] = group_name or str(group_id)
@@ -356,8 +408,7 @@ def make_message_event(message_type: str, user_id: int, message: list,
         event["user_id"] = user_id
         event["message"] = message
         event["raw_message"] = "".join(
-            seg.get("data", {}).get("text", "") for seg in message
-            if seg.get("type") == "text"
+            seg.get("data", {}).get("text", "") for seg in message if seg.get("type") == "text"
         )
         event["sender"] = {"user_id": user_id, "nickname": nickname or str(user_id)}
     return event
@@ -420,6 +471,7 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
 def _decode_base64_image(b64_data: str) -> str | None:
     """在线程池中执行：解码 base64 图片并保存为临时文件（按内容识别格式）。"""
     import tempfile
+
     img_data = base64.b64decode(b64_data)
     # 按文件头识别图片格式，避免 gif 被存成 png
     suffix = ".png"

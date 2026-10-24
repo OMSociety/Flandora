@@ -6,6 +6,7 @@
 
 可写数据目录被临时指到空目录，所以不会碰真实环境里的口令与向导记录。
 """
+
 from __future__ import annotations
 
 import contextlib
@@ -18,7 +19,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from flandora import config, wizard as wizard_mod  # noqa: E402
+from flandora import config  # noqa: E402
+from flandora import wizard as wizard_mod
 
 
 @contextlib.contextmanager
@@ -68,15 +70,13 @@ def main() -> int:
         assert st["disclaimer_accepted"] is False
         assert [s["state"] for s in st["steps"].values()] == ["idle"] * 4, st["steps"]
         assert st["order"] == list(wizard_mod.STEPS)
-        for key in ("db_key", "image_key", "manual_rva", "keytool_running",
-                    "imagekey_running"):
+        for key in ("db_key", "image_key", "manual_rva", "keytool_running", "imagekey_running"):
             assert key in st, key
         print("  ok   初始状态：四步全 idle，当前步骤停在免责声明")
         checks += 1
 
         # ===== 没勾免责声明就不能往下走 =====
-        for label, call in (("取数据库口令", wiz.start_dbkey),
-                            ("取图片密钥", wiz.start_imagekey)):
+        for label, call in (("取数据库口令", wiz.start_dbkey), ("取图片密钥", wiz.start_imagekey)):
             try:
                 call()
             except wizard_mod.WizardError:
@@ -135,8 +135,7 @@ def main() -> int:
 
         # ===== 口令文件与图片密钥文件的落点 =====
         assert wiz.key_path() == os.path.join(tmp, "wx_key.dat"), wiz.key_path()
-        assert wiz.image_key_path() == os.path.join(tmp, "wx_image_key.json"), \
-            wiz.image_key_path()
+        assert wiz.image_key_path() == os.path.join(tmp, "wx_image_key.json"), wiz.image_key_path()
         print("  ok   口令与图片密钥默认落在配置同目录（data/）")
         checks += 1
 
@@ -154,6 +153,7 @@ def main() -> int:
             if step["state"] != "running":
                 break
             import time
+
             time.sleep(0.1)
         assert step["state"] == "failed", step
         assert "口令" in step["message"], step

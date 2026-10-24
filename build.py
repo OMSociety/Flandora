@@ -14,6 +14,7 @@ frida 的几十 MB 拖进主程序。
   dist/Flandora-v1.0.0.zip              portable 包
   dist/Flandora-v1.0.0-setup.exe        安装程序（需要 Inno Setup）
 """
+
 from __future__ import annotations
 
 import os
@@ -71,22 +72,35 @@ def run(cmd: list[str], cwd: Path | None = None) -> None:
 def install_pyinstaller() -> None:
     try:
         import PyInstaller  # noqa: F401
+
         print(f"PyInstaller 已安装：{PyInstaller.__version__}")
     except ImportError:
         step("安装 PyInstaller")
         run([str(PYTHON), "-m", "pip", "install", "-i", PIP_MIRROR, "pyinstaller"])
 
 
-def pyi(src: Path, name: str, workdir: Path, onefile: bool = True,
-        windowed: bool = False, extra_args: list[str] | None = None) -> None:
+def pyi(
+    src: Path,
+    name: str,
+    workdir: Path,
+    onefile: bool = True,
+    windowed: bool = False,
+    extra_args: list[str] | None = None,
+) -> None:
     cmd = [
-        str(PYTHON), "-m", "PyInstaller",
+        str(PYTHON),
+        "-m",
+        "PyInstaller",
         "--noconfirm",
         "--clean",
-        "--name", name,
-        "--workpath", str(BUILD / f"work-{name}"),
-        "--distpath", str(DIST),
-        "--specpath", str(BUILD / "specs"),
+        "--name",
+        name,
+        "--workpath",
+        str(BUILD / f"work-{name}"),
+        "--distpath",
+        str(DIST),
+        "--specpath",
+        str(BUILD / "specs"),
     ]
     if onefile:
         cmd.append("--onefile")
@@ -131,25 +145,42 @@ def build_bridge() -> None:
     step(f"打包 {EXE_BRIDGE}{EXE_SUFFIX}")
     extras = [
         # 入口脚本放在仓库根，flandora 才会被完整收集
-        "--paths", str(ROOT),
-        "--add-data", f"{PKG_SRC / 'config.example.json'};.",
-        "--add-data", f"{WEBUI_DIST};flandora/webui/dist",
+        "--paths",
+        str(ROOT),
+        "--add-data",
+        f"{PKG_SRC / 'config.example.json'};.",
+        "--add-data",
+        f"{WEBUI_DIST};flandora/webui/dist",
         # 隐藏 import（PyInstaller 默认按 import 追踪，一些动态加载需要手动加）
-        "--hidden-import", "websockets",
-        "--hidden-import", "comtypes.gen",
-        "--hidden-import", "uiautomation",
-        "--hidden-import", "PIL._tkinter_finder",
-        "--hidden-import", "flandora.webui",
-        "--hidden-import", "flandora.webui.app",
-        "--hidden-import", "flandora.webui.monitor",
+        "--hidden-import",
+        "websockets",
+        "--hidden-import",
+        "comtypes.gen",
+        "--hidden-import",
+        "uiautomation",
+        "--hidden-import",
+        "PIL._tkinter_finder",
+        "--hidden-import",
+        "flandora.webui",
+        "--hidden-import",
+        "flandora.webui.app",
+        "--hidden-import",
+        "flandora.webui.monitor",
         # uvicorn 用字符串动态选择事件循环、HTTP 与 WebSocket 实现，静态追踪不到
-        "--hidden-import", "uvicorn.logging",
-        "--hidden-import", "uvicorn.loops.auto",
-        "--hidden-import", "uvicorn.protocols.http.auto",
-        "--hidden-import", "uvicorn.protocols.http.h11_impl",
-        "--hidden-import", "uvicorn.protocols.websockets.auto",
-        "--hidden-import", "uvicorn.protocols.websockets.websockets_impl",
-        "--hidden-import", "uvicorn.lifespan.on",
+        "--hidden-import",
+        "uvicorn.logging",
+        "--hidden-import",
+        "uvicorn.loops.auto",
+        "--hidden-import",
+        "uvicorn.protocols.http.auto",
+        "--hidden-import",
+        "uvicorn.protocols.http.h11_impl",
+        "--hidden-import",
+        "uvicorn.protocols.websockets.auto",
+        "--hidden-import",
+        "uvicorn.protocols.websockets.websockets_impl",
+        "--hidden-import",
+        "uvicorn.lifespan.on",
     ]
     pyi(ROOT / "run_bridge.py", EXE_BRIDGE, ROOT, onefile=True, windowed=False, extra_args=extras)
 
@@ -157,11 +188,15 @@ def build_bridge() -> None:
 def build_keytool() -> None:
     step(f"打包 {EXE_KEYTOOL}{EXE_SUFFIX}")
     extras = [
-        "--paths", str(ROOT),
+        "--paths",
+        str(ROOT),
         # frida 的 Python 包带编译扩展与二进制，collect-all 才能拿全
-        "--collect-all", "frida",
+        "--collect-all",
+        "frida",
     ]
-    pyi(TOOLS_SRC / "keytool.py", EXE_KEYTOOL, ROOT, onefile=True, windowed=False, extra_args=extras)
+    pyi(
+        TOOLS_SRC / "keytool.py", EXE_KEYTOOL, ROOT, onefile=True, windowed=False, extra_args=extras
+    )
 
 
 def build_log_tail() -> None:
@@ -172,12 +207,21 @@ def build_log_tail() -> None:
 def build_manager() -> None:
     step(f"打包 {EXE_MANAGER}{EXE_SUFFIX}")
     extras = [
-        "--hidden-import", "pystray",
-        "--hidden-import", "PIL._tkinter_finder",
-        "--hidden-import", "tkinter",
+        "--hidden-import",
+        "pystray",
+        "--hidden-import",
+        "PIL._tkinter_finder",
+        "--hidden-import",
+        "tkinter",
     ]
-    pyi(MANAGER_SRC / "bridge_manager.py", EXE_MANAGER, MANAGER_SRC,
-        onefile=True, windowed=True, extra_args=extras)
+    pyi(
+        MANAGER_SRC / "bridge_manager.py",
+        EXE_MANAGER,
+        MANAGER_SRC,
+        onefile=True,
+        windowed=True,
+        extra_args=extras,
+    )
 
 
 def assemble_zip() -> Path:

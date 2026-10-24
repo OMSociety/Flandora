@@ -7,6 +7,7 @@
 落盘格式：一个小 JSON，含版本号、账号、DPAPI 密文（base64）。用 JSON 而不是裸
 二进制，是为了让失败时的诊断能说清是「文件坏了」还是「解不开」。
 """
+
 from __future__ import annotations
 
 import base64
@@ -70,11 +71,10 @@ def protect(secret: bytes) -> bytes:
     entropy = _blob(ENTROPY)
     out = _Blob()
     ok = crypt32.CryptProtectData(
-        ctypes.byref(data_in), "微信口令", ctypes.byref(entropy),
-        None, None, 0, ctypes.byref(out))
+        ctypes.byref(data_in), "微信口令", ctypes.byref(entropy), None, None, 0, ctypes.byref(out)
+    )
     if not ok:
-        raise KeyStoreError(
-            f"DPAPI 加密失败（错误码 {ctypes.get_last_error()}）")
+        raise KeyStoreError(f"DPAPI 加密失败（错误码 {ctypes.get_last_error()}）")
     try:
         return _blob_bytes(out)
     finally:
@@ -88,12 +88,12 @@ def unprotect(cipher: bytes) -> bytes:
     entropy = _blob(ENTROPY)
     out = _Blob()
     ok = crypt32.CryptUnprotectData(
-        ctypes.byref(data_in), None, ctypes.byref(entropy), None, None, 0,
-        ctypes.byref(out))
+        ctypes.byref(data_in), None, ctypes.byref(entropy), None, None, 0, ctypes.byref(out)
+    )
     if not ok:
         raise KeyStoreError(
-            "解不开口令文件：它是在别的 Windows 账户或别的机器上生成的。"
-            "请重新取一次密钥。")
+            "解不开口令文件：它是在别的 Windows 账户或别的机器上生成的。请重新取一次密钥。"
+        )
     try:
         return _blob_bytes(out)
     finally:
@@ -143,14 +143,17 @@ class KeyStore:
         version = payload.get("version")
         if version != FORMAT_VERSION:
             raise KeyStoreError(
-                f"口令文件版本是 {version}，本程序只认 {FORMAT_VERSION}，请重新取钥")
+                f"口令文件版本是 {version}，本程序只认 {FORMAT_VERSION}，请重新取钥"
+            )
         try:
             cipher = base64.b64decode(payload["cipher"], validate=True)
         except (KeyError, ValueError) as exc:
             raise KeyStoreError(f"口令文件内容损坏：{self.path}") from exc
-        return StoredKey(passphrase=unprotect(cipher),
-                         wxid=payload.get("wxid", ""),
-                         dll_version=payload.get("dll_version", ""))
+        return StoredKey(
+            passphrase=unprotect(cipher),
+            wxid=payload.get("wxid", ""),
+            dll_version=payload.get("dll_version", ""),
+        )
 
     def remove(self) -> bool:
         """删掉口令文件；返回是否真的删了东西。"""

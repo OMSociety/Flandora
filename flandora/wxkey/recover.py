@@ -41,8 +41,10 @@ class Hit:
     seconds: float
 
     def describe(self) -> str:
-        return (f"口令 {self.passphrase.hex()}（{len(self.passphrase)} 字节）"
-                f" 来自 {self.source}，共试 {self.tried} 个候选，耗时 {self.seconds:.1f} 秒")
+        return (
+            f"口令 {self.passphrase.hex()}（{len(self.passphrase)} 字节）"
+            f" 来自 {self.source}，共试 {self.tried} 个候选，耗时 {self.seconds:.1f} 秒"
+        )
 
 
 def page1_of(db_path: str | Path) -> bytes:
@@ -81,8 +83,9 @@ def load_capture(path: str | Path) -> list[tuple[str, bytes]]:
     return blobs
 
 
-def iter_candidates(blobs: Sequence[tuple[str, bytes]],
-                    lengths: Sequence[int] = LEN_CANDIDATES) -> Iterator[tuple[str, bytes]]:
+def iter_candidates(
+    blobs: Sequence[tuple[str, bytes]], lengths: Sequence[int] = LEN_CANDIDATES
+) -> Iterator[tuple[str, bytes]]:
     """按"最像口令"的顺序吐出候选值。
 
     分三档，前一档跑完才进下一档：
@@ -115,7 +118,7 @@ def iter_candidates(blobs: Sequence[tuple[str, bytes]],
             for length in lengths:
                 if off + length > len(data):
                     continue
-                value = data[off:off + length]
+                value = data[off : off + length]
                 if value in seen_values:
                     continue
                 seen_values.add(value)
@@ -144,14 +147,23 @@ def _probe(task: tuple[str, bytes, bytes]) -> tuple[str, bytes, bool]:
         return source, value, False
 
 
-def find_passphrase(blobs_or_path, db_or_page1, *, workers: int = DEFAULT_WORKERS,
-                    deadline_s: Optional[float] = None) -> Optional[Hit]:
+def find_passphrase(
+    blobs_or_path,
+    db_or_page1,
+    *,
+    workers: int = DEFAULT_WORKERS,
+    deadline_s: Optional[float] = None,
+) -> Optional[Hit]:
     """在截获片段里找能解开指定数据库的口令。
 
     ``blobs_or_path`` 可以是 JSONL 路径或 ``load_capture()`` 的返回值；
     ``db_or_page1`` 可以是加密数据库路径或它的一页原始字节。
     """
-    blobs = load_capture(blobs_or_path) if isinstance(blobs_or_path, (str, Path)) else list(blobs_or_path)
+    blobs = (
+        load_capture(blobs_or_path)
+        if isinstance(blobs_or_path, (str, Path))
+        else list(blobs_or_path)
+    )
     page1 = page1_of(db_or_page1) if isinstance(db_or_page1, (str, Path)) else bytes(db_or_page1)
     if not blobs:
         log.error("没有任何截获片段，无法还原口令")
@@ -214,8 +226,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return 0
 
 
-__all__ = ["Hit", "find_passphrase", "iter_candidates", "load_capture", "main",
-           "page1_of", "verify"]
+__all__ = [
+    "Hit",
+    "find_passphrase",
+    "iter_candidates",
+    "load_capture",
+    "main",
+    "page1_of",
+    "verify",
+]
 
 if __name__ == "__main__":
     raise SystemExit(main())

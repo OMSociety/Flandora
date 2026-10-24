@@ -10,15 +10,13 @@ OneBot v11 WebSocket 服务端模块（对接 OneBot v11 客户端）。
 import asyncio
 import json
 import logging
-import threading
 from urllib.parse import parse_qs, urlparse
 
 import websockets
 from websockets.asyncio.server import serve
 
-from . import config
+from . import config, ws_pool
 from .ws_pool import _clients, _ws_ready, broadcast
-from . import ws_pool
 
 log = logging.getLogger("ob11-bridge")
 
@@ -66,8 +64,9 @@ def _token_ok(connection, request):
     if _request_query(request).get("access_token") == config.OB_SERVER_TOKEN:
         return None
     log.warning(f"[OB11] 鉴权失败: Authorization={auth!r}")
-    from websockets.http11 import Response
     from websockets.datastructures import Headers
+    from websockets.http11 import Response
+
     return Response(401, "Unauthorized", Headers({"Connection": "close"}), b"Unauthorized")
 
 
@@ -81,6 +80,7 @@ async def _ws_handler(ws):
     _ws_ready.set()
     try:
         from .webui import monitor
+
         monitor.notify_status()
     except Exception:
         pass
@@ -100,10 +100,17 @@ async def _ws_handler(ws):
                 log.error(f"[OB11] 处理 API 异常: {e}")
                 # 尝试回错误响应避免客户端超时
                 try:
-                    await ws.send(json.dumps({
-                        "status": "failed", "retcode": 1, "data": {},
-                        "echo": data.get("echo", ""),
-                    }, ensure_ascii=False))
+                    await ws.send(
+                        json.dumps(
+                            {
+                                "status": "failed",
+                                "retcode": 1,
+                                "data": {},
+                                "echo": data.get("echo", ""),
+                            },
+                            ensure_ascii=False,
+                        )
+                    )
                 except Exception:
                     pass
     except websockets.exceptions.ConnectionClosed:
@@ -115,6 +122,7 @@ async def _ws_handler(ws):
         log.info(f"[OB11] 剩余客户端: {len(_clients)}")
         try:
             from .webui import monitor
+
             monitor.notify_status()
         except Exception:
             pass

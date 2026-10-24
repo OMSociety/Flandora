@@ -7,6 +7,7 @@
 """
 
 import logging
+
 from .uia_sender import UiaSender
 
 try:
@@ -24,8 +25,8 @@ def create_sender():
     if bool(getattr(config, "ISOLATED_DESKTOP", False)):
         desktop = getattr(config, "ISOLATED_DESKTOP_NAME", "WeBotSandbox")
         log.info(
-            "使用 UIA 发送消息（隔离桌面 %s：微信在前台切换只发生在该桌面，"
-            "不会打扰用户的桌面）", desktop
+            "使用 UIA 发送消息（隔离桌面 %s：微信在前台切换只发生在该桌面，不会打扰用户的桌面）",
+            desktop,
         )
     elif allow_steal:
         log.info("使用 UIA 发送消息（已允许发送时把微信窗口提到前台）")
@@ -34,5 +35,4 @@ def create_sender():
             "使用 UIA 发送消息，但发送通道未启用"
             "（config.json 的 allow_foreground_steal 为 false，发送会失败并记日志）"
         )
-    return UiaSender(allow_foreground_steal=allow_steal,
-                     isolated_desktop=desktop)
+    return UiaSender(allow_foreground_steal=allow_steal, isolated_desktop=desktop)

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """日志 tail —— 由 bridge_manager 通过 subprocess 拉起，把 flandora.log 增量输出。"""
+
 from __future__ import annotations
 
 import os

@@ -4,6 +4,7 @@
 4.x 并不把语音落成可读文件（msg/attach 下只有 Img），音频本体根本拿不到。现在语音只作为
 "[语音]" 占位文本进入普通缓冲，客户端据此知道有人发过语音，转写策略由客户端定。
 """
+
 import os
 import sys
 
@@ -12,7 +13,6 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from flandora import bridge_core  # noqa: E402
-
 
 VOICE_MSG = {
     "sessionId": "wxid_peer_001",
@@ -60,5 +60,9 @@ def test_voice_is_not_treated_as_ignored():
 
 
 def test_asr_entrypoints_are_gone():
-    for name in ("process_audio_message", "transcribe_audio_via_fun_asr", "_dispatch_message_to_buffer"):
+    for name in (
+        "process_audio_message",
+        "transcribe_audio_via_fun_asr",
+        "_dispatch_message_to_buffer",
+    ):
         assert not hasattr(bridge_core.Flandora, name), f"{name} 应当已删除"

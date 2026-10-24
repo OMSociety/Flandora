@@ -15,6 +15,7 @@
 定位结果只是静态事实；真正的把关在 recover 阶段——取到的材料必须能通过
 SQLCipher 页 1 的 HMAC 校验才算数。
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -34,7 +35,7 @@ DIR_EXCEPTION = 3
 # 调用形态特征：mov r8d,0x1000 ; mov r9d,imm32 ; call rel32
 SIG_MOV_R8D = b"\x41\xb8\x00\x10\x00\x00\x41\xb9"
 SIG_CALL = 0xE8
-SIG_LEN = 17          # 上面那段特征到 call 之后的下一条指令
+SIG_LEN = 17  # 上面那段特征到 call 之后的下一条指令
 
 TH32CS_SNAPPROCESS = 0x00000002
 PROCESS_QUERY_INFORMATION = 0x0400
@@ -68,8 +69,10 @@ class HookPoint:
 
     def describe(self) -> str:
         ver = self.file_version or "未知版本"
-        return (f"微信 {ver}，口令设置函数 RVA {self.rva:#x}"
-                f"（{self.size} 字节），Weixin.dll {self.dll_sha256[:16]}…")
+        return (
+            f"微信 {ver}，口令设置函数 RVA {self.rva:#x}"
+            f"（{self.size} 字节），Weixin.dll {self.dll_sha256[:16]}…"
+        )
 
 
 # PE 可选头里的首选基址在 4.1.15.56 上是 0x180000000；真正挂钩时用运行期基址。
@@ -101,7 +104,7 @@ class PeImage:
         if data[:2] != b"MZ":
             raise LocatorError(f"{self.path} 不是 PE 文件")
         lfanew = _u32(data, 0x3C)
-        if data[lfanew:lfanew + 4] != b"PE\0\0":
+        if data[lfanew : lfanew + 4] != b"PE\0\0":
             raise LocatorError(f"{self.path} 的 PE 签名不对")
         n_sec = _u16(data, lfanew + 6)
         opt_size = _u16(data, lfanew + 20)
@@ -122,7 +125,7 @@ class PeImage:
         sec_off = opt + opt_size
         for i in range(n_sec):
             o = sec_off + i * 40
-            name = data[o:o + 8].rstrip(b"\0").decode("latin1")
+            name = data[o : o + 8].rstrip(b"\0").decode("latin1")
             vsize = _u32(data, o + 8)
             vaddr = _u32(data, o + 12)
             rawsize = _u32(data, o + 16)
@@ -142,8 +145,7 @@ class PeImage:
     def _parse_functions(self) -> None:
         exc_rva, exc_size = self._exc
         if not exc_rva or not exc_size:
-            raise UnsupportedBuild(
-                "Weixin.dll 没有异常目录（.pdata），无法取得函数边界")
+            raise UnsupportedBuild("Weixin.dll 没有异常目录（.pdata），无法取得函数边界")
         raw = self._rva_to_file(exc_rva)
         if raw is None:
             raise UnsupportedBuild(".pdata 的地址换不到文件偏移")
@@ -181,7 +183,7 @@ class PeImage:
         if ".text" not in self.sections:
             raise UnsupportedBuild("Weixin.dll 没有 .text 段")
         va, _vsize, rawptr, rawsize = self.sections[".text"]
-        return va, self.data[rawptr:rawptr + rawsize]
+        return va, self.data[rawptr : rawptr + rawsize]
 
 
 def _file_version(path: Path) -> str:
@@ -194,8 +196,7 @@ def _file_version(path: Path) -> str:
         return ""
     ptr = ctypes.c_void_p()
     length = wintypes.UINT()
-    if not ctypes.windll.version.VerQueryValueW(
-            buf, "\\", ctypes.byref(ptr), ctypes.byref(length)):
+    if not ctypes.windll.version.VerQueryValueW(buf, "\\", ctypes.byref(ptr), ctypes.byref(length)):
         return ""
     if not length.value:
         return ""
@@ -248,14 +249,14 @@ def scan_key_setter(image: PeImage) -> tuple[int, list[int]]:
 
     if not targets:
         raise UnsupportedBuild(
-            "在 Weixin.dll 里没有找到「传页大小与兼容级别」的调用形态，"
-            "当前微信版本可能改了实现")
+            "在 Weixin.dll 里没有找到「传页大小与兼容级别」的调用形态，当前微信版本可能改了实现"
+        )
     if len(targets) > 1:
         detail = "，".join(
-            f"{rva:#x}（{len(s)} 处调用）" for rva, s in
-            sorted(targets.items(), key=lambda x: -len(x[1])))
-        raise UnsupportedBuild(
-            f"调用形态指向 {len(targets)} 个不同函数，无法唯一确定：{detail}")
+            f"{rva:#x}（{len(s)} 处调用）"
+            for rva, s in sorted(targets.items(), key=lambda x: -len(x[1]))
+        )
+        raise UnsupportedBuild(f"调用形态指向 {len(targets)} 个不同函数，无法唯一确定：{detail}")
     target_rva = next(iter(targets))
     return target_rva, sites
 
@@ -283,18 +284,20 @@ def find_weixin_dll(explicit: Optional[str] = None) -> Path:
     install = _registry_install_path()
     if install is not None:
         candidates.extend(_dlls_under(install))
-    for base in (Path(r"C:\Program Files\Tencent\Weixin"),
-                 Path(r"C:\Program Files (x86)\Tencent\Weixin")):
+    for base in (
+        Path(r"C:\Program Files\Tencent\Weixin"),
+        Path(r"C:\Program Files (x86)\Tencent\Weixin"),
+    ):
         candidates.extend(_dlls_under(base))
 
     if not candidates:
         raise LocatorError(
             "找不到 Weixin.dll：微信没有在运行，注册表与常见安装目录里也没有。"
-            "请在配置里手动指定 weixin_dll 路径")
+            "请在配置里手动指定 weixin_dll 路径"
+        )
 
     def sort_key(p: Path) -> tuple:
-        return tuple(int(x) if x.isdigit() else -1
-                     for x in p.parent.name.split("."))
+        return tuple(int(x) if x.isdigit() else -1 for x in p.parent.name.split("."))
 
     return sorted(set(candidates), key=sort_key)[-1]
 
@@ -315,8 +318,10 @@ def _registry_install_path() -> Optional[Path]:
         import winreg
     except ImportError:
         return None
-    for root, key in ((winreg.HKEY_CURRENT_USER, r"Software\Tencent\Weixin"),
-                      (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Tencent\Weixin")):
+    for root, key in (
+        (winreg.HKEY_CURRENT_USER, r"Software\Tencent\Weixin"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Tencent\Weixin"),
+    ):
         try:
             with winreg.OpenKey(root, key) as h:
                 value, _type = winreg.QueryValueEx(h, "InstallPath")
@@ -348,10 +353,8 @@ def _k32():
     k32 = ctypes.WinDLL("kernel32", use_last_error=True)
     k32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
     k32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
-    k32.Process32FirstW.argtypes = [wintypes.HANDLE,
-                                    ctypes.POINTER(_PROCESSENTRY32W)]
-    k32.Process32NextW.argtypes = [wintypes.HANDLE,
-                                   ctypes.POINTER(_PROCESSENTRY32W)]
+    k32.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_PROCESSENTRY32W)]
+    k32.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(_PROCESSENTRY32W)]
     k32.OpenProcess.restype = wintypes.HANDLE
     k32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
     k32.CloseHandle.argtypes = [wintypes.HANDLE]
@@ -386,34 +389,41 @@ def _loaded_weixin_dll() -> Optional[Path]:
     psapi = ctypes.WinDLL("psapi", use_last_error=True)
     psapi.EnumProcessModulesEx.restype = wintypes.BOOL
     psapi.EnumProcessModulesEx.argtypes = [
-        wintypes.HANDLE, ctypes.POINTER(ctypes.c_void_p), wintypes.DWORD,
-        ctypes.POINTER(wintypes.DWORD), wintypes.DWORD]
+        wintypes.HANDLE,
+        ctypes.POINTER(ctypes.c_void_p),
+        wintypes.DWORD,
+        ctypes.POINTER(wintypes.DWORD),
+        wintypes.DWORD,
+    ]
     psapi.GetModuleFileNameExW.restype = wintypes.DWORD
     psapi.GetModuleFileNameExW.argtypes = [
-        wintypes.HANDLE, ctypes.c_void_p, wintypes.LPWSTR, wintypes.DWORD]
+        wintypes.HANDLE,
+        ctypes.c_void_p,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+    ]
     LIST_MODULES_ALL = 0x03
     for pid in pids:
-        handle = k32.OpenProcess(
-            PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
+        handle = k32.OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, False, pid)
         if not handle:
             continue
         try:
             needed = wintypes.DWORD()
             if not psapi.EnumProcessModulesEx(
-                    handle, None, 0, ctypes.byref(needed), LIST_MODULES_ALL):
+                handle, None, 0, ctypes.byref(needed), LIST_MODULES_ALL
+            ):
                 continue
             count = needed.value // ctypes.sizeof(ctypes.c_void_p)
             if count <= 0:
                 continue
             mods = (ctypes.c_void_p * count)()
             if not psapi.EnumProcessModulesEx(
-                    handle, mods, ctypes.sizeof(mods),
-                    ctypes.byref(needed), LIST_MODULES_ALL):
+                handle, mods, ctypes.sizeof(mods), ctypes.byref(needed), LIST_MODULES_ALL
+            ):
                 continue
             for h in mods:
                 buf = ctypes.create_unicode_buffer(MAX_PATH * 4)
-                if not psapi.GetModuleFileNameExW(
-                        handle, h, buf, len(buf)):
+                if not psapi.GetModuleFileNameExW(handle, h, buf, len(buf)):
                     continue
                 p = Path(buf.value)
                 if p.name.lower() == "weixin.dll" and p.is_file():
@@ -441,9 +451,15 @@ def resolve(dll_path: Optional[str] = None, manual_rva: int = 0) -> HookPoint:
         if fn is None:
             raise LocatorError(
                 f"手动指定的地址 {manual_rva:#x} 不落在 Weixin.dll 的任何函数里。"
-                f"请核对后重填，或清空该项恢复自动定位。")
-        hook = HookPoint(rva=fn[0], size=fn[1] - fn[0], dll_path=str(dll),
-                         dll_sha256=digest, file_version=version)
+                f"请核对后重填，或清空该项恢复自动定位。"
+            )
+        hook = HookPoint(
+            rva=fn[0],
+            size=fn[1] - fn[0],
+            dll_path=str(dll),
+            dll_sha256=digest,
+            file_version=version,
+        )
         log.info("按手动指定的地址定位：%s", hook.describe())
         return hook
 

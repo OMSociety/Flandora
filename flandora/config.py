@@ -10,10 +10,10 @@ config.json 查找顺序：
   3. 当前工作目录/config.json
   4. 都没有时，把打包进来的 config.example.json 写到 1 的位置，当作首次启动的默认配置
 """
+
 import json
-import os
 import logging
-import threading
+import os
 import sys
 
 
@@ -89,8 +89,7 @@ def _find_example() -> str:
         candidate = os.path.join(packed, "config.example.json")
         if os.path.isfile(candidate):
             return candidate
-    candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                             "config.example.json")
+    candidate = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.example.json")
     return candidate if os.path.isfile(candidate) else ""
 
 

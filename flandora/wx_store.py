@@ -21,6 +21,7 @@
     session/session.db 的 SessionTable：未读数、摘要、最后一条的类型与发送者。
     contact/contact.db：备注名、昵称。
 """
+
 import glob
 import hashlib
 import logging
@@ -29,9 +30,7 @@ import re
 import sqlite3
 import time
 
-from . import wechat_account
-from . import wx_crypto
-from . import wx_image
+from . import wechat_account, wx_crypto, wx_image
 
 log = logging.getLogger("ob11-bridge")
 
@@ -80,7 +79,8 @@ def _decompress(raw):
         import zstandard
     except ImportError as e:
         raise WxStoreError(
-            "消息内容是 zstd 压缩的，需要 zstandard 依赖（pip install zstandard）") from e
+            "消息内容是 zstd 压缩的，需要 zstandard 依赖（pip install zstandard）"
+        ) from e
     try:
         return zstandard.ZstdDecompressor().decompress(raw)
     except Exception as e:  # noqa: BLE001
@@ -167,17 +167,23 @@ class WxStore:
     用 sqlite3 只读打开。
     """
 
-    def __init__(self, data_dir: str, passphrase: bytes, work_dir: str,
-                 my_wxid: str = "", image_key: bytes = b"",
-                 image_xor_key: int = -1):
+    def __init__(
+        self,
+        data_dir: str,
+        passphrase: bytes,
+        work_dir: str,
+        my_wxid: str = "",
+        image_key: bytes = b"",
+        image_xor_key: int = -1,
+    ):
         self.data_dir = data_dir
         self.passphrase = passphrase
         self.work_dir = work_dir
         self.my_wxid = my_wxid
-        self.image_key = image_key           # 图片 AES 密钥（账号级，16 字节 ASCII）
-        self.image_xor_key = image_xor_key   # 图片尾段 XOR 密钥（账号级，-1 = 未取得）
+        self.image_key = image_key  # 图片 AES 密钥（账号级，16 字节 ASCII）
+        self.image_xor_key = image_xor_key  # 图片尾段 XOR 密钥（账号级，-1 = 未取得）
         self._xor_sniffed = False
-        self._seen = {}          # 相对路径 -> (size, mtime_ns)
+        self._seen = {}  # 相对路径 -> (size, mtime_ns)
         self._decrypted = set()  # 已成功解出的库名
         self._image_dir = os.path.join(work_dir, "images")
 
@@ -241,17 +247,19 @@ class WxStore:
                 username = d.get("username") or ""
                 if not username:
                     continue
-                out.append({
-                    "username": username,
-                    "is_group": username.endswith("@chatroom"),
-                    "unread": d.get("unread_count") or 0,
-                    "summary": d.get("summary") or "",
-                    "last_timestamp": d.get("last_timestamp") or 0,
-                    "last_local_id": d.get("last_msg_locald_id") or 0,
-                    "last_type": d.get("last_msg_type") or 0,
-                    "last_sender": d.get("last_msg_sender") or "",
-                    "is_hidden": bool(d.get("is_hidden")),
-                })
+                out.append(
+                    {
+                        "username": username,
+                        "is_group": username.endswith("@chatroom"),
+                        "unread": d.get("unread_count") or 0,
+                        "summary": d.get("summary") or "",
+                        "last_timestamp": d.get("last_timestamp") or 0,
+                        "last_local_id": d.get("last_msg_locald_id") or 0,
+                        "last_type": d.get("last_msg_type") or 0,
+                        "last_sender": d.get("last_msg_sender") or "",
+                        "is_hidden": bool(d.get("is_hidden")),
+                    }
+                )
             out.sort(key=lambda x: x["last_timestamp"], reverse=True)
             return out
         finally:
@@ -292,22 +300,25 @@ class WxStore:
                 return []
             names = {r[0]: r[1] for r in con.execute("SELECT rowid, user_name FROM Name2Id")}
             rows = con.execute(
-                f'SELECT local_id, local_type, real_sender_id, create_time, message_content '
+                f"SELECT local_id, local_type, real_sender_id, create_time, message_content "
                 f'FROM "{table}" WHERE local_id > ? ORDER BY local_id ASC LIMIT ?',
-                (after_local_id, limit)).fetchall()
+                (after_local_id, limit),
+            ).fetchall()
             out = []
             for local_id, local_type, sender_id, create_time, content in rows:
                 sender = names.get(sender_id, "")
                 kind, text = classify(local_type, _text_of(content))
-                out.append({
-                    "local_id": local_id,
-                    "local_type": local_type,
-                    "create_time": create_time,
-                    "sender": sender,
-                    "kind": kind,
-                    "text": text,
-                    "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
-                })
+                out.append(
+                    {
+                        "local_id": local_id,
+                        "local_type": local_type,
+                        "create_time": create_time,
+                        "sender": sender,
+                        "kind": kind,
+                        "text": text,
+                        "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
+                    }
+                )
             return out
         finally:
             con.close()
@@ -328,22 +339,25 @@ class WxStore:
                 return []
             names = {r[0]: r[1] for r in con.execute("SELECT rowid, user_name FROM Name2Id")}
             rows = con.execute(
-                f'SELECT local_id, local_type, real_sender_id, create_time, message_content '
+                f"SELECT local_id, local_type, real_sender_id, create_time, message_content "
                 f'FROM "{table}" ORDER BY local_id DESC LIMIT ?',
-                (limit,)).fetchall()
+                (limit,),
+            ).fetchall()
             out = []
             for local_id, local_type, sender_id, create_time, content in reversed(rows):
                 sender = names.get(sender_id, "")
                 kind, text = classify(local_type, _text_of(content))
-                out.append({
-                    "local_id": local_id,
-                    "local_type": local_type,
-                    "create_time": create_time,
-                    "sender": sender,
-                    "kind": kind,
-                    "text": text,
-                    "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
-                })
+                out.append(
+                    {
+                        "local_id": local_id,
+                        "local_type": local_type,
+                        "create_time": create_time,
+                        "sender": sender,
+                        "kind": kind,
+                        "text": text,
+                        "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
+                    }
+                )
             return out
         finally:
             con.close()
@@ -354,7 +368,8 @@ class WxStore:
         try:
             row = con.execute(
                 "SELECT file_name FROM image_hardlink_info_v4 WHERE md5=? OR md5_hash=?",
-                (msg_md5, msg_md5)).fetchone()
+                (msg_md5, msg_md5),
+            ).fetchone()
             return row[0] if row else None
         except sqlite3.Error:
             return None
@@ -392,8 +407,7 @@ class WxStore:
             for hit in glob.glob(os.path.join(attach, "*", "*", "Img", name)):
                 if os.path.isfile(hit):
                     return hit
-            hits = glob.glob(os.path.join(attach, "*", "**", "Img", f"{name}*"),
-                             recursive=True)
+            hits = glob.glob(os.path.join(attach, "*", "**", "Img", f"{name}*"), recursive=True)
             return hits[0] if hits else ""
 
         name = self.image_path(msg_md5)
@@ -422,8 +436,8 @@ class WxStore:
             return []
         try:
             rows = con.execute(
-                "SELECT packed_info FROM MessageResourceInfo "
-                "WHERE message_local_id=?", (local_id,)).fetchall()
+                "SELECT packed_info FROM MessageResourceInfo WHERE message_local_id=?", (local_id,)
+            ).fetchall()
         except sqlite3.Error:
             return []
         finally:
@@ -478,8 +492,13 @@ class WxStore:
         return out
 
 
-def open_store(passphrase: bytes, work_root: str, data_root: str = None,
-               image_key: bytes = b"", image_xor_key: int = -1):
+def open_store(
+    passphrase: bytes,
+    work_root: str,
+    data_root: str = None,
+    image_key: bytes = b"",
+    image_xor_key: int = -1,
+):
     """按当前登录账号开一个 WxStore。"""
     root = data_root or wechat_account.default_root()
     account = wechat_account.current_account(root)
@@ -488,8 +507,14 @@ def open_store(passphrase: bytes, work_root: str, data_root: str = None,
     if not account.data_dir:
         raise WxStoreError(f"账号 {account.wxid} 的数据目录不存在")
     work_dir = os.path.join(work_root, account.wxid)
-    store = WxStore(account.data_dir, passphrase, work_dir, my_wxid=account.wxid,
-                    image_key=image_key, image_xor_key=image_xor_key)
+    store = WxStore(
+        account.data_dir,
+        passphrase,
+        work_dir,
+        my_wxid=account.wxid,
+        image_key=image_key,
+        image_xor_key=image_xor_key,
+    )
     store.refresh()
     return store
 
@@ -510,8 +535,9 @@ def _selftest(argv):
         return 2
 
     t0 = time.time()
-    store = open_store(bytes.fromhex(key_hex),
-                       os.path.join(os.environ.get("TEMP", "."), "wx_store_test"))
+    store = open_store(
+        bytes.fromhex(key_hex), os.path.join(os.environ.get("TEMP", "."), "wx_store_test")
+    )
     print(f"账号 {store.my_wxid}  数据目录 {store.data_dir}")
     print(f"解密耗时 {time.time() - t0:.2f} s，已解密 {sorted(store._decrypted)}")
 
@@ -520,8 +546,10 @@ def _selftest(argv):
     print(f"\n会话 {len(sess)} 个：")
     for s in sess:
         who = names.get(s["username"], s["username"])
-        print(f"  {who[:24]:24s} {s['username']:34s} 未读={s['unread']} "
-              f"摘要={s['summary'][:24]!r} 最后 local_id={s['last_local_id']}")
+        print(
+            f"  {who[:24]:24s} {s['username']:34s} 未读={s['unread']} "
+            f"摘要={s['summary'][:24]!r} 最后 local_id={s['last_local_id']}"
+        )
 
     print("\n各会话最近 5 条：")
     for s in sess[:4]:
@@ -538,6 +566,6 @@ def _selftest(argv):
 
 if __name__ == "__main__":
     import sys
-    logging.basicConfig(level=logging.DEBUG,
-                        format="%(levelname)s %(name)s %(message)s")
+
+    logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s %(message)s")
     sys.exit(_selftest(sys.argv))

@@ -11,20 +11,14 @@
 import base64
 import logging
 import os
-import queue
 import re
 import threading
 import time
 from collections import defaultdict
-from datetime import datetime
 from pathlib import Path
 
-
-from . import state
-from . import config
-from . import wx_crypto
-from . import wx_source
-from .ob_protocol import push_event, make_message_event
+from . import config, state, wx_crypto, wx_source
+from .ob_protocol import make_message_event, push_event
 
 try:
     from .webui import monitor
@@ -111,7 +105,9 @@ class Flandora:
 
         # 日志：content 以 @ 开头但未匹配到任何昵称（便于排查）
         if (content.startswith("@") or content.startswith("＠")) and len(content) > 1:
-            log.debug(f"content 以 @ 开头但未匹配昵称: content={content[:40]!r} nicknames={config.BOT_NICKNAMES}")
+            log.debug(
+                f"content 以 @ 开头但未匹配昵称: content={content[:40]!r} nicknames={config.BOT_NICKNAMES}"
+            )
 
         return False
 
@@ -123,13 +119,19 @@ class Flandora:
         # 先判断群聊/私聊（图片/表情分支也需要用到）
         session_id_data = data.get("sessionId", "") or source_name
         group_name_raw = data.get("groupName", "")
-        is_group = (data.get("sessionType", "") == "group") or bool(group_name_raw) or "@chatroom" in session_id_data
+        is_group = (
+            (data.get("sessionType", "") == "group")
+            or bool(group_name_raw)
+            or "@chatroom" in session_id_data
+        )
 
         # WebUI 监控：记录收到的消息（含图片/表情）
         if monitor is not None:
             monitor.record_inbound(
                 contact=(group_name_raw or source_name) if is_group else source_name,
-                sender=data.get("senderName", "") or data.get("sender", "") or data.get("sourceName", ""),
+                sender=data.get("senderName", "")
+                or data.get("sender", "")
+                or data.get("sourceName", ""),
                 kind="group" if is_group else "private",
                 text=content,
             )
@@ -137,15 +139,12 @@ class Flandora:
         # 本地库收件会把解出的图片路径接在占位符后面，因此按前缀判断。
         if content == "[图片]" or content.startswith("[图片] "):
             # 图片消息：异步下载并描述后推送
-            threading.Thread(target=self.process_image_message,
-                           args=(data,), daemon=True).start()
+            threading.Thread(target=self.process_image_message, args=(data,), daemon=True).start()
             return
 
-        if (content in ("[动画表情]", "[表情]")
-                or content.startswith("[表情] ")):
+        if content in ("[动画表情]", "[表情]") or content.startswith("[表情] "):
             # 表情包消息：异步解析后推送
-            threading.Thread(target=self.process_emoji_message,
-                           args=(data,), daemon=True).start()
+            threading.Thread(target=self.process_emoji_message, args=(data,), daemon=True).start()
             return
 
         now = time.time()
@@ -153,11 +152,13 @@ class Flandora:
             log.info(f"自回复去重跳过: {content[:30]}")
             return
 
-        sender_in_group = data.get("senderName", "") or data.get("sender", "") or data.get("sourceName", "")
+        sender_in_group = (
+            data.get("senderName", "") or data.get("sender", "") or data.get("sourceName", "")
+        )
 
         if is_group:
             group_raw = group_name_raw or source_name
-            base_name = re.sub(r'\s*\(\d+\)\s*$', '', group_raw).strip()
+            base_name = re.sub(r"\s*\(\d+\)\s*$", "", group_raw).strip()
             contact = base_name
             # 自动学习群名映射：若 SSE 推送了真实群名（非 @chatroom 原始 ID），存入映射供发送时用
             if group_name_raw and not group_name_raw.endswith("@chatroom"):
@@ -198,7 +199,9 @@ class Flandora:
 
                 buffer_delay = config.BUFFER_SECONDS
                 log.info(f"收到来自 {contact} 的消息，等待 {buffer_delay}s 后统一推送")
-                timer = threading.Timer(buffer_delay, lambda v=version, sid=buffer_key: self.process_sender(sid, v))
+                timer = threading.Timer(
+                    buffer_delay, lambda v=version, sid=buffer_key: self.process_sender(sid, v)
+                )
                 timer.daemon = True
                 timer.start()
                 entry["timer"] = timer
@@ -251,7 +254,11 @@ class Flandora:
         try:
             # 构建 OneBot 事件（user_id 用微信 wxid/会话 ID 原文，跨进程稳定）
             if is_group:
-                sender_wxid = entry.get("session_id_data", "") + "_" + (entry.get("sender_in_group", "") or entry.get("source_name", ""))
+                sender_wxid = (
+                    entry.get("session_id_data", "")
+                    + "_"
+                    + (entry.get("sender_in_group", "") or entry.get("source_name", ""))
+                )
             else:
                 sender_wxid = entry.get("session_id_data", sender_id)
             # 用原文做 user_id（Flandora 与客户端同进程内不再 hash，保证回传一致）
@@ -271,23 +278,29 @@ class Flandora:
 
                 msg_segments = [{"type": "text", "data": {"text": formatted}}]
                 msg_segments.extend(image_segments)
-                event = make_message_event("group", user_id, msg_segments,
-                                           group_id=group_id,
-                                           group_name=entry.get("group_name", contact),
-                                           nickname=sender_name)
+                event = make_message_event(
+                    "group",
+                    user_id,
+                    msg_segments,
+                    group_id=group_id,
+                    group_name=entry.get("group_name", contact),
+                    nickname=sender_name,
+                )
                 # 标记该群消息是否真实 @ 了机器人，由客户端决定是否响应
                 event["is_mentioned"] = bool(self._is_mentioned(entry.get("raw_data", {})))
             else:
                 sender_name = entry.get("source_name", contact)
                 private_segments = [{"type": "text", "data": {"text": combined}}]
                 private_segments.extend(image_segments)
-                event = make_message_event("private", user_id,
-                                           private_segments,
-                                           nickname=sender_name)
+                event = make_message_event(
+                    "private", user_id, private_segments, nickname=sender_name
+                )
 
             # 记录 user_id → contact 映射，供 API 回复时查找
             if is_group:
-                group_id = entry.get("session_id_data", "")  # 群 sessionId 原文，如 47795211464@chatroom
+                group_id = entry.get(
+                    "session_id_data", ""
+                )  # 群 sessionId 原文，如 47795211464@chatroom
                 state._ob_id_to_contact[group_id] = contact
             else:
                 state._ob_id_to_contact[user_id] = contact
@@ -337,10 +350,10 @@ class Flandora:
             return False
         if data.get("sessionType", "") == "group" or "@chatroom" in data.get("sessionId", ""):
             content = data.get("content", "")
-            log.info(f"收到群消息 [{data.get('sourceName','')}]: {content[:60]}")
+            log.info(f"收到群消息 [{data.get('sourceName', '')}]: {content[:60]}")
             log.info(f"   @={self._is_mentioned(data)}")
         else:
-            log.info(f"收到: {data.get('sourceName','')}: {data.get('content','')[:50]}")
+            log.info(f"收到: {data.get('sourceName', '')}: {data.get('content', '')[:50]}")
         self.add_to_buffer(data)
         return True
 
@@ -381,10 +394,8 @@ class Flandora:
         session_id = data.get("sessionId", "")
         source_name = data.get("sourceName", "") or "未知"
         group_name = data.get("groupName", "")
-        rawid = data.get("rawid", "")
 
-        log.info(f"收到图片: {source_name}" +
-                 (f" (群:{group_name})" if group_name else ""))
+        log.info(f"收到图片: {source_name}" + (f" (群:{group_name})" if group_name else ""))
 
         talker_id = data.get("talkerId", "") or data.get("sessionId", "")
         is_group = bool(group_name) or "@chatroom" in session_id
@@ -426,7 +437,9 @@ class Flandora:
                         "sender_in_group": sender_display if is_group else "",
                     }
                     version = 1
-                    timer = threading.Timer(2, lambda v=version, sid=buffer_key: self.process_sender(sid, v))
+                    timer = threading.Timer(
+                        2, lambda v=version, sid=buffer_key: self.process_sender(sid, v)
+                    )
                     timer.daemon = True
                     timer.start()
                     self.pending_buffers[buffer_key]["timer"] = timer
@@ -445,8 +458,7 @@ class Flandora:
         group_name = data.get("groupName", "")
         content = data.get("content", "[表情]")
 
-        log.info(f"收到表情包: {source_name}" +
-                 (f" (群:{group_name})" if group_name else ""))
+        log.info(f"收到表情包: {source_name}" + (f" (群:{group_name})" if group_name else ""))
 
         talker_id = data.get("talkerId", "") or data.get("sessionId", "")
         is_group = bool(group_name) or "@chatroom" in session_id
@@ -458,19 +470,43 @@ class Flandora:
             segment = _image_segment(image_path)
 
             # 直接注入缓冲区（不等待，立即推送），图片段随事件一并下发
-            self.add_text_to_buffer(buffer_key, source_name, group_name,
-                                    session_id, content, is_group, buffer_key,
-                                    image_segment=segment, sender_display=sender_display)
+            self.add_text_to_buffer(
+                buffer_key,
+                source_name,
+                group_name,
+                session_id,
+                content,
+                is_group,
+                buffer_key,
+                image_segment=segment,
+                sender_display=sender_display,
+            )
         except Exception as e:
             log.warning(f"表情包处理异常: {e}")
             # 异常时也保底发送原文
-            self.add_text_to_buffer(buffer_key, source_name, group_name,
-                                    session_id, content, is_group, buffer_key,
-                                    sender_display=sender_display)
+            self.add_text_to_buffer(
+                buffer_key,
+                source_name,
+                group_name,
+                session_id,
+                content,
+                is_group,
+                buffer_key,
+                sender_display=sender_display,
+            )
 
-    def add_text_to_buffer(self, session_id_data, source_name, group_name,
-                           session_id, content, is_group, sender_key,
-                           image_segment: dict | None = None, sender_display: str | None = None):
+    def add_text_to_buffer(
+        self,
+        session_id_data,
+        source_name,
+        group_name,
+        session_id,
+        content,
+        is_group,
+        sender_key,
+        image_segment: dict | None = None,
+        sender_display: str | None = None,
+    ):
         """通用：将一段文本（可选附带图片段）加入缓冲队列。"""
         sender_display = sender_display or source_name
         with self.buffer_lock:
@@ -500,9 +536,10 @@ class Flandora:
                 entry["timer_version"] += 1
                 version = entry["timer_version"]
                 delay = 2  # 表情/图片单独推送，短缓冲
-                timer = threading.Timer(delay, lambda v=version, sid=buffer_key: self.process_sender(sid, v))
+                timer = threading.Timer(
+                    delay, lambda v=version, sid=buffer_key: self.process_sender(sid, v)
+                )
                 timer.daemon = True
                 timer.start()
                 entry["timer"] = timer
                 entry["timer_version"] = version
-

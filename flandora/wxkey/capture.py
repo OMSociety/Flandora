@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import os
-import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -121,10 +120,12 @@ class CaptureInfo:
     seconds: float
 
     def describe(self) -> str:
-        return (f"账号 {self.wxid} 的口令已取到（{len(self.passphrase)} 字节），"
-                f"用 {os.path.basename(self.db_path)} 校验通过；"
-                f"微信 {self.dll_version}，截获 {self.blobs} 段片段、{self.calls} 次调用，"
-                f"耗时 {self.seconds:.1f} 秒")
+        return (
+            f"账号 {self.wxid} 的口令已取到（{len(self.passphrase)} 字节），"
+            f"用 {os.path.basename(self.db_path)} 校验通过；"
+            f"微信 {self.dll_version}，截获 {self.blobs} 段片段、{self.calls} 次调用，"
+            f"耗时 {self.seconds:.1f} 秒"
+        )
 
 
 def _frida():
@@ -132,7 +133,8 @@ def _frida():
         import frida
     except ImportError as exc:  # pragma: no cover - 取决于运行环境
         raise HookPointUnavailable(
-            "缺少 frida 组件，无法取密钥。请用带 frida 的完整安装包运行。") from exc
+            "缺少 frida 组件，无法取密钥。请用带 frida 的完整安装包运行。"
+        ) from exc
     return frida
 
 
@@ -141,8 +143,7 @@ def _weixin_pids() -> list[int]:
     # frida 17 起进程枚举挪到了设备对象上，模块级的 enumerate_processes 已移除。
     device = getattr(frida, "get_local_device", lambda: None)()
     source = device if device is not None else frida
-    return [p.pid for p in source.enumerate_processes()
-            if p.name.lower() == "weixin.exe"]
+    return [p.pid for p in source.enumerate_processes() if p.name.lower() == "weixin.exe"]
 
 
 def _module_base(pid: int) -> Optional[int]:
@@ -193,9 +194,16 @@ class _Collector:
         frida = _frida()
         try:
             session = frida.attach(pid)
-            script = session.create_script(_JS_TEMPLATE.format(
-                base=hex(base), rva=self.hook.rva, before=BEFORE_BYTES,
-                at=AT_BYTES, deref=DEREF_BYTES, slots=KEY_SLOTS))
+            script = session.create_script(
+                _JS_TEMPLATE.format(
+                    base=hex(base),
+                    rva=self.hook.rva,
+                    before=BEFORE_BYTES,
+                    at=AT_BYTES,
+                    deref=DEREF_BYTES,
+                    slots=KEY_SLOTS,
+                )
+            )
             script.on("message", self._on_message)
             script.load()
         except Exception as exc:
@@ -242,9 +250,13 @@ class _Collector:
         self._sessions.clear()
 
 
-def _pump(collector: _Collector, timeout_s: float, *,
-          require_start: bool = False,
-          on_status: Optional[Callable[[str], None]] = None) -> None:
+def _pump(
+    collector: _Collector,
+    timeout_s: float,
+    *,
+    require_start: bool = False,
+    on_status: Optional[Callable[[str], None]] = None,
+) -> None:
     """把新出现的微信进程陆续挂上，直到收到片段或超时。"""
     deadline = time.time() + timeout_s
     tried: set[int] = set()
@@ -272,14 +284,16 @@ def _pump(collector: _Collector, timeout_s: float, *,
                 on_status(f"正在等待微信打开数据库（{attached} 个进程已挂钩）")
         time.sleep(POLL)
     if not collector.blobs:
-        raise NoKeyEvent(
-            "等不到微信打开数据库。" if started else "等不到微信启动。")
+        raise NoKeyEvent("等不到微信打开数据库。" if started else "等不到微信启动。")
 
 
-def capture_live(hook: locator.HookPoint, *, timeout_s: float = QUICK_TIMEOUT,
-                 out_path: Optional[str] = None,
-                 on_status: Optional[Callable[[str], None]] = None
-                 ) -> tuple[list[tuple[str, bytes]], int, list[int]]:
+def capture_live(
+    hook: locator.HookPoint,
+    *,
+    timeout_s: float = QUICK_TIMEOUT,
+    out_path: Optional[str] = None,
+    on_status: Optional[Callable[[str], None]] = None,
+) -> tuple[list[tuple[str, bytes]], int, list[int]]:
     """在已经登录的微信身上直接试一次。"""
     if not _weixin_pids():
         raise WeChatNotRunning("微信没有在运行。请先登录微信，再取密钥。")
@@ -294,17 +308,18 @@ def capture_live(hook: locator.HookPoint, *, timeout_s: float = QUICK_TIMEOUT,
     return collector.blobs, collector.calls, list(collector.attached)
 
 
-def capture_login(hook: locator.HookPoint, *,
-                  login_wait_s: float = LOGIN_WAIT,
-                  timeout_s: float = LOGIN_CAPTURE,
-                  out_path: Optional[str] = None,
-                  on_status: Optional[Callable[[str], None]] = None
-                  ) -> tuple[list[tuple[str, bytes]], int, list[int]]:
+def capture_login(
+    hook: locator.HookPoint,
+    *,
+    login_wait_s: float = LOGIN_WAIT,
+    timeout_s: float = LOGIN_CAPTURE,
+    out_path: Optional[str] = None,
+    on_status: Optional[Callable[[str], None]] = None,
+) -> tuple[list[tuple[str, bytes]], int, list[int]]:
     """等微信重新登录并在登录过程中截获。"""
     collector = _Collector(hook)
     try:
-        _pump(collector, login_wait_s + timeout_s, require_start=True,
-              on_status=on_status)
+        _pump(collector, login_wait_s + timeout_s, require_start=True, on_status=on_status)
     finally:
         collector.close()
     log.info("截获 %d 段片段，覆盖 %d 次调用", len(collector.blobs), collector.calls)
@@ -313,18 +328,23 @@ def capture_login(hook: locator.HookPoint, *,
     return collector.blobs, collector.calls, list(collector.attached)
 
 
-def dump_jsonl(out_path: str, blobs: Sequence[tuple[str, bytes]],
-               hook: locator.HookPoint) -> None:
+def dump_jsonl(out_path: str, blobs: Sequence[tuple[str, bytes]], hook: locator.HookPoint) -> None:
     """把片段落成 JSONL，便于事后复算或提交问题报告。"""
     import json
 
     with open(out_path, "w", encoding="utf-8") as fh:
-        meta = {"type": "meta", "rva": hex(hook.rva), "version": hook.file_version,
-                "dll_sha256": hook.dll_sha256}
+        meta = {
+            "type": "meta",
+            "rva": hex(hook.rva),
+            "version": hook.file_version,
+            "dll_sha256": hook.dll_sha256,
+        }
         fh.write(json.dumps(meta, ensure_ascii=False) + "\n")
         for tag, data in blobs:
-            fh.write(json.dumps({"type": "blob", "tag": tag, "hex": data.hex()},
-                                ensure_ascii=False) + "\n")
+            fh.write(
+                json.dumps({"type": "blob", "tag": tag, "hex": data.hex()}, ensure_ascii=False)
+                + "\n"
+            )
 
 
 def _account_db_paths(root: Optional[str]) -> list[tuple[str, str]]:
@@ -342,8 +362,7 @@ def _account_db_paths(root: Optional[str]) -> list[tuple[str, str]]:
         if os.path.isfile(db_path):
             targets.append((account.wxid, db_path))
     if not targets:
-        raise KeyCaptureError(
-            "没找到已登录的微信账号的数据目录。请先登录微信，再试一次。")
+        raise KeyCaptureError("没找到已登录的微信账号的数据目录。请先登录微信，再试一次。")
     return targets
 
 
@@ -351,9 +370,16 @@ def _account_db_path(root: Optional[str]) -> tuple[str, str]:
     return _account_db_paths(root)[0]
 
 
-def _finish(blobs: Sequence[tuple[str, bytes]], calls: int, pids: Sequence[int],
-            hook: locator.HookPoint, *, targets: Sequence[tuple[str, str]],
-            started: float, budget_s: float = PER_TARGET_BUDGET) -> CaptureInfo:
+def _finish(
+    blobs: Sequence[tuple[str, bytes]],
+    calls: int,
+    pids: Sequence[int],
+    hook: locator.HookPoint,
+    *,
+    targets: Sequence[tuple[str, str]],
+    started: float,
+    budget_s: float = PER_TARGET_BUDGET,
+) -> CaptureInfo:
     """逐个账号判 HMAC。最近登录的那个先试，命中即止。"""
     for index, (wxid, db_path) in enumerate(targets):
         left = budget_s * (len(targets) - index)
@@ -361,26 +387,35 @@ def _finish(blobs: Sequence[tuple[str, bytes]], calls: int, pids: Sequence[int],
         if hit is None:
             log.info("片段解不开账号 %s 的库，继续试下一个", wxid)
             continue
-        info = CaptureInfo(passphrase=hit.passphrase, wxid=wxid, db_path=db_path,
-                           blobs=len(blobs), calls=calls, pids=tuple(pids),
-                           dll_version=hook.file_version,
-                           dll_sha256=hook.dll_sha256,
-                           seconds=time.time() - started)
+        info = CaptureInfo(
+            passphrase=hit.passphrase,
+            wxid=wxid,
+            db_path=db_path,
+            blobs=len(blobs),
+            calls=calls,
+            pids=tuple(pids),
+            dll_version=hook.file_version,
+            dll_sha256=hook.dll_sha256,
+            seconds=time.time() - started,
+        )
         log.info(info.describe())
         return info
     raise KeyCaptureError(
         "截获到了内存片段，但没有任何一段能解开已知账号的数据库。"
-        "请把微信完全退出后重新登录，登录完成立刻再试一次。")
+        "请把微信完全退出后重新登录，登录完成立刻再试一次。"
+    )
 
 
-def capture_and_recover(*, quick_s: float = QUICK_TIMEOUT,
-                        login_wait_s: float = LOGIN_WAIT,
-                        login_capture_s: float = LOGIN_CAPTURE,
-                        out_path: Optional[str] = None,
-                        root: Optional[str] = None,
-                        manual_rva: int = 0,
-                        on_status: Optional[Callable[[str], None]] = None
-                        ) -> CaptureInfo:
+def capture_and_recover(
+    *,
+    quick_s: float = QUICK_TIMEOUT,
+    login_wait_s: float = LOGIN_WAIT,
+    login_capture_s: float = LOGIN_CAPTURE,
+    out_path: Optional[str] = None,
+    root: Optional[str] = None,
+    manual_rva: int = 0,
+    on_status: Optional[Callable[[str], None]] = None,
+) -> CaptureInfo:
     """取钥主流程：认账号 → 挂钩截获 → 还原 → 用真实数据库校验。
 
     微信已在运行时先短试一次；等不到就转入"等重新登录"的流程。
@@ -395,33 +430,40 @@ def capture_and_recover(*, quick_s: float = QUICK_TIMEOUT,
 
     pids: list[int] = []
     try:
-        blobs, calls, pids = capture_live(hook, timeout_s=quick_s,
-                                          out_path=out_path, on_status=on_status)
+        blobs, calls, pids = capture_live(
+            hook, timeout_s=quick_s, out_path=out_path, on_status=on_status
+        )
     except (WeChatNotRunning, NoKeyEvent):
         blobs, calls = [], 0
     if blobs:
-        return _finish(blobs, calls, pids, hook,
-                       targets=_account_db_paths(root), started=started)
+        return _finish(blobs, calls, pids, hook, targets=_account_db_paths(root), started=started)
 
     if on_status:
         on_status("请在微信里退出登录，然后重新登录；登录完成会自动继续。")
-    blobs, calls, pids = capture_login(hook, login_wait_s=login_wait_s,
-                                       timeout_s=login_capture_s,
-                                       out_path=out_path, on_status=on_status)
-    return _finish(blobs, calls, pids, hook,
-                   targets=_account_db_paths(root), started=started)
+    blobs, calls, pids = capture_login(
+        hook,
+        login_wait_s=login_wait_s,
+        timeout_s=login_capture_s,
+        out_path=out_path,
+        on_status=on_status,
+    )
+    return _finish(blobs, calls, pids, hook, targets=_account_db_paths(root), started=started)
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     import argparse
 
     parser = argparse.ArgumentParser(description="从微信里取数据库口令")
-    parser.add_argument("--live", action="store_true",
-                        help="只在当前运行的微信上试一次，不等重新登录")
-    parser.add_argument("--seconds", type=float, default=None,
-                        help="等待上限（--live 时为截获时长，否则为等登录的时长）")
-    parser.add_argument("--capture-out", default=None,
-                        help="把截获片段另存为 JSONL，便于复算")
+    parser.add_argument(
+        "--live", action="store_true", help="只在当前运行的微信上试一次，不等重新登录"
+    )
+    parser.add_argument(
+        "--seconds",
+        type=float,
+        default=None,
+        help="等待上限（--live 时为截获时长，否则为等登录的时长）",
+    )
+    parser.add_argument("--capture-out", default=None, help="把截获片段另存为 JSONL，便于复算")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -430,14 +472,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             hook = locator.resolve()
             started = time.time()
             blobs, calls, pids = capture_live(
-                hook, timeout_s=args.seconds or QUICK_TIMEOUT,
-                out_path=args.capture_out, on_status=print)
-            info = _finish(blobs, calls, pids, hook,
-                           targets=_account_db_paths(None), started=started)
+                hook,
+                timeout_s=args.seconds or QUICK_TIMEOUT,
+                out_path=args.capture_out,
+                on_status=print,
+            )
+            info = _finish(
+                blobs, calls, pids, hook, targets=_account_db_paths(None), started=started
+            )
         else:
             info = capture_and_recover(
-                quick_s=args.seconds or QUICK_TIMEOUT,
-                out_path=args.capture_out, on_status=print)
+                quick_s=args.seconds or QUICK_TIMEOUT, out_path=args.capture_out, on_status=print
+            )
     except KeyCaptureError as exc:
         print(f"取密钥失败：{exc}")
         return 1
@@ -445,9 +491,18 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     return 0
 
 
-__all__ = ["CaptureInfo", "HookPointUnavailable", "KeyCaptureError", "NoKeyEvent",
-           "WeChatNotRunning", "capture_and_recover", "capture_live", "capture_login",
-           "dump_jsonl", "main"]
+__all__ = [
+    "CaptureInfo",
+    "HookPointUnavailable",
+    "KeyCaptureError",
+    "NoKeyEvent",
+    "WeChatNotRunning",
+    "capture_and_recover",
+    "capture_live",
+    "capture_login",
+    "dump_jsonl",
+    "main",
+]
 
 if __name__ == "__main__":
     raise SystemExit(main())

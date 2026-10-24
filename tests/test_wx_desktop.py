@@ -5,8 +5,9 @@
 
 真实启动/截图/点击的链路另在带真微信的环境上验证过，不在这个文件里重复。
 """
-import json
+
 import importlib
+import json
 import os
 import shutil
 import sys
@@ -26,8 +27,7 @@ def with_cfg(**overrides):
     测试就会拿到真实环境那份配置。
     """
     d = tempfile.mkdtemp(prefix="wwb-desk-")
-    shutil.copy(os.path.join(PKG, "config.example.json"),
-                os.path.join(d, "config.json"))
+    shutil.copy(os.path.join(PKG, "config.example.json"), os.path.join(d, "config.json"))
     path = os.path.join(d, "config.json")
     with open(path, encoding="utf-8") as fh:
         cfg = json.load(fh)
@@ -38,7 +38,8 @@ def with_cfg(**overrides):
     os.environ["FLANDORA_DATA_DIR"] = d
     try:
         from flandora import config
-        importlib.reload(config)   # 同一个进程里换配置必须重载，否则拿到上一份
+
+        importlib.reload(config)  # 同一个进程里换配置必须重载，否则拿到上一份
         return d, config
     finally:
         if old_env is None:
@@ -79,7 +80,7 @@ def main() -> int:
     print("  ok   未打开的桌面 windows() 返回空")
     checks += 1
 
-    desk.close()          # 从未启动过 → 清理必须幂等
+    desk.close()  # 从未启动过 → 清理必须幂等
     assert desk.pid == 0 and desk.handle is None
     print("  ok   未启动实例 close() 幂等")
     checks += 1
@@ -89,8 +90,10 @@ def main() -> int:
     # 「默认桌面上有没有微信」按窗口判断，不看全系统进程：本程序留在隔离桌面上的
     # 微信也算 Weixin.exe，按进程判断会把重启挡下来。
     from flandora.uia_sender import enum_wechat_windows
-    assert (wx_desktop.default_desktop_has_wechat()
-            == bool(enum_wechat_windows())), "判定口径应只看默认桌面上的窗口"
+
+    assert wx_desktop.default_desktop_has_wechat() == bool(enum_wechat_windows()), (
+        "判定口径应只看默认桌面上的窗口"
+    )
     print(f"  ok   进程探测返回列表（当前 {len(pids)} 个），默认桌面判定按窗口")
     checks += 1
 
@@ -99,8 +102,7 @@ def main() -> int:
     checks += 1
 
     # ---------- 3. 配置接通 ----------
-    d, config = with_cfg(isolated_desktop=True,
-                         isolated_desktop_name="WeBotTestDesk")
+    d, config = with_cfg(isolated_desktop=True, isolated_desktop_name="WeBotTestDesk")
     try:
         mgr = wx_desktop.DesktopManager()
         assert mgr.enabled() is True, "config 里开了隔离桌面，enabled() 应为 True"
@@ -125,7 +127,7 @@ def main() -> int:
         print("  ok   无实例时截图/点击安静失败，不抛异常")
         checks += 1
 
-        mgr.stop()        # 没启动过 → 必须无害
+        mgr.stop()  # 没启动过 → 必须无害
         print("  ok   未启动时 stop() 无害")
         checks += 1
     finally:

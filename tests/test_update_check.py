@@ -5,6 +5,7 @@
 响应不是 XML / 订阅里没有条目）是不是真的静默，以及后台线程写进
 `state.update_available` 的内容对不对。
 """
+
 import os
 import sys
 import urllib.error
@@ -48,17 +49,18 @@ class _FakeResponse:
         return False
 
 
-def _body(tag: str = "v0.0.1",
-          url: str = "https://example.invalid/release") -> bytes:
+def _body(tag: str = "v0.0.1", url: str = "https://example.invalid/release") -> bytes:
     return _FEED.format(tag=tag, url=url).encode("utf-8")
 
 
 def _stub(body: bytes = b"", exc: BaseException = None):
     """造一个假的 urlopen：给了 exc 就抛，否则返回给定响应体。"""
+
     def opener(request, timeout=None):
         if exc is not None:
             raise exc
         return _FakeResponse(body if body else _body())
+
     return opener
 
 
@@ -89,11 +91,11 @@ def main() -> int:
     for candidate, current, want in [
         ("v1.0.1", "1.0.0", True),
         ("v1.0.0", "1.0.0", False),
-        ("v1.0", "1.0.0", False),        # 缺位补 0，不算新
+        ("v1.0", "1.0.0", False),  # 缺位补 0，不算新
         ("v2.0.0", "1.9.9", True),
-        ("v1.10.0", "1.9.0", True),      # 按数字段比，不是字符串比
-        ("v1.0.0", "1.0.1", False),      # 比当前旧
-        ("", "1.0.0", False),            # 解不出来就不提示
+        ("v1.10.0", "1.9.0", True),  # 按数字段比，不是字符串比
+        ("v1.0.0", "1.0.1", False),  # 比当前旧
+        ("", "1.0.0", False),  # 解不出来就不提示
         ("v1.0.1", "", False),
         ("nonsense", "1.0.0", False),
         ("v1.0.1-beta.1", "1.0.0", True),
@@ -105,8 +107,7 @@ def main() -> int:
 
     # ===== 查到新版 =====
     try:
-        update_check._opener = _stub(
-            body=_body("v9.9.9", "https://example.invalid/v999"))
+        update_check._opener = _stub(body=_body("v9.9.9", "https://example.invalid/v999"))
         got = update_check.check(timeout=0.1)
         assert got == ("9.9.9", "https://example.invalid/v999"), got
         print("  ok   查到新版返回 (版本号, 页面链接)，tag 的 v 前缀已去掉")
@@ -116,8 +117,7 @@ def main() -> int:
 
     # ===== 订阅里没有链接时自己拼发布页 =====
     try:
-        update_check._opener = _stub(body=_FEED.format(
-            tag="v9.9.9", url="").encode("utf-8"))
+        update_check._opener = _stub(body=_FEED.format(tag="v9.9.9", url="").encode("utf-8"))
         got = update_check.check(timeout=0.1)
         assert got and got[0] == "9.9.9" and got[1].endswith("/tag/v9.9.9"), got
         print("  ok   订阅里没给链接时，按 tag 自己拼发布页地址")
@@ -147,10 +147,16 @@ def main() -> int:
     for label, body, exc in [
         ("连不上", None, urllib.error.URLError("no network")),
         ("超时", None, TimeoutError("timed out")),
-        ("HTTP 403 限流", None, urllib.error.HTTPError(
-            update_check.FEED_API, 403, "rate limited", {}, None)),
-        ("HTTP 404 仓库不存在", None, urllib.error.HTTPError(
-            update_check.FEED_API, 404, "Not Found", {}, None)),
+        (
+            "HTTP 403 限流",
+            None,
+            urllib.error.HTTPError(update_check.FEED_API, 403, "rate limited", {}, None),
+        ),
+        (
+            "HTTP 404 仓库不存在",
+            None,
+            urllib.error.HTTPError(update_check.FEED_API, 404, "Not Found", {}, None),
+        ),
         ("响应不是 XML", b"<html>502 Bad Gateway</html>", None),
     ]:
         try:
@@ -165,8 +171,7 @@ def main() -> int:
     # ===== 后台线程把结果写进 state =====
     try:
         state.update_available = None
-        update_check._opener = _stub(
-            body=_body("v9.9.9", "https://example.invalid/v999"))
+        update_check._opener = _stub(body=_body("v9.9.9", "https://example.invalid/v999"))
         update_check.check_async(timeout=0.1).join(timeout=10)
         got = state.update_available
         assert got == {

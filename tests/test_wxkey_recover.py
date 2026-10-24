@@ -3,6 +3,7 @@
 只覆盖能离线判定的部分：候选枚举顺序与去重、JSONL 读写、页 1 校验的接线。
 真机相关的定位与挂钩不在单测范围内。
 """
+
 import os
 import sys
 import tempfile
@@ -18,8 +19,7 @@ from flandora.wxkey import recover
 
 def test_candidates_prioritise_deref_head():
     """解引用片段开头的 32 字节必须最先出现。"""
-    blobs = [("setkey.before", bytes(range(64))),
-             ("setkey.deref8", bytes(range(100, 164)))]
+    blobs = [("setkey.before", bytes(range(64))), ("setkey.deref8", bytes(range(100, 164)))]
     cands = list(recover.iter_candidates(blobs))
     source, value = cands[0]
     assert "deref8" in source, source
@@ -30,8 +30,7 @@ def test_candidates_prioritise_deref_head():
 def test_candidates_dedupe_identical_blobs():
     """同一块缓冲区被多个指针槽指向时，候选不应重复。"""
     shared = bytes(range(128))
-    blobs = [("setkey.deref0", shared), ("setkey.deref8", shared),
-             ("setkey.deref16", shared)]
+    blobs = [("setkey.deref0", shared), ("setkey.deref8", shared), ("setkey.deref16", shared)]
     single = list(recover.iter_candidates([("setkey.deref0", shared)]))
     multi = list(recover.iter_candidates(blobs))
     assert len(multi) == len(single)
@@ -49,8 +48,7 @@ def test_candidates_cover_all_offsets():
 
 
 def test_load_capture_skips_bad_lines():
-    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False,
-                                    encoding="utf-8") as fh:
+    with tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False, encoding="utf-8") as fh:
         fh.write('{"type":"meta","rva":"0x1"}\n')
         fh.write("not json\n")
         fh.write('{"type":"blob","tag":"t","hex":"00ff"}\n')

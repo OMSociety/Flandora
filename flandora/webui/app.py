@@ -32,9 +32,7 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .. import state
-from .. import config
-from .. import __version__
+from .. import __version__, config, state
 from ..ws_pool import _clients
 from . import monitor
 from .monitor import bus
@@ -55,10 +53,16 @@ HOT_CONFIG_ATTRS = {
 }
 # 需要重启桥接才生效的字段
 RESTART_KEYS = (
-    "ob_server_host", "ob_server_port",
-    "ob_server_token", "web_port", "astrbot_ob_url", "astrbot_attachments",
+    "ob_server_host",
+    "ob_server_port",
+    "ob_server_token",
+    "web_port",
+    "astrbot_ob_url",
+    "astrbot_attachments",
     # 隔离桌面相关的三个改动都要重启才成立：桌面要重建、微信要重开、窗口要重绑
-    "isolated_desktop", "isolated_desktop_name", "wechat_exe",
+    "isolated_desktop",
+    "isolated_desktop_name",
+    "wechat_exe",
 )
 
 
@@ -71,8 +75,9 @@ async def lifespan(_app):
     bus.set_loop(None)
 
 
-app = FastAPI(title="Flandora WebUI", lifespan=lifespan,
-              docs_url=None, redoc_url=None, openapi_url=None)
+app = FastAPI(
+    title="Flandora WebUI", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None
+)
 
 
 # ============ 工具 ============
@@ -318,6 +323,7 @@ async def api_send(payload: dict):
 def api_windows():
     """枚举所有微信窗口，标记当前绑定/配置锁定的窗口。"""
     from ..uia_sender import enum_wechat_windows
+
     try:
         wins = enum_wechat_windows()
     except Exception as e:
@@ -330,8 +336,8 @@ def api_windows():
     saved_hwnd = int(getattr(config, "WECHAT_HWND", 0) or 0)
 
     for w in wins:
-        w["current"] = (w["hwnd"] == cur_hwnd)
-        w["saved"] = (w["hwnd"] == saved_hwnd)
+        w["current"] = w["hwnd"] == cur_hwnd
+        w["saved"] = w["hwnd"] == saved_hwnd
     return {"windows": wins, "current_hwnd": cur_hwnd, "saved_hwnd": saved_hwnd}
 
 
@@ -368,6 +374,7 @@ def api_select_window(payload: dict):
 def api_flash_window(payload: dict):
     """闪烁指定窗口的任务栏按钮（不抢焦点），用于视觉辨认。"""
     from ..uia_sender import flash_window
+
     try:
         hwnd = int((payload or {}).get("hwnd", 0) or 0)
     except (TypeError, ValueError):
@@ -403,13 +410,15 @@ def api_desktop_start():
         return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
     mgr = wx_desktop.manager()
     if not mgr.enabled():
-        return JSONResponse({
-            "ok": False,
-            "error": "隔离桌面模式未开启。请先在配置里把 isolated_desktop 设为 true 并保存",
-        }, 400)
-    if not mgr.start():
         return JSONResponse(
-            {"ok": False, "error": mgr.status().get("error", "启动失败")}, 500)
+            {
+                "ok": False,
+                "error": "隔离桌面模式未开启。请先在配置里把 isolated_desktop 设为 true 并保存",
+            },
+            400,
+        )
+    if not mgr.start():
+        return JSONResponse({"ok": False, "error": mgr.status().get("error", "启动失败")}, 500)
     return {"ok": True, **mgr.status()}
 
 
@@ -437,8 +446,7 @@ def api_desktop_quit_default_wechat():
         return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
     killed = wx_desktop.quit_default_desktop_wechat()
     if not killed:
-        return JSONResponse(
-            {"ok": False, "error": "没找到默认桌面上的微信窗口"}, 404)
+        return JSONResponse({"ok": False, "error": "没找到默认桌面上的微信窗口"}, 404)
     return {"ok": True, "killed": killed}
 
 
@@ -455,14 +463,11 @@ def api_desktop_screenshot():
         return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
     mgr = wx_desktop.manager()
     if not mgr.enabled():
-        return JSONResponse(
-            {"ok": False, "error": "隔离桌面模式未开启"}, 400)
+        return JSONResponse({"ok": False, "error": "隔离桌面模式未开启"}, 400)
     png = mgr.screenshot_png()
     if png is None:
-        return JSONResponse(
-            {"ok": False, "error": "没取到画面：微信窗口不在或尚未出现"}, 404)
-    return Response(content=png, media_type="image/png",
-                    headers={"Cache-Control": "no-store"})
+        return JSONResponse({"ok": False, "error": "没取到画面：微信窗口不在或尚未出现"}, 404)
+    return Response(content=png, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 
 @app.post("/api/desktop/click")
@@ -483,7 +488,8 @@ def api_desktop_click(payload: dict):
         return JSONResponse({"ok": False, "error": "x/y 必须是整数"}, 400)
     if not wx_desktop.manager().click(x, y):
         return JSONResponse(
-            {"ok": False, "error": f"点击未送达（窗口不在，或坐标越界: {x},{y}）"}, 400)
+            {"ok": False, "error": f"点击未送达（窗口不在，或坐标越界: {x},{y}）"}, 400
+        )
     return {"ok": True}
 
 
@@ -495,8 +501,7 @@ def _wizard_or_error():
     try:
         from .. import wizard as wizard_mod
     except ImportError as e:
-        return None, JSONResponse(
-            {"ok": False, "error": f"取钥向导模块不可用: {e}"}, 500)
+        return None, JSONResponse({"ok": False, "error": f"取钥向导模块不可用: {e}"}, 500)
     return wizard_mod.wizard(), None
 
 
@@ -632,15 +637,20 @@ async def ws_endpoint(websocket: WebSocket):
 if os.path.isdir(DIST_DIR):
     app.mount("/", StaticFiles(directory=DIST_DIR, html=True), name="webui")
 else:
+
     @app.get("/")
     def _no_build():
-        return JSONResponse({
-            "ok": False,
-            "error": "前端尚未构建。请在 webui-frontend 目录执行 npm install && npm run build",
-        }, 503)
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "前端尚未构建。请在 webui-frontend 目录执行 npm install && npm run build",
+            },
+            503,
+        )
 
 
 def run(host: str, port: int):
     """由 main.py 调用，在主线程阻塞运行 uvicorn。"""
     import uvicorn
+
     uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False)

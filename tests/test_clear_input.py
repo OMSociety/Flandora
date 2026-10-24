@@ -4,6 +4,7 @@
 发送被中止（保护是对的，但清空能力不够）。这里用假的控件与 user32 覆盖三条路径：
 正常为空、退格无效但 ValuePattern 能置空、两条路都失效。
 """
+
 import os
 import sys
 

@@ -18,15 +18,15 @@
 密钥只在微信**实际解码图片**的那几秒内驻留内存；图片已缓存后不再加载。所以取钥
 必须配合「打开一张没缓存过的图」，详见 tools/imagekey.py。
 """
+
 from __future__ import annotations
 
+import ctypes
 import logging
-import os
 import struct
 from dataclasses import dataclass
 
 from .wx_crypto import aes_cbc_decrypt  # noqa: F401  (保持 AES 走同一套 CNG 实现)
-import ctypes
 
 log = logging.getLogger("wx_image")
 
@@ -70,21 +70,28 @@ def aes_ecb_decrypt(key: bytes, data: bytes) -> bytes:
     h_alg = ctypes.c_void_p()
     h_key = ctypes.c_void_p()
     try:
-        _nt(bcrypt.BCryptOpenAlgorithmProvider(
-            ctypes.byref(h_alg), "AES", None, 0), "open")
+        _nt(bcrypt.BCryptOpenAlgorithmProvider(ctypes.byref(h_alg), "AES", None, 0), "open")
         mode = ctypes.create_unicode_buffer("ChainingModeECB")
-        _nt(bcrypt.BCryptSetProperty(
-            h_alg, "ChainingMode", ctypes.cast(mode, ctypes.c_void_p),
-            ctypes.sizeof(mode), 0), "mode")
+        _nt(
+            bcrypt.BCryptSetProperty(
+                h_alg, "ChainingMode", ctypes.cast(mode, ctypes.c_void_p), ctypes.sizeof(mode), 0
+            ),
+            "mode",
+        )
         kb = ctypes.create_string_buffer(key, len(key))
-        _nt(bcrypt.BCryptGenerateSymmetricKey(
-            h_alg, ctypes.byref(h_key), None, 0, kb, len(key), 0), "key")
+        _nt(
+            bcrypt.BCryptGenerateSymmetricKey(h_alg, ctypes.byref(h_key), None, 0, kb, len(key), 0),
+            "key",
+        )
         out = ctypes.create_string_buffer(len(data))
         done = ctypes.c_ulong(0)
-        _nt(bcrypt.BCryptDecrypt(
-            h_key, data, len(data), None, None, 0, out, len(data),
-            ctypes.byref(done), 0), "decrypt")
-        return out.raw[:done.value]
+        _nt(
+            bcrypt.BCryptDecrypt(
+                h_key, data, len(data), None, None, 0, out, len(data), ctypes.byref(done), 0
+            ),
+            "decrypt",
+        )
+        return out.raw[: done.value]
     finally:
         if h_key:
             bcrypt.BCryptDestroyKey(h_key)
@@ -122,8 +129,7 @@ def decode(raw: bytes, aes_key: bytes, xor_key: int) -> DecodedImage:
     aes_end = 15 + aes_size
     raw_end = len(raw) - xor_size
     if aes_end > raw_end or raw_end > len(raw):
-        raise ImageDecodeError(
-            f"段长度越界：aes={aes_size} xor={xor_size} 文件={len(raw)}")
+        raise ImageDecodeError(f"段长度越界：aes={aes_size} xor={xor_size} 文件={len(raw)}")
 
     plain_aes = aes_ecb_decrypt(aes_key, raw[15:aes_end])
     plain_mid = raw[aes_end:raw_end]

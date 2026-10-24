@@ -4,23 +4,17 @@
 负责桥接的启动、停止、主循环重连逻辑，以及命令行入口。
 """
 
-import json
 import logging
 import os
 import sys
 import threading
 import time
 
-
-from . import state
-from . import config
-from . import update_check
-from . import wechat_account
-from .single_instance import acquire_mutex
-from .senders import create_sender
-from .ob_server import _run_ob_server
+from . import __version__, config, state, update_check, wechat_account
 from .bridge_core import Flandora
-from . import __version__
+from .ob_server import _run_ob_server
+from .senders import create_sender
+from .single_instance import acquire_mutex
 
 log = logging.getLogger("ob11-bridge")
 
@@ -48,12 +42,12 @@ def _start_bridge():
         # 隔离桌面模式下微信由本程序启动，必须先把它拉起来，否则下面找不到窗口
         try:
             from . import wx_desktop
+
             mgr = wx_desktop.manager()
             if mgr.enabled():
                 log.info("[Web] 隔离桌面模式：正在其上启动微信")
                 if not mgr.start():
-                    log.error("[Web] 隔离桌面启动失败：%s",
-                              mgr.status().get("error", ""))
+                    log.error("[Web] 隔离桌面启动失败：%s", mgr.status().get("error", ""))
         except Exception as exc:  # noqa: BLE001
             log.error(f"隔离桌面启动异常: {exc}")
         try:
@@ -79,9 +73,8 @@ def _stop_bridge():
         try:
             if _loop and _loop.is_running():
                 import asyncio
-                asyncio.run_coroutine_threadsafe(
-                    _ws.close(), _loop
-                )
+
+                asyncio.run_coroutine_threadsafe(_ws.close(), _loop)
                 log.info("[Web] WebSocket 连接已关闭")
         except Exception as e:
             log.warning(f"[Web] 关闭 WebSocket 异常: {e}")
@@ -97,9 +90,12 @@ def _stop_bridge():
 
 def _bridge_loop():
     import ctypes
+
     ctypes.windll.ole32.CoInitialize(None)
 
-    log.info(f"Bridge | 收件: local | OB11: ws://{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT} | 发送: uia")
+    log.info(
+        f"Bridge | 收件: local | OB11: ws://{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT} | 发送: uia"
+    )
 
     bridge = Flandora(state.sender_instance)
     with state.bridge_lock:
@@ -126,6 +122,7 @@ def _bridge_loop():
 
 def start_web():
     from .webui.app import run as run_webui
+
     log.info(f"WebUI: http://127.0.0.1:{config.WEB_PORT}")
     run_webui("127.0.0.1", config.WEB_PORT)
 
@@ -135,6 +132,7 @@ def _auto_open_webui():
     time.sleep(2)
     try:
         import webbrowser
+
         webbrowser.open(f"http://127.0.0.1:{config.WEB_PORT}")
         log.info("[WebUI] 已自动打开浏览器")
     except Exception as e:
@@ -178,8 +176,7 @@ def start_account_watch():
         log.warning(f"[账号] 未能在 {root} 下识别当前登录账号，账号切换兜底不生效")
         return None
     log.info(f"[账号] {wechat_account.describe(root)}")
-    _account_watcher = wechat_account.AccountWatcher(
-        root=root, on_change=_rebuild_for_account)
+    _account_watcher = wechat_account.AccountWatcher(root=root, on_change=_rebuild_for_account)
     _account_watcher.start()
     return _account_watcher
 
@@ -191,7 +188,6 @@ def main() -> int:
     # 从 config 初始化 state 中需要计算的值
     state._self_id_int = state._wxid_demouser10001(config.BOT_WXID or "wechat_bot")
     state._self_name = config.SELF_NAME
-
 
     PID_FILE = os.path.join(config.data_dir(), "flandora.pid")
 
@@ -208,6 +204,7 @@ def main() -> int:
     # WebUI 实时日志转发（尽早挂上，捕获启动日志）
     try:
         from .webui import monitor
+
         monitor.attach_log_relay()
     except Exception:
         pass
@@ -218,7 +215,10 @@ def main() -> int:
         log.info("=" * 50)
         log.info("Bridge 版本: %s", __version__)
         if config.CONFIG_GENERATED:
-            log.info("首次启动：已按默认值生成 %s，请到 WebUI 里把示例值改成你的真实值", config.CONFIG_FILE)
+            log.info(
+                "首次启动：已按默认值生成 %s，请到 WebUI 里把示例值改成你的真实值",
+                config.CONFIG_FILE,
+            )
         # 后台查一次新版，失败静默（见 update_check）
         update_check.check_async()
         start_account_watch()

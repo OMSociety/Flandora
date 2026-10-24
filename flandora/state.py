@@ -26,10 +26,10 @@ bridge_started_at = None  # 桥接启动时间戳（WebUI 计算运行时长用�
 
 # ============ OneBot WebSocket 客户端管理 ============
 
-_ob_ws = None          # WebSocket 连接实例（兼容旧引用）
-_ob_ws_loop = None     # 事件循环
+_ob_ws = None  # WebSocket 连接实例（兼容旧引用）
+_ob_ws_loop = None  # 事件循环
 _ob_ws_ready = threading.Event()
-_self_id_int = 0       # 启动时从 config 初始化
+_self_id_int = 0  # 启动时从 config 初始化
 _self_name = "wechat-bot"  # 机器人昵称（给 get_login_info 用）
 
 

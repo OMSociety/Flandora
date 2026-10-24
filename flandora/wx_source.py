@@ -6,23 +6,21 @@
 消息的新旧靠每个会话的 local_id 游标判断。首次启动时把游标推到当前值，
 不重放历史（需要重放时把 wx_backfill_seconds 设成正数）。
 """
+
 import json
 import logging
 import os
 import re
 import time
 
-from . import config
-from . import wechat_account
-from . import wx_crypto
-from . import wx_store
+from . import config, wechat_account, wx_crypto, wx_store
 from .wx_store import WxStoreError
 from .wxkey.store import KeyStore, KeyStoreError
 
 log = logging.getLogger("ob11-bridge")
 
-MAX_BATCH = 200          # 单次轮询每个会话最多取多少条
-PRIME_LIMIT = 500        # 计算回填起点时最多往前看多少条
+MAX_BATCH = 200  # 单次轮询每个会话最多取多少条
+PRIME_LIMIT = 500  # 计算回填起点时最多往前看多少条
 
 
 class WxSourceError(Exception):
@@ -59,8 +57,7 @@ def load_passphrase(path: str = None) -> bytes:
     """
     path = path or config.WX_KEY_FILE or default_key_file()
     if not os.path.isfile(path):
-        raise WxSourceError(
-            f"找不到微信口令文件 {path}。请在 WebUI 的「取钥向导」里走一遍取钥。")
+        raise WxSourceError(f"找不到微信口令文件 {path}。请在 WebUI 的「取钥向导」里走一遍取钥。")
 
     store = KeyStore(path)
     try:
@@ -76,7 +73,8 @@ def load_passphrase(path: str = None) -> bytes:
     if current is not None and stored.wxid and current.wxid != stored.wxid:
         raise WxSourceError(
             f"口令属于账号 {stored.wxid}，当前登录的是 {current.wxid}。"
-            f"请在 WebUI 的「取钥向导」里为新账号重新取一次钥。")
+            f"请在 WebUI 的「取钥向导」里为新账号重新取一次钥。"
+        )
     return stored.passphrase
 
 
@@ -185,8 +183,7 @@ class WxLocalSource:
         if not m:
             return ""
         try:
-            return self.store.extract_image(m.group(1).lower(),
-                                            int(msg.get("local_id") or 0)) or ""
+            return self.store.extract_image(m.group(1).lower(), int(msg.get("local_id") or 0)) or ""
         except Exception as exc:  # noqa: BLE001 - 单张图失败不该影响整条消息
             log.debug("图片还原失败：%s", exc)
             return ""
@@ -224,7 +221,10 @@ def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
     if owner and current_wxid and owner != current_wxid:
         log.warning(
             "图片密钥属于账号 %s，当前登录的是 %s：先按无密钥处理。"
-            "要显示图片，请对新账号执行一次「取图片密钥」。", owner, current_wxid)
+            "要显示图片，请对新账号执行一次「取图片密钥」。",
+            owner,
+            current_wxid,
+        )
         return b"", -1
 
     aes = _parse_aes_key(payload.get("aes_key") or "")
@@ -234,9 +234,11 @@ def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
         xor_int = int(payload.get("xor_key", -1))
     except (TypeError, ValueError):
         xor_int = -1
-    log.info("已加载图片密钥（账号 %s），XOR 密钥 %s",
-             owner or "未知",
-             f"0x{xor_int:02x}" if xor_int >= 0 else "未配置（将自动反推）")
+    log.info(
+        "已加载图片密钥（账号 %s），XOR 密钥 %s",
+        owner or "未知",
+        f"0x{xor_int:02x}" if xor_int >= 0 else "未配置（将自动反推）",
+    )
     return aes, xor_int
 
 
@@ -250,8 +252,7 @@ def _parse_aes_key(raw: str) -> bytes:
             pass
     if len(text) == 16 and text.isascii():
         return text.encode("ascii")
-    log.warning("图片 AES 密钥格式不对：应为 32 位十六进制或 16 个 ASCII 字符，实为 %r",
-                text[:40])
+    log.warning("图片 AES 密钥格式不对：应为 32 位十六进制或 16 个 ASCII 字符，实为 %r", text[:40])
     return b""
 
 
@@ -269,19 +270,29 @@ def build_source(key_file: str = None) -> WxLocalSource:
     work_root = config.WX_WORK_DIR or default_work_dir()
     work_dir = os.path.join(work_root, account.wxid)
 
-    store = wx_store.WxStore(account.data_dir, passphrase, work_dir, my_wxid=account.wxid,
-                             image_key=image_key, image_xor_key=image_xor)
+    store = wx_store.WxStore(
+        account.data_dir,
+        passphrase,
+        work_dir,
+        my_wxid=account.wxid,
+        image_key=image_key,
+        image_xor_key=image_xor,
+    )
     try:
         store.refresh()
     except wx_crypto.WrongKey:
         raise WxSourceError(
-            f"口令与账号 {account.wxid} 对不上。切换过微信账号后需要重新取一次钥") from None
+            f"口令与账号 {account.wxid} 对不上。切换过微信账号后需要重新取一次钥"
+        ) from None
 
-    src = WxLocalSource(store, backfill_seconds=config.WX_BACKFILL_SECONDS,
-                        poll_seconds=config.WX_POLL_SECONDS)
+    src = WxLocalSource(
+        store, backfill_seconds=config.WX_BACKFILL_SECONDS, poll_seconds=config.WX_POLL_SECONDS
+    )
     step = ", ".join(sorted(store._decrypted))
-    log.info(f"本地库收件：账号 {account.wxid}，已解密 {step}，"
-             f"图片{'可用' if store.image_ready() else '不可用（缺密钥）'}")
+    log.info(
+        f"本地库收件：账号 {account.wxid}，已解密 {step}，"
+        f"图片{'可用' if store.image_ready() else '不可用（缺密钥）'}"
+    )
     return src
 
 
@@ -300,5 +311,6 @@ def _selftest(argv):
 
 if __name__ == "__main__":
     import sys
+
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     sys.exit(_selftest(sys.argv))

@@ -65,9 +65,9 @@ class Account:
     """一个登录过的微信账号。"""
 
     wxid: str
-    login_dir: str          # all_users\login\<wxid>
-    data_dir: str           # xwechat_files\<wxid>_<后缀>，找不到时为空串
-    key_info_mtime: float   # 登录标记的最新写入时间
+    login_dir: str  # all_users\login\<wxid>
+    data_dir: str  # xwechat_files\<wxid>_<后缀>，找不到时为空串
+    key_info_mtime: float  # 登录标记的最新写入时间
 
 
 def _newest_mtime(path: str) -> float:
@@ -116,12 +116,14 @@ def list_accounts(root: Optional[str] = None) -> List[Account]:
             continue
         if not os.path.isfile(os.path.join(login_dir, KEY_INFO)):
             continue
-        accounts.append(Account(
-            wxid=name,
-            login_dir=login_dir,
-            data_dir=_data_dir_for(root, name),
-            key_info_mtime=_newest_mtime(os.path.join(login_dir, KEY_INFO)),
-        ))
+        accounts.append(
+            Account(
+                wxid=name,
+                login_dir=login_dir,
+                data_dir=_data_dir_for(root, name),
+                key_info_mtime=_newest_mtime(os.path.join(login_dir, KEY_INFO)),
+            )
+        )
     accounts.sort(key=lambda a: a.key_info_mtime, reverse=True)
     return accounts
 
@@ -160,11 +162,13 @@ class AccountWatcher(threading.Thread):
     线程退出——切换兜底本身不能成为新的故障点。
     """
 
-    def __init__(self,
-                 root: Optional[str] = None,
-                 on_change: Optional[Callable[[Optional[Account], Account], None]] = None,
-                 interval: float = 5.0,
-                 settle: float = SETTLE_SECONDS):
+    def __init__(
+        self,
+        root: Optional[str] = None,
+        on_change: Optional[Callable[[Optional[Account], Account], None]] = None,
+        interval: float = 5.0,
+        settle: float = SETTLE_SECONDS,
+    ):
         super().__init__(daemon=True, name="wx-account-watch")
         self.root = root or default_root()
         self.on_change = on_change
@@ -173,7 +177,7 @@ class AccountWatcher(threading.Thread):
         self._stop = threading.Event()
         self._lock = threading.Lock()
         self._account = current_account(self.root)
-        self._pending = None      # (wxid, 首次见到的时间)
+        self._pending = None  # (wxid, 首次见到的时间)
 
     @property
     def account(self) -> Optional[Account]:
@@ -206,8 +210,9 @@ class AccountWatcher(threading.Thread):
             self._pending = None
             with self._lock:
                 self._account = seen
-            log.warning(f"[账号] 登录账号变化："
-                        f"{known.wxid if known else '（未识别）'} → {seen.wxid}")
+            log.warning(
+                f"[账号] 登录账号变化：{known.wxid if known else '（未识别）'} → {seen.wxid}"
+            )
             if self.on_change is not None:
                 try:
                     self.on_change(known, seen)

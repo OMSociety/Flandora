@@ -6,6 +6,7 @@ http11.Response、datastructures.Headers），换大版本后必须重跑这里�
 
 覆盖到的实测版本：16.1.1 / 17.3。
 """
+
 import asyncio
 import json
 import logging
@@ -55,15 +56,15 @@ async def _wait_rejected(url: str, timeout: float = 15.0):
             raise AssertionError("不带 token 竟然连上了")
         except wx_exc.InvalidStatus as e:
             return e
-        except OSError as e:          # 端口还没监听
+        except OSError as e:  # 端口还没监听
             last = e
             await asyncio.sleep(0.1)
     raise AssertionError(f"服务端未在 {timeout}s 内就绪: {last!r}")
 
 
 async def _checks(ob_server, config) -> int:
-    from websockets.asyncio.client import connect
     import websockets.exceptions as wx_exc
+    from websockets.asyncio.client import connect
 
     checks = 0
     url = f"ws://127.0.0.1:{config.OB_SERVER_PORT}/"
@@ -80,9 +81,10 @@ async def _checks(ob_server, config) -> int:
         # ob_server 的接口面：起服务的 serve、鉴权时回 401 用的 http11.Response
         # 与 datastructures.Headers、断开分支捕获的 ConnectionClosed。
         from websockets.asyncio.server import serve  # noqa: F401
-        from websockets.http11 import Response  # noqa: F401
         from websockets.datastructures import Headers  # noqa: F401
         from websockets.exceptions import ConnectionClosed  # noqa: F401
+        from websockets.http11 import Response  # noqa: F401
+
         print("  ok   ob_server 用到的 websockets 符号齐备")
         checks += 1
 
@@ -162,16 +164,17 @@ async def _checks(ob_server, config) -> int:
 def main() -> int:
     logging.getLogger().setLevel(logging.CRITICAL)
     d = tempfile.mkdtemp(prefix="wwb-ob-")
-    shutil.copy(os.path.join(PKG, "config.example.json"),
-                os.path.join(d, "config.json"))
+    shutil.copy(os.path.join(PKG, "config.example.json"), os.path.join(d, "config.json"))
     old = os.getcwd()
     os.chdir(d)
     try:
         from flandora import config
+
         config.OB_SERVER_HOST = "127.0.0.1"
         config.OB_SERVER_PORT = _free_port()
         config.OB_SERVER_TOKEN = TOKEN
         from flandora import ob_server
+
         checks = asyncio.run(_checks(ob_server, config))
     finally:
         os.chdir(old)

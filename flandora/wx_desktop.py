@@ -27,6 +27,7 @@ Desktop 上，它升到前台只影响那个桌面，用户所在的 Default 桌
     d.click(hwnd, x, y)            # 投鼠标消息（客户区坐标）
     d.close()                      # 清理
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -53,31 +54,50 @@ _gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
 
 class _STARTUPINFOW(ctypes.Structure):
     _fields_ = [
-        ("cb", wintypes.DWORD), ("lpReserved", wintypes.LPWSTR),
-        ("lpDesktop", wintypes.LPWSTR), ("lpTitle", wintypes.LPWSTR),
-        ("dwX", wintypes.DWORD), ("dwY", wintypes.DWORD),
-        ("dwXSize", wintypes.DWORD), ("dwYSize", wintypes.DWORD),
-        ("dwXCountChars", wintypes.DWORD), ("dwYCountChars", wintypes.DWORD),
-        ("dwFillAttribute", wintypes.DWORD), ("dwFlags", wintypes.DWORD),
-        ("wShowWindow", wintypes.WORD), ("cbReserved2", wintypes.WORD),
+        ("cb", wintypes.DWORD),
+        ("lpReserved", wintypes.LPWSTR),
+        ("lpDesktop", wintypes.LPWSTR),
+        ("lpTitle", wintypes.LPWSTR),
+        ("dwX", wintypes.DWORD),
+        ("dwY", wintypes.DWORD),
+        ("dwXSize", wintypes.DWORD),
+        ("dwYSize", wintypes.DWORD),
+        ("dwXCountChars", wintypes.DWORD),
+        ("dwYCountChars", wintypes.DWORD),
+        ("dwFillAttribute", wintypes.DWORD),
+        ("dwFlags", wintypes.DWORD),
+        ("wShowWindow", wintypes.WORD),
+        ("cbReserved2", wintypes.WORD),
         ("lpReserved2", ctypes.POINTER(ctypes.c_byte)),
-        ("hStdInput", wintypes.HANDLE), ("hStdOutput", wintypes.HANDLE),
+        ("hStdInput", wintypes.HANDLE),
+        ("hStdOutput", wintypes.HANDLE),
         ("hStdError", wintypes.HANDLE),
     ]
 
 
 class _PROCESS_INFORMATION(ctypes.Structure):
-    _fields_ = [("hProcess", wintypes.HANDLE), ("hThread", wintypes.HANDLE),
-                ("dwProcessId", wintypes.DWORD), ("dwThreadId", wintypes.DWORD)]
+    _fields_ = [
+        ("hProcess", wintypes.HANDLE),
+        ("hThread", wintypes.HANDLE),
+        ("dwProcessId", wintypes.DWORD),
+        ("dwThreadId", wintypes.DWORD),
+    ]
 
 
 class _BITMAPINFOHEADER(ctypes.Structure):
-    _fields_ = [("biSize", wintypes.DWORD), ("biWidth", wintypes.LONG),
-                ("biHeight", wintypes.LONG), ("biPlanes", wintypes.WORD),
-                ("biBitCount", wintypes.WORD), ("biCompression", wintypes.DWORD),
-                ("biSizeImage", wintypes.DWORD), ("biXPelsPerMeter", wintypes.LONG),
-                ("biYPelsPerMeter", wintypes.LONG), ("biClrUsed", wintypes.DWORD),
-                ("biClrImportant", wintypes.DWORD)]
+    _fields_ = [
+        ("biSize", wintypes.DWORD),
+        ("biWidth", wintypes.LONG),
+        ("biHeight", wintypes.LONG),
+        ("biPlanes", wintypes.WORD),
+        ("biBitCount", wintypes.WORD),
+        ("biCompression", wintypes.DWORD),
+        ("biSizeImage", wintypes.DWORD),
+        ("biXPelsPerMeter", wintypes.LONG),
+        ("biYPelsPerMeter", wintypes.LONG),
+        ("biClrUsed", wintypes.DWORD),
+        ("biClrImportant", wintypes.DWORD),
+    ]
 
 
 class _BITMAPINFO(ctypes.Structure):
@@ -95,8 +115,11 @@ class WeChatAlreadyRunning(DesktopError):
 def weixin_pids() -> list[int]:
     out = subprocess.run(
         ["tasklist", "/FI", "IMAGENAME eq Weixin.exe", "/FO", "CSV", "/NH"],
-        capture_output=True, text=True, errors="ignore",
-        creationflags=0x08000000).stdout
+        capture_output=True,
+        text=True,
+        errors="ignore",
+        creationflags=0x08000000,
+    ).stdout
     pids = []
     for line in out.splitlines():
         parts = line.strip().strip('"').split('","')
@@ -113,6 +136,7 @@ def default_desktop_has_wechat() -> bool:
     """
     try:
         from .uia_sender import enum_wechat_windows
+
         return bool(enum_wechat_windows())
     except Exception as exc:  # noqa: BLE001
         log.warning("检查默认桌面上的微信窗口失败：%s", exc)
@@ -127,6 +151,7 @@ def quit_default_desktop_wechat() -> int:
     """
     try:
         from .uia_sender import enum_wechat_windows
+
         pids = [w["pid"] for w in enum_wechat_windows()]
     except Exception as exc:  # noqa: BLE001
         log.warning("查找默认桌面上的微信失败：%s", exc)
@@ -134,8 +159,11 @@ def quit_default_desktop_wechat() -> int:
     killed = 0
     for pid in pids:
         try:
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                           capture_output=True, creationflags=0x08000000)
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"],
+                capture_output=True,
+                creationflags=0x08000000,
+            )
             killed += 1
             log.info("已按用户要求结束默认桌面上的微信（pid=%d）", pid)
         except Exception as exc:  # noqa: BLE001
@@ -160,8 +188,7 @@ class IsolatedDesktop:
             return
         h = _user32.CreateDesktopW(self.name, None, None, 0, DESKTOP_ALL_ACCESS, None)
         if not h:
-            raise DesktopError(
-                f"创建隔离桌面失败（错误码 {ctypes.get_last_error()}）")
+            raise DesktopError(f"创建隔离桌面失败（错误码 {ctypes.get_last_error()}）")
         self.handle = h
         log.info("已创建隔离桌面 %s", self.name)
 
@@ -186,18 +213,19 @@ class IsolatedDesktop:
         if default_desktop_has_wechat():
             raise WeChatAlreadyRunning(
                 "默认桌面上已有微信在运行。隔离模式要求由本程序启动微信，"
-                "可以在「微信画面」页点「结束桌面上的微信」把它关掉后重试。")
+                "可以在「微信画面」页点「结束桌面上的微信」把它关掉后重试。"
+            )
         si = _STARTUPINFOW()
         si.cb = ctypes.sizeof(si)
         si.lpDesktop = f"WinSta0\\{self.name}"
         pi = _PROCESS_INFORMATION()
         ok = _kernel32.CreateProcessW(
-            exe, None, None, None, False, 0, None, None,
-            ctypes.byref(si), ctypes.byref(pi))
+            exe, None, None, None, False, 0, None, None, ctypes.byref(si), ctypes.byref(pi)
+        )
         if not ok:
             raise DesktopError(
-                f"在隔离桌面上启动 {os.path.basename(exe)} 失败"
-                f"（错误码 {ctypes.get_last_error()}）")
+                f"在隔离桌面上启动 {os.path.basename(exe)} 失败（错误码 {ctypes.get_last_error()}）"
+            )
         self._proc = pi
         self.pid = pi.dwProcessId
         self._started = True
@@ -217,8 +245,11 @@ class IsolatedDesktop:
             pids = self._pids()
         for pid in pids:
             try:
-                subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
-                               capture_output=True, creationflags=0x08000000)
+                subprocess.run(
+                    ["taskkill", "/PID", str(pid), "/T", "/F"],
+                    capture_output=True,
+                    creationflags=0x08000000,
+                )
             except Exception as exc:  # noqa: BLE001
                 log.warning("结束隔离实例失败：%s", exc)
         for h in (self._proc.hThread, self._proc.hProcess):
@@ -260,6 +291,7 @@ class IsolatedDesktop:
             return set()
         try:
             from .uia_sender import enum_wechat_windows
+
             return {w["pid"] for w in enum_wechat_windows(self.name)}
         except Exception as exc:  # noqa: BLE001
             log.warning("枚举 %s 上的微信窗口失败：%s", self.name, exc)
@@ -283,11 +315,17 @@ class IsolatedDesktop:
                 _user32.GetWindowTextW(hwnd, txt, 160)
                 r = wintypes.RECT()
                 _user32.GetWindowRect(hwnd, ctypes.byref(r))
-                found.append({
-                    "hwnd": hwnd, "class": cls.value, "title": txt.value,
-                    "width": r.right - r.left, "height": r.bottom - r.top,
-                    "left": r.left, "top": r.top,
-                })
+                found.append(
+                    {
+                        "hwnd": hwnd,
+                        "class": cls.value,
+                        "title": txt.value,
+                        "width": r.right - r.left,
+                        "height": r.bottom - r.top,
+                        "left": r.left,
+                        "top": r.top,
+                    }
+                )
             return True
 
         _user32.EnumDesktopWindows(self.handle, cb, 0)
@@ -297,9 +335,11 @@ class IsolatedDesktop:
         """等到主窗口出现（登录页也算），返回窗口信息。"""
         deadline = time.time() + timeout
         while time.time() < deadline:
-            wins = [w for w in self.windows()
-                    if w["class"] == "Qt51514QWindowIcon"
-                    and w["width"] > 50 and w["height"] > 50]
+            wins = [
+                w
+                for w in self.windows()
+                if w["class"] == "Qt51514QWindowIcon" and w["width"] > 50 and w["height"] > 50
+            ]
             if wins:
                 wins.sort(key=lambda w: -(w["width"] * w["height"]))
                 return wins[0]
@@ -323,7 +363,7 @@ class IsolatedDesktop:
         bi = _BITMAPINFO()
         bi.bmiHeader.biSize = ctypes.sizeof(_BITMAPINFOHEADER)
         bi.bmiHeader.biWidth = width
-        bi.bmiHeader.biHeight = -height      # 负数 = 自上而下
+        bi.bmiHeader.biHeight = -height  # 负数 = 自上而下
         bi.bmiHeader.biPlanes = 1
         bi.bmiHeader.biBitCount = 32
         bi.bmiHeader.biCompression = 0
@@ -351,6 +391,7 @@ class IsolatedDesktop:
             log.warning("没有 PIL，无法编码 PNG；退回原始像素")
             return raw
         import io
+
         img = Image.frombuffer("RGBA", (width, height), raw, "raw", "BGRA", 0, 1)
         out = io.BytesIO()
         img.convert("RGB").save(out, format="PNG")
@@ -396,8 +437,7 @@ _PROGRAM_DIRS = ("Program Files", "Program Files (x86)")
 
 def _drive_roots() -> list:
     """所有存在的盘符根，C 盘排最前（绝大多数安装在这里）。"""
-    found = [f"{ch}:\\" for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-             if os.path.exists(f"{ch}:\\")]
+    found = [f"{ch}:\\" for ch in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.path.exists(f"{ch}:\\")]
     return sorted(found, key=lambda r: (r[0] != "C", r))
 
 
@@ -500,6 +540,7 @@ class DesktopManager:
     def enabled(self) -> bool:
         try:
             from . import config
+
             return bool(getattr(config, "ISOLATED_DESKTOP", False))
         except Exception:
             return False
@@ -507,6 +548,7 @@ class DesktopManager:
     def desktop_name(self) -> str:
         try:
             from . import config
+
             return getattr(config, "ISOLATED_DESKTOP_NAME", "WeBotSandbox")
         except Exception:
             return "WeBotSandbox"
@@ -524,12 +566,15 @@ class DesktopManager:
                 if desk is None:
                     try:
                         from . import config
+
                         exe = find_weixin_exe(getattr(config, "WECHAT_EXE", ""))
                     except Exception:
                         exe = find_weixin_exe()
                     if not exe:
-                        self._error = ("找不到微信可执行文件。请在 config.json 里把 "
-                                       "wechat_exe 填成 Weixin.exe 的完整路径。")
+                        self._error = (
+                            "找不到微信可执行文件。请在 config.json 里把 "
+                            "wechat_exe 填成 Weixin.exe 的完整路径。"
+                        )
                         log.error(self._error)
                         return False
                     self._exe = exe
@@ -570,8 +615,7 @@ class DesktopManager:
             return None
         self._desk = desk
         self._error = ""
-        log.info("已接管隔离桌面上正在运行的微信（hwnd=%d），无需重新登录",
-                 win["hwnd"])
+        log.info("已接管隔离桌面上正在运行的微信（hwnd=%d），无需重新登录", win["hwnd"])
         return desk
 
     def stop(self) -> None:
@@ -605,13 +649,15 @@ class DesktopManager:
             return None
         if not wins:
             return None
-        best = max(wins, key=lambda w: (w["rect"][2] - w["rect"][0]) *
-                  (w["rect"][3] - w["rect"][1]))
+        best = max(
+            wins, key=lambda w: (w["rect"][2] - w["rect"][0]) * (w["rect"][3] - w["rect"][1])
+        )
         return {
             "hwnd": best["hwnd"],
             "cls": best["class_name"],
             "title": best["title"],
-            "left": best["rect"][0], "top": best["rect"][1],
+            "left": best["rect"][0],
+            "top": best["rect"][1],
             "width": best["rect"][2] - best["rect"][0],
             "height": best["rect"][3] - best["rect"][1],
         }
@@ -632,6 +678,7 @@ class DesktopManager:
         }
         try:
             from . import config
+
             found = cached_weixin_exe(getattr(config, "WECHAT_EXE", ""))
             info["exe_found"] = bool(found)
             info["exe"] = info["exe"] or found
@@ -639,6 +686,7 @@ class DesktopManager:
             pass
         try:
             from . import config
+
             if getattr(config, "ISOLATED_DESKTOP", False):
                 info["running"] = bool(desk and desk.is_open)
             else:
@@ -695,6 +743,7 @@ def _current_wxid() -> str:
     """当前登录账号的 wxid，取不到返回空串。"""
     try:
         from .wechat_account import current_account
+
         acc = current_account()
         return getattr(acc, "wxid", "") or ""
     except Exception:

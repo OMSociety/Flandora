@@ -11,6 +11,7 @@ XOR 密钥不用扫：它可以从本账号已有图片的尾部反推（末字�
 这个模块刻意不导入 config：独立的 tools/imagekey.py 要在用户生成配置之前也能跑，
 而 config 在 import 期就会查找 config.json，找不到直接抛异常。
 """
+
 from __future__ import annotations
 
 import ctypes
@@ -26,8 +27,7 @@ import time
 from ctypes import wintypes
 from typing import Callable, Optional
 
-from . import wechat_account
-from . import wx_image
+from . import wechat_account, wx_image
 
 log = logging.getLogger("ob11-bridge")
 
@@ -57,13 +57,15 @@ class NoSample(ImageKeyError):
 
 
 class MBI(ctypes.Structure):
-    _fields_ = [("BaseAddress", ctypes.c_void_p),
-                ("AllocationBase", ctypes.c_void_p),
-                ("AllocationProtect", wintypes.DWORD),
-                ("RegionSize", ctypes.c_size_t),
-                ("State", wintypes.DWORD),
-                ("Protect", wintypes.DWORD),
-                ("Type", wintypes.DWORD)]
+    _fields_ = [
+        ("BaseAddress", ctypes.c_void_p),
+        ("AllocationBase", ctypes.c_void_p),
+        ("AllocationProtect", wintypes.DWORD),
+        ("RegionSize", ctypes.c_size_t),
+        ("State", wintypes.DWORD),
+        ("Protect", wintypes.DWORD),
+        ("Type", wintypes.DWORD),
+    ]
 
 
 def default_key_file() -> str:
@@ -87,8 +89,11 @@ def current_wxid(root: Optional[str] = None) -> str:
 def weixin_pids() -> list[int]:
     out = subprocess.run(
         ["tasklist", "/FI", "IMAGENAME eq Weixin.exe", "/FO", "CSV", "/NH"],
-        capture_output=True, text=True, errors="ignore",
-        creationflags=0x08000000).stdout
+        capture_output=True,
+        text=True,
+        errors="ignore",
+        creationflags=0x08000000,
+    ).stdout
     pids = []
     for line in out.splitlines():
         parts = line.strip().strip('"').split('","')
@@ -125,17 +130,21 @@ def rw_regions(handle) -> list[tuple[int, int]]:
     addr = 0
     while addr < 0x7FFFFFFFFFFF:
         mbi = MBI()
-        if not k32.VirtualQueryEx(handle, ctypes.c_void_p(addr), ctypes.byref(mbi),
-                                  ctypes.sizeof(mbi)):
+        if not k32.VirtualQueryEx(
+            handle, ctypes.c_void_p(addr), ctypes.byref(mbi), ctypes.sizeof(mbi)
+        ):
             break
         nxt = addr + mbi.RegionSize
         if nxt <= addr:
             break
         addr = nxt
-        if (mbi.State == MEM_COMMIT and mbi.Protect != PAGE_NOACCESS
-                and not (mbi.Protect & PAGE_GUARD)
-                and (mbi.Protect & RW_FLAGS)
-                and mbi.RegionSize <= 64 * 1024 * 1024):
+        if (
+            mbi.State == MEM_COMMIT
+            and mbi.Protect != PAGE_NOACCESS
+            and not (mbi.Protect & PAGE_GUARD)
+            and (mbi.Protect & RW_FLAGS)
+            and mbi.RegionSize <= 64 * 1024 * 1024
+        ):
             out.append((mbi.BaseAddress, mbi.RegionSize))
     return out
 
@@ -147,10 +156,9 @@ def scan(handle, regions, block: bytes) -> Optional[bytes]:
     for base, size in regions:
         buf = ctypes.create_string_buffer(size)
         got = ctypes.c_size_t(0)
-        if not k32.ReadProcessMemory(handle, ctypes.c_void_p(base), buf, size,
-                                     ctypes.byref(got)):
+        if not k32.ReadProcessMemory(handle, ctypes.c_void_p(base), buf, size, ctypes.byref(got)):
             continue
-        data = buf.raw[:got.value]
+        data = buf.raw[: got.value]
         for m in RE_KEY32.finditer(data):
             s = m.group()
             for cand in (s[:16], s):
@@ -210,10 +218,14 @@ def close_handles(handles) -> None:
             pass
 
 
-def scan_for_key(*, seconds: float = 600.0, sample_from: Optional[str] = None,
-                 stop: Optional[threading.Event] = None,
-                 on_status: Optional[Callable[[str], None]] = None,
-                 on_round: Optional[Callable[[int], None]] = None) -> bytes:
+def scan_for_key(
+    *,
+    seconds: float = 600.0,
+    sample_from: Optional[str] = None,
+    stop: Optional[threading.Event] = None,
+    on_status: Optional[Callable[[str], None]] = None,
+    on_round: Optional[Callable[[int], None]] = None,
+) -> bytes:
     """一直扫到找到密钥、超时或被 stop 叫停。阻塞，调用方自己放进线程。"""
     say = on_status or (lambda _t: None)
     attach = sample_from or attach_dir()
@@ -244,19 +256,26 @@ def scan_for_key(*, seconds: float = 600.0, sample_from: Optional[str] = None,
     if found is None:
         raise ImageKeyError(
             f"扫了 {rounds} 轮仍未找到。多半是这张图已经缓存过——"
-            "换一个没打开过的会话、或双击一张没看过的图片再试。")
+            "换一个没打开过的会话、或双击一张没看过的图片再试。"
+        )
     return found
 
 
-def grab_key(*, out_path: Optional[str] = None, seconds: float = 600.0,
-             sample_from: Optional[str] = None, root: Optional[str] = None,
-             stop: Optional[threading.Event] = None,
-             on_status: Optional[Callable[[str], None]] = None,
-             on_round: Optional[Callable[[int], None]] = None) -> dict:
+def grab_key(
+    *,
+    out_path: Optional[str] = None,
+    seconds: float = 600.0,
+    sample_from: Optional[str] = None,
+    root: Optional[str] = None,
+    stop: Optional[threading.Event] = None,
+    on_status: Optional[Callable[[str], None]] = None,
+    on_round: Optional[Callable[[int], None]] = None,
+) -> dict:
     """扫出 AES 密钥、反推 XOR 密钥、写入文件，返回写入的内容。"""
     attach = sample_from or attach_dir(root)
-    aes_key = scan_for_key(seconds=seconds, sample_from=attach, stop=stop,
-                           on_status=on_status, on_round=on_round)
+    aes_key = scan_for_key(
+        seconds=seconds, sample_from=attach, stop=stop, on_status=on_status, on_round=on_round
+    )
     xor_key = sniff_xor(attach)
     wxid = current_wxid(root)
     path = out_path or default_key_file()

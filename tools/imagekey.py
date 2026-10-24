@@ -14,6 +14,7 @@
     0  取到并已保存
     2  没取到（图已缓存、微信没运行、或本地没有样本）
 """
+
 from __future__ import annotations
 
 import argparse
@@ -32,11 +33,10 @@ EXIT_NOT_FOUND = 2
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="从微信进程取图片解码密钥")
-    parser.add_argument("--out", default=None,
-                        help="输出目录，密钥写到该目录下的 wx_image_key.json；"
-                             "默认 data/")
-    parser.add_argument("--seconds", type=float, default=600.0,
-                        help="持续扫描的秒数上限")
+    parser.add_argument(
+        "--out", default=None, help="输出目录，密钥写到该目录下的 wx_image_key.json；默认 data/"
+    )
+    parser.add_argument("--seconds", type=float, default=600.0, help="持续扫描的秒数上限")
     args = parser.parse_args(argv)
 
     out_dir = args.out or os.path.dirname(wx_image_key.default_key_file())
@@ -49,9 +49,11 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         payload = wx_image_key.grab_key(
-            out_path=path, seconds=args.seconds,
+            out_path=path,
+            seconds=args.seconds,
             on_status=lambda text: print(f"  {text}", flush=True),
-            on_round=lambda n: print(f"  第 {n} 轮 …", end="\r", flush=True))
+            on_round=lambda n: print(f"  第 {n} 轮 …", end="\r", flush=True),
+        )
     except KeyboardInterrupt:
         print("\n已中断")
         return EXIT_NOT_FOUND

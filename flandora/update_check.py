@@ -7,6 +7,7 @@
 任何一步出问题（连不上、超时、限流、响应不是 XML、订阅里没有条目）都按
 「查不到」处理，只写一条 debug 日志——版本提示不能影响程序启动。
 """
+
 import logging
 import threading
 import urllib.error
@@ -83,10 +84,13 @@ def _latest_tag(body: bytes):
 
 def check(timeout: float = TIMEOUT):
     """查一次。有新版本返回 (版本号, 页面链接)，否则 None。不抛异常。"""
-    request = urllib.request.Request(FEED_API, headers={
-        "User-Agent": f"Flandora/{__version__}",
-        "Accept": "application/atom+xml",
-    })
+    request = urllib.request.Request(
+        FEED_API,
+        headers={
+            "User-Agent": f"Flandora/{__version__}",
+            "Accept": "application/atom+xml",
+        },
+    )
     try:
         with _opener(request, timeout=timeout) as response:
             body = response.read()
@@ -112,12 +116,14 @@ def check(timeout: float = TIMEOUT):
 
 def check_async(timeout: float = TIMEOUT) -> threading.Thread:
     """后台查一次，结果写进 state.update_available。返回该线程便于测试等待。"""
+
     def worker():
         found = check(timeout=timeout)
         if found:
             latest, url = found
             try:
                 from . import state
+
                 state.update_available = {
                     "latest": latest,
                     "current": __version__,

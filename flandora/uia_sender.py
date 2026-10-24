@@ -62,6 +62,7 @@ KEYUP_LPARAM = 0xC0000001
 
 class BaseSender:
     """消息发送器基类"""
+
     def send_text(self, contact: str, text: str) -> bool:
         raise NotImplementedError
 
@@ -99,9 +100,15 @@ def _process_start_time(pid: int) -> float:
     if not h:
         return 0
     try:
-        ct, et, kt, ut = wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME()
-        if kernel32.GetProcessTimes(h, ctypes.byref(ct), ctypes.byref(et),
-                                    ctypes.byref(kt), ctypes.byref(ut)):
+        ct, et, kt, ut = (
+            wintypes.FILETIME(),
+            wintypes.FILETIME(),
+            wintypes.FILETIME(),
+            wintypes.FILETIME(),
+        )
+        if kernel32.GetProcessTimes(
+            h, ctypes.byref(ct), ctypes.byref(et), ctypes.byref(kt), ctypes.byref(ut)
+        ):
             # FILETIME: 100ns 间隔，自 1601-01-01
             return ((ct.dwHighDateTime << 32) | ct.dwLowDateTime) / 1e7 - 11644473600
     except Exception:
@@ -145,21 +152,22 @@ def enum_wechat_windows(desktop_name: str = "") -> list[dict]:
             user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
             proc = _process_name(pid.value)
             # 过滤：Qt 窗口类名或微信进程名，避免误收浏览器标签页
-            if not (("QWindowIcon" in class_name) or
-                    proc.lower() in ("wechat.exe", "weixin.exe")):
+            if not (("QWindowIcon" in class_name) or proc.lower() in ("wechat.exe", "weixin.exe")):
                 return True
             rect = wintypes.RECT()
             user32.GetWindowRect(hwnd, ctypes.byref(rect))
-            results.append({
-                "hwnd": hwnd,
-                "pid": pid.value,
-                "title": title,
-                "class_name": class_name,
-                "process": proc,
-                "start_time": _process_start_time(pid.value),
-                "iconic": bool(user32.IsIconic(hwnd)),
-                "rect": [rect.left, rect.top, rect.right, rect.bottom],
-            })
+            results.append(
+                {
+                    "hwnd": hwnd,
+                    "pid": pid.value,
+                    "title": title,
+                    "class_name": class_name,
+                    "process": proc,
+                    "start_time": _process_start_time(pid.value),
+                    "iconic": bool(user32.IsIconic(hwnd)),
+                    "rect": [rect.left, rect.top, rect.right, rect.bottom],
+                }
+            )
         except Exception:
             pass
         return True
@@ -183,12 +191,17 @@ def flash_window(hwnd: int, count: int = 5) -> bool:
         user32 = ctypes.windll.user32
 
         class FLASHWINFO(ctypes.Structure):
-            _fields_ = [("cbSize", wintypes.UINT), ("hwnd", wintypes.HWND),
-                        ("dwFlags", wintypes.DWORD), ("uCount", wintypes.UINT),
-                        ("dwTimeout", wintypes.DWORD)]
+            _fields_ = [
+                ("cbSize", wintypes.UINT),
+                ("hwnd", wintypes.HWND),
+                ("dwFlags", wintypes.DWORD),
+                ("uCount", wintypes.UINT),
+                ("dwTimeout", wintypes.DWORD),
+            ]
 
-        info = FLASHWINFO(ctypes.sizeof(FLASHWINFO), hwnd,
-                          0x0003 | 0x000C, count, 0)  # FLASHW_ALL | FLASHW_TIMERNOFG
+        info = FLASHWINFO(
+            ctypes.sizeof(FLASHWINFO), hwnd, 0x0003 | 0x000C, count, 0
+        )  # FLASHW_ALL | FLASHW_TIMERNOFG
         return bool(user32.FlashWindowEx(ctypes.byref(info)))
     except Exception:
         return False
@@ -260,9 +273,12 @@ class UiaSender(BaseSender):
             cls._user32 = ctypes.windll.user32
         return cls._user32
 
-    def __init__(self, search_enabled: bool = True,
-                 allow_foreground_steal: bool = False,
-                 isolated_desktop: str = ""):
+    def __init__(
+        self,
+        search_enabled: bool = True,
+        allow_foreground_steal: bool = False,
+        isolated_desktop: str = "",
+    ):
         self._lock = threading.Lock()
         self._send_lock = threading.Lock()
         self._auto = None
@@ -301,6 +317,7 @@ class UiaSender(BaseSender):
         """初始化并定位微信主窗口句柄"""
         try:
             import uiautomation as auto
+
             self._auto = auto
         except ImportError:
             log.error("请先安装 uiautomation: pip install uiautomation")
@@ -321,9 +338,7 @@ class UiaSender(BaseSender):
         PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
         kernel32 = ctypes.windll.kernel32
         try:
-            handle = kernel32.OpenProcess(
-                PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid)
-            )
+            handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, int(pid))
         except Exception:
             return ""
         if not handle:
@@ -426,12 +441,10 @@ class UiaSender(BaseSender):
         auto = self._auto
         cands = enum_wechat_windows(self.isolated_desktop)
         if not cands:
-            log.error("隔离桌面 %s 上没有找到微信窗口，微信是否已启动？",
-                      self.isolated_desktop)
+            log.error("隔离桌面 %s 上没有找到微信窗口，微信是否已启动？", self.isolated_desktop)
             return False
         # 主窗口面积最大，优先试
-        cands.sort(key=lambda c: -((c["rect"][2] - c["rect"][0]) *
-                                   (c["rect"][3] - c["rect"][1])))
+        cands.sort(key=lambda c: -((c["rect"][2] - c["rect"][0]) * (c["rect"][3] - c["rect"][1])))
         for info in cands:
             try:
                 w = auto.ControlFromHandle(info["hwnd"])
@@ -442,8 +455,9 @@ class UiaSender(BaseSender):
                     return False
                 self._window = w
                 self._hwnd = info["hwnd"]
-                log.info("已绑定隔离桌面 %s 上的微信窗口 hwnd=%d",
-                         self.isolated_desktop, info["hwnd"])
+                log.info(
+                    "已绑定隔离桌面 %s 上的微信窗口 hwnd=%d", self.isolated_desktop, info["hwnd"]
+                )
                 return True
             except Exception as exc:  # noqa: BLE001
                 log.warning("绑定隔离窗口 hwnd=%s 失败：%s", info["hwnd"], exc)
@@ -851,8 +865,7 @@ class UiaSender(BaseSender):
         target = hwnd or self._hwnd
         if not target:
             return False
-        lp = self._client_lparam((rect.left + rect.right) / 2,
-                                 (rect.top + rect.bottom) / 2, target)
+        lp = self._client_lparam((rect.left + rect.right) / 2, (rect.top + rect.bottom) / 2, target)
         user32.PostMessageW(target, WM_MOUSEMOVE, 0, lp)
         user32.PostMessageW(target, WM_LBUTTONDOWN, 1, lp)
         user32.PostMessageW(target, WM_LBUTTONUP, 0, lp)
@@ -926,8 +939,7 @@ class UiaSender(BaseSender):
             return ""
 
     def _session_cells(self):
-        return [n for _, n in self._walk()
-                if self._class_of(n) == self.SESSION_CELL_CLASS]
+        return [n for _, n in self._walk() if self._class_of(n) == self.SESSION_CELL_CLASS]
 
     def _session_summary(self, contact: str):
         """会话列表里该会话的摘要行，即微信自己渲染的「最后一条消息」。"""
@@ -981,8 +993,10 @@ class UiaSender(BaseSender):
 
         limit = None
         for _, node in nodes:
-            if (self._class_of(node) in self.SEARCH_RESULT_CLASSES
-                    and (node.Name or "") == self.SEARCH_ACTION_HEADER):
+            if (
+                self._class_of(node) in self.SEARCH_RESULT_CLASSES
+                and (node.Name or "") == self.SEARCH_ACTION_HEADER
+            ):
                 try:
                     limit = node.BoundingRectangle.top
                 except Exception:
@@ -1016,8 +1030,9 @@ class UiaSender(BaseSender):
         结果、点了却切不过去」的原因。
         """
         user32 = self._user32_inst()
-        field = (self._find_by_class(self.SEARCH_FIELD_CLASS)
-                 or self._find_by_class("mmui::XValidatorTextEdit"))
+        field = self._find_by_class(self.SEARCH_FIELD_CLASS) or self._find_by_class(
+            "mmui::XValidatorTextEdit"
+        )
         if field is None or not self._post_click(field):
             return False
         time.sleep(0.7)
@@ -1178,9 +1193,7 @@ class UiaSender(BaseSender):
             got = self._input_text()
             if got == text:
                 return True
-            log.warning(
-                f"输入框回读不符（期望 {text[:40]!r}，实得 {got[:40]!r}），清空重打"
-            )
+            log.warning(f"输入框回读不符（期望 {text[:40]!r}，实得 {got[:40]!r}），清空重打")
             self._clear_input()
         return False
 
@@ -1431,7 +1444,8 @@ class UiaSender(BaseSender):
         try:
             proc = subprocess.run(
                 ["powershell", "-NoProfile", "-STA", "-NonInteractive", "-Command", script],
-                capture_output=True, timeout=20,
+                capture_output=True,
+                timeout=20,
                 creationflags=self.CREATE_NO_WINDOW,
             )
         except Exception as e:

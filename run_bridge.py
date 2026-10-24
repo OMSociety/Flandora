@@ -5,6 +5,7 @@
 
     python run_bridge.py
 """
+
 from flandora.main import main
 
 if __name__ == "__main__":

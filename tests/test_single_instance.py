@@ -4,6 +4,7 @@
 跨进程也要判得出来，换成没被占用的名字要判「首次」（对照组），拿不到句柄时
 不得把程序拦死。
 """
+
 import ctypes
 import os
 import subprocess
@@ -20,10 +21,10 @@ from flandora import single_instance  # noqa: E402
 def main() -> int:
     checks = 0
 
-    assert single_instance.SINGLE_INSTANCE_NAME.startswith("Global\\"), \
+    assert single_instance.SINGLE_INSTANCE_NAME.startswith("Global\\"), (
         single_instance.SINGLE_INSTANCE_NAME
-    print("  ok   互斥量名字带 Global\\ 前缀"
-          f"（{single_instance.SINGLE_INSTANCE_NAME}）")
+    )
+    print(f"  ok   互斥量名字带 Global\\ 前缀（{single_instance.SINGLE_INSTANCE_NAME}）")
     checks += 1
 
     # 用随机名字，免得和真正在跑的 bridge 撞上
@@ -56,8 +57,9 @@ def main() -> int:
     ) % (REPO_ROOT, name)
 
     def run_child(src: str) -> str:
-        out = subprocess.run([sys.executable, "-c", src], capture_output=True,
-                             text=True, timeout=60)
+        out = subprocess.run(
+            [sys.executable, "-c", src], capture_output=True, text=True, timeout=60
+        )
         assert out.returncode == 0, out.stderr
         return out.stdout.strip()
 
@@ -66,8 +68,9 @@ def main() -> int:
     checks += 1
 
     # 对照组：换个没人占用的名字，同一个子进程代码应判「首次」
-    assert run_child(code.replace(repr(name), repr(name + "_other"))) == "FIRST", \
+    assert run_child(code.replace(repr(name), repr(name + "_other"))) == "FIRST", (
         "没被占用的名字应判为首次"
+    )
     print("  ok   换成没被占用的名字时判为首次（对照）")
     checks += 1
 

@@ -4,6 +4,7 @@
 群消息直接丢掉。回复策略属于客户端，桥接只负责如实上报，并附上 is_mentioned 标记。
 这两个用例守住这条边界：没 @ 的消息必须进缓冲区（不被丢），@ 的判定必须准确。
 """
+
 import os
 import sys
 
@@ -12,7 +13,6 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from flandora import bridge_core, config  # noqa: E402
-
 
 GROUP_MSG = {
     "sessionId": "50071592949@chatroom",

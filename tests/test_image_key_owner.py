@@ -3,6 +3,7 @@
 场景——用户从账号 A 切到 B，密钥文件仍是 A 的。此时必须按「无密钥」处理，
 而不是拿 A 的密钥去解 B 的图。
 """
+
 import json
 import os
 import sys
@@ -22,6 +23,7 @@ def with_cfg(fn):
     """
     d = tempfile.mkdtemp(prefix="wwb-idx-")
     import shutil
+
     shutil.copy(os.path.join(PKG, "config.example.json"), os.path.join(d, "config.json"))
     old_env = os.environ.get("FLANDORA_DATA_DIR")
     os.environ["FLANDORA_DATA_DIR"] = d
@@ -38,12 +40,16 @@ def main() -> int:
     os.environ.pop("WX_IMAGE_KEY_FILE", None)
 
     def run(d):
-        from flandora import config  # noqa: F401  触发配置加载
-        from flandora import wx_source
+        from flandora import (
+            config,  # noqa: F401  触发配置加载
+            wx_source,
+        )
+
         # 写一份属于账号 other 的密钥
         with open(os.path.join(d, "wx_image_key.json"), "w", encoding="utf-8") as fh:
-            json.dump({"wxid": "wxid_someone_else", "aes_key": "0123456789abcdef",
-                       "xor_key": 135}, fh)
+            json.dump(
+                {"wxid": "wxid_someone_else", "aes_key": "0123456789abcdef", "xor_key": 135}, fh
+            )
         return wx_source
 
     wx_source = with_cfg(run)

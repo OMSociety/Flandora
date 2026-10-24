@@ -80,17 +80,20 @@ class LogRelay(logging.Handler):
 
     def __init__(self):
         super().__init__()
-        self.setFormatter(logging.Formatter(
-            "%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S"))
+        self.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%H:%M:%S")
+        )
 
     def emit(self, record):
         try:
-            bus.publish({
-                "type": "log",
-                "ts": record.created,
-                "level": record.levelname,
-                "text": self.format(record),
-            })
+            bus.publish(
+                {
+                    "type": "log",
+                    "ts": record.created,
+                    "level": record.levelname,
+                    "text": self.format(record),
+                }
+            )
         except Exception:
             pass
 
@@ -118,30 +121,34 @@ def attach_log_relay():
 
 def record_inbound(contact: str, sender: str, kind: str, text: str):
     try:
-        bus.publish({
-            "type": "msg",
-            "ts": time.time(),
-            "dir": "in",
-            "kind": kind,
-            "contact": contact or "",
-            "sender": sender or "",
-            "text": (text or "")[:200],
-        })
+        bus.publish(
+            {
+                "type": "msg",
+                "ts": time.time(),
+                "dir": "in",
+                "kind": kind,
+                "contact": contact or "",
+                "sender": sender or "",
+                "text": (text or "")[:200],
+            }
+        )
     except Exception:
         pass
 
 
 def record_outbound(contact: str, kind: str, text: str):
     try:
-        bus.publish({
-            "type": "msg",
-            "ts": time.time(),
-            "dir": "out",
-            "kind": kind,
-            "contact": contact or "",
-            "sender": "",
-            "text": (text or "")[:200],
-        })
+        bus.publish(
+            {
+                "type": "msg",
+                "ts": time.time(),
+                "dir": "out",
+                "kind": kind,
+                "contact": contact or "",
+                "sender": "",
+                "text": (text or "")[:200],
+            }
+        )
     except Exception:
         pass
 

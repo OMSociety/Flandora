@@ -14,6 +14,7 @@
 状态存在模块级单例上（与 ``wx_desktop.manager()`` 同一个风格）：WebUI 的接口是
 无状态的 HTTP 请求，谁都可以随时来问进度，因此状态不能挂在请求上。
 """
+
 from __future__ import annotations
 
 import glob
@@ -28,12 +29,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Optional
 
-from . import config
-from . import wechat_account
-from . import wx_crypto
-from . import wx_image
-from . import wx_image_key
-from . import wx_source
+from . import config, wechat_account, wx_crypto, wx_image, wx_image_key, wx_source
 from .wxkey.store import KeyStore, KeyStoreError
 
 log = logging.getLogger("ob11-bridge")
@@ -62,7 +58,7 @@ class WizardError(Exception):
 
 @dataclass
 class StepState:
-    state: str = "idle"          # idle | running | ok | failed
+    state: str = "idle"  # idle | running | ok | failed
     message: str = ""
     detail: str = ""
     log: list = field(default_factory=list)
@@ -70,9 +66,14 @@ class StepState:
     finished_at: float = 0.0
 
     def as_dict(self) -> dict:
-        return {"state": self.state, "message": self.message, "detail": self.detail,
-                "log": list(self.log[-LOG_MAX:]), "started_at": self.started_at,
-                "finished_at": self.finished_at}
+        return {
+            "state": self.state,
+            "message": self.message,
+            "detail": self.detail,
+            "log": list(self.log[-LOG_MAX:]),
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+        }
 
 
 def _repo_root() -> str:
@@ -105,8 +106,7 @@ class Wizard:
         if self._disclaimer:
             # 进程重启后要接着上次的进度走，所以确认过就得把这一步标成已完成，
             # 否则 current 会一直停回第一步。
-            self._steps[STEP_DISCLAIMER] = StepState(
-                state="ok", message="已确认免责声明")
+            self._steps[STEP_DISCLAIMER] = StepState(state="ok", message="已确认免责声明")
 
         self._proc: Optional[subprocess.Popen] = None
         self._proc_thread: Optional[threading.Thread] = None
@@ -145,17 +145,23 @@ class Wizard:
         path = self._disclaimer_path()
         os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         with open(path, "w", encoding="utf-8") as fh:
-            json.dump({"disclaimer_accepted": accepted,
-                       "accepted_at": time.strftime("%Y-%m-%d %H:%M:%S")},
-                      fh, ensure_ascii=False, indent=2)
+            json.dump(
+                {
+                    "disclaimer_accepted": accepted,
+                    "accepted_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+                },
+                fh,
+                ensure_ascii=False,
+                indent=2,
+            )
 
     def accept_disclaimer(self) -> dict:
         with self._lock:
             self._save_disclaimer(True)
             self._disclaimer = True
             self._steps[STEP_DISCLAIMER] = StepState(
-                state="ok", message="已确认免责声明",
-                finished_at=time.time())
+                state="ok", message="已确认免责声明", finished_at=time.time()
+            )
         return self.status()
 
     # ================================================================
@@ -170,8 +176,15 @@ class Wizard:
 
     def dbkey_status(self) -> dict:
         path = self.key_path()
-        info = {"present": False, "path": path, "wxid": "", "dll_version": "",
-                "matches_current": False, "current_wxid": "", "error": ""}
+        info = {
+            "present": False,
+            "path": path,
+            "wxid": "",
+            "dll_version": "",
+            "matches_current": False,
+            "current_wxid": "",
+            "error": "",
+        }
         try:
             stored = KeyStore(path).load()
         except KeyStoreError as exc:
@@ -180,17 +193,27 @@ class Wizard:
         if stored is None:
             return info
         current = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
-        info.update(present=True, wxid=stored.wxid,
-                    dll_version=stored.dll_version,
-                    current_wxid=current.wxid if current else "",
-                    matches_current=bool(current and current.wxid == stored.wxid))
+        info.update(
+            present=True,
+            wxid=stored.wxid,
+            dll_version=stored.dll_version,
+            current_wxid=current.wxid if current else "",
+            matches_current=bool(current and current.wxid == stored.wxid),
+        )
         return info
 
     def imagekey_status(self) -> dict:
         path = self.image_key_path()
-        info = {"present": False, "path": path, "wxid": "", "xor_key": None,
-                "matches_current": False, "current_wxid": "", "works": None,
-                "error": ""}
+        info = {
+            "present": False,
+            "path": path,
+            "wxid": "",
+            "xor_key": None,
+            "matches_current": False,
+            "current_wxid": "",
+            "works": None,
+            "error": "",
+        }
         if not os.path.isfile(path):
             return info
         try:
@@ -201,10 +224,13 @@ class Wizard:
             return info
 
         current = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
-        info.update(present=True, wxid=payload.get("wxid", ""),
-                    xor_key=payload.get("xor_key"),
-                    current_wxid=current.wxid if current else "",
-                    matches_current=bool(current and payload.get("wxid") == current.wxid))
+        info.update(
+            present=True,
+            wxid=payload.get("wxid", ""),
+            xor_key=payload.get("xor_key"),
+            current_wxid=current.wxid if current else "",
+            matches_current=bool(current and payload.get("wxid") == current.wxid),
+        )
 
         # 只有密钥属于当前账号时才值得试解——别人的密钥解不开是正常的，不算错。
         if info["matches_current"]:
@@ -228,7 +254,8 @@ class Wizard:
                     return [path]
             raise WizardError(
                 "同目录下找不到 Flandora-KeyTool.exe。请确认发布包已完整解压，"
-                "或改用下面的「手动填入口令」。")
+                "或改用下面的「手动填入口令」。"
+            )
 
         script = os.path.join(_repo_root(), "tools", "keytool.py")
         if not os.path.isfile(script):
@@ -261,7 +288,8 @@ class Wizard:
             self._steps = {name: StepState() for name in STEPS}
             if self._disclaimer:
                 self._steps[STEP_DISCLAIMER] = StepState(
-                    state="ok", message="已确认免责声明", finished_at=time.time())
+                    state="ok", message="已确认免责声明", finished_at=time.time()
+                )
         return self.status()
 
     # ================================================================
@@ -277,16 +305,26 @@ class Wizard:
                 raise WizardError("取钥器已经在运行了")
 
             cmd = self.keytool_command() + [
-                "--out", self.key_path(), "--json",
-                "--login-wait", str(DBKEY_LOGIN_WAIT)]
+                "--out",
+                self.key_path(),
+                "--json",
+                "--login-wait",
+                str(DBKEY_LOGIN_WAIT),
+            ]
             if config.WXKEY_MANUAL_RVA:
                 cmd += ["--rva", hex(config.WXKEY_MANUAL_RVA)]
 
             try:
                 self._proc = subprocess.Popen(
-                    cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                    text=True, encoding="utf-8", errors="replace", bufsize=1,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    bufsize=1,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
             except OSError as exc:
                 self._proc = None
                 raise WizardError(f"取钥器拉不起来：{exc}") from exc
@@ -294,11 +332,14 @@ class Wizard:
             self._proc_payload = {}
             started = time.time()
             self._steps[STEP_DBKEY] = StepState(
-                state="running", message="取钥器已启动，正在定位设置点……",
-                log=[f"命令：{' '.join(cmd)}"], started_at=started)
+                state="running",
+                message="取钥器已启动，正在定位设置点……",
+                log=[f"命令：{' '.join(cmd)}"],
+                started_at=started,
+            )
             self._proc_thread = threading.Thread(
-                target=self._read_keytool, args=(self._proc,),
-                name="wizard-keytool", daemon=True)
+                target=self._read_keytool, args=(self._proc,), name="wizard-keytool", daemon=True
+            )
             self._proc_thread.start()
         return self.status()
 
@@ -327,8 +368,10 @@ class Wizard:
             step.finished_at = time.time()
             if code == 0 and payload.get("ok"):
                 step.state = "ok"
-                step.message = (f"已取到口令（账号 {payload.get('wxid') or '未知'}，"
-                                f"微信 {payload.get('dll_version') or '未知版本'}）")
+                step.message = (
+                    f"已取到口令（账号 {payload.get('wxid') or '未知'}，"
+                    f"微信 {payload.get('dll_version') or '未知版本'}）"
+                )
                 step.detail = payload.get("message", "")
                 self._dbkey_log("取钥完成，口令已用 DPAPI 加密存好")
             else:
@@ -391,8 +434,7 @@ class Wizard:
         current = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
         if current is None or not current.data_dir:
             raise WizardError("找不到已登录的微信账号，请先登录微信")
-        db_path = os.path.join(current.data_dir, "db_storage", "message",
-                               "message_0.db")
+        db_path = os.path.join(current.data_dir, "db_storage", "message", "message_0.db")
         if not os.path.isfile(db_path):
             raise WizardError(f"找不到用于校验的数据库 {db_path}")
 
@@ -401,14 +443,14 @@ class Wizard:
 
         for candidate in candidates:
             if wx_crypto.check_page1(candidate, page1):
-                KeyStore(self.key_path()).save(
-                    candidate, wxid=current.wxid,
-                    dll_version="手动填入")
+                KeyStore(self.key_path()).save(candidate, wxid=current.wxid, dll_version="手动填入")
                 with self._lock:
                     self._steps[STEP_DBKEY] = StepState(
-                        state="ok", message=f"已用手填口令通过校验（账号 {current.wxid}）",
+                        state="ok",
+                        message=f"已用手填口令通过校验（账号 {current.wxid}）",
                         log=["口令是你自己填的，未经过取钥器"],
-                        finished_at=time.time())
+                        finished_at=time.time(),
+                    )
                 return self.status()
         raise WizardError("这个口令解不开当前账号的数据库，请核对后重填")
 
@@ -428,28 +470,31 @@ class Wizard:
             self._steps[STEP_IMAGEKEY] = StepState(
                 state="running",
                 message="扫描已开始——请在上面的画面里点开一张没看过的图片",
-                started_at=time.time())
+                started_at=time.time(),
+            )
             self._img_thread = threading.Thread(
-                target=self._scan_imagekey, name="wizard-imagekey", daemon=True)
+                target=self._scan_imagekey, name="wizard-imagekey", daemon=True
+            )
             self._img_thread.start()
         return self.status()
 
     def _scan_imagekey(self) -> None:
         try:
             payload = wx_image_key.grab_key(
-                out_path=self.image_key_path(), seconds=IMAGEKEY_SECONDS,
+                out_path=self.image_key_path(),
+                seconds=IMAGEKEY_SECONDS,
                 root=config.WECHAT_FILES_ROOT or None,
                 stop=self._img_stop,
                 on_status=self._imagekey_log,
-                on_round=lambda n: self._imagekey_progress(n))
+                on_round=lambda n: self._imagekey_progress(n),
+            )
         except wx_image_key.ImageKeyError as exc:
             self._finish_imagekey("failed", str(exc))
-        except Exception as exc:                      # noqa: BLE001 兜住线程里的意外
+        except Exception as exc:  # noqa: BLE001 兜住线程里的意外
             log.exception("取图片密钥时出错")
             self._finish_imagekey("failed", f"取图片密钥时出错：{exc}")
         else:
-            self._finish_imagekey(
-                "ok", f"已取到图片密钥（XOR 0x{payload.get('xor_key', 0):02x}）")
+            self._finish_imagekey("ok", f"已取到图片密钥（XOR 0x{payload.get('xor_key', 0):02x}）")
 
     def _imagekey_log(self, text: str) -> None:
         with self._lock:
@@ -462,7 +507,7 @@ class Wizard:
         with self._lock:
             step = self._steps[STEP_IMAGEKEY]
             if step.state == "running":
-                step.message = (f"已扫 {rounds} 轮——请在画面里点开一张没看过的图片")
+                step.message = f"已扫 {rounds} 轮——请在画面里点开一张没看过的图片"
 
     def _finish_imagekey(self, state: str, message: str) -> None:
         with self._lock:
@@ -489,8 +534,9 @@ class Wizard:
         current = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
         if current is None or not current.data_dir:
             return []
-        return sorted(glob.glob(os.path.join(
-            current.data_dir, "db_storage", "**", "*.db"), recursive=True))
+        return sorted(
+            glob.glob(os.path.join(current.data_dir, "db_storage", "**", "*.db"), recursive=True)
+        )
 
     def verify(self) -> dict:
         """用当前口令逐个库过页 1 HMAC。跑在后台线程里，回来问状态即可。"""
@@ -498,10 +544,11 @@ class Wizard:
             if self._verify_thread is not None and self._verify_thread.is_alive():
                 raise WizardError("校验已经在跑了")
             self._steps[STEP_VERIFY] = StepState(
-                state="running", message="正在逐个库校验……",
-                started_at=time.time())
+                state="running", message="正在逐个库校验……", started_at=time.time()
+            )
             self._verify_thread = threading.Thread(
-                target=self._run_verify, name="wizard-verify", daemon=True)
+                target=self._run_verify, name="wizard-verify", daemon=True
+            )
             self._verify_thread.start()
         return self.status()
 
@@ -520,8 +567,7 @@ class Wizard:
 
         dbs = self.account_db_paths()
         if not dbs:
-            self._finish_verify(
-                "failed", "找不到当前账号的数据库——请先登录微信，再回来校验")
+            self._finish_verify("failed", "找不到当前账号的数据库——请先登录微信，再回来校验")
             return
 
         passed, failed = 0, []
@@ -534,14 +580,13 @@ class Wizard:
                 if len(page1) < wx_crypto.PAGE:
                     raise ValueError(f"库太小（{len(page1)} 字节）")
                 ok = wx_crypto.check_page1(stored.passphrase, page1)
-            except Exception as exc:                  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 log.debug("校验 %s 时出错：%s", path, exc)
             if ok:
                 passed += 1
             else:
                 failed.append(name)
-            self._verify_log(f"[{index}/{len(dbs)}] {name} "
-                             f"{'通过' if ok else '未通过'}")
+            self._verify_log(f"[{index}/{len(dbs)}] {name} {'通过' if ok else '未通过'}")
 
         total = len(dbs)
         if passed == total:
@@ -550,8 +595,9 @@ class Wizard:
             self._finish_verify(
                 "failed",
                 f"{passed}/{total} 个库通过；未通过的是索引库，不影响正文"
-                if len(failed) <= 3 else
-                f"{passed}/{total} 个库通过，有 {len(failed)} 个未通过")
+                if len(failed) <= 3
+                else f"{passed}/{total} 个库通过，有 {len(failed)} 个未通过",
+            )
         else:
             self._finish_verify("failed", f"0/{total} 个库通过，口令可能不属于当前账号")
 

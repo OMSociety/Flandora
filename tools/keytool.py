@@ -21,6 +21,7 @@ data/），与 bridge 读写口令的位置一致。
     2  没取到（用户没重新登录、或当前微信版本不支持定位）
     3  取到了但存不下（DPAPI 或磁盘问题）
 """
+
 from __future__ import annotations
 
 import argparse
@@ -92,11 +93,15 @@ class Reporter:
         print(json.dumps(payload, ensure_ascii=False), flush=True)
 
 
-def run(out_path: str, *, capture_out: Optional[str] = None,
-        login_wait_s: float = capture.LOGIN_WAIT,
-        quick_s: float = 0.0,
-        manual_rva: int = 0,
-        report: Optional[Callable[[str], None]] = None) -> tuple[int, dict]:
+def run(
+    out_path: str,
+    *,
+    capture_out: Optional[str] = None,
+    login_wait_s: float = capture.LOGIN_WAIT,
+    quick_s: float = 0.0,
+    manual_rva: int = 0,
+    report: Optional[Callable[[str], None]] = None,
+) -> tuple[int, dict]:
     """取钥主流程。返回 (退出码, 结果字典)。"""
     say = report or (lambda _t: None)
     started = time.time()
@@ -108,8 +113,7 @@ def run(out_path: str, *, capture_out: Optional[str] = None,
     try:
         hook = locator.resolve(manual_rva=manual_rva)
     except locator.LocatorError as exc:
-        return EXIT_NOT_CAPTURED, {"ok": False, "reason": "locate-failed",
-                                   "detail": str(exc)}
+        return EXIT_NOT_CAPTURED, {"ok": False, "reason": "locate-failed", "detail": str(exc)}
     say(f"已定位（微信 {hook.file_version or '未知版本'}，函数 RVA {hook.rva:#x}）。")
     say("现在请在微信里退出登录，然后重新登录。登录完成会自动继续。")
 
@@ -120,24 +124,26 @@ def run(out_path: str, *, capture_out: Optional[str] = None,
             login_wait_s=login_wait_s,
             out_path=capture_out,
             manual_rva=manual_rva,
-            on_status=say)
+            on_status=say,
+        )
     except capture.WeChatNotRunning as exc:
-        return EXIT_NOT_CAPTURED, {"ok": False, "reason": "wechat-not-running",
-                                   "detail": str(exc)}
+        return EXIT_NOT_CAPTURED, {"ok": False, "reason": "wechat-not-running", "detail": str(exc)}
     except capture.NoKeyEvent as exc:
-        return EXIT_NOT_CAPTURED, {"ok": False, "reason": "no-key-event",
-                                   "detail": str(exc)}
+        return EXIT_NOT_CAPTURED, {"ok": False, "reason": "no-key-event", "detail": str(exc)}
     except capture.KeyCaptureError as exc:
-        return EXIT_NOT_CAPTURED, {"ok": False, "reason": "capture-failed",
-                                   "detail": str(exc)}
+        return EXIT_NOT_CAPTURED, {"ok": False, "reason": "capture-failed", "detail": str(exc)}
 
     say("已取到口令，正在校验并加密保存……")
     try:
         store = KeyStore(out_path)
         store.save(info.passphrase, wxid=info.wxid, dll_version=info.dll_version)
     except KeyStoreError as exc:
-        return EXIT_CANNOT_SAVE, {"ok": False, "reason": "save-failed",
-                                  "detail": str(exc), "wxid": info.wxid}
+        return EXIT_CANNOT_SAVE, {
+            "ok": False,
+            "reason": "save-failed",
+            "detail": str(exc),
+            "wxid": info.wxid,
+        }
 
     return EXIT_OK, {
         "ok": True,
@@ -154,30 +160,41 @@ def run(out_path: str, *, capture_out: Optional[str] = None,
 
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="从微信里取数据库口令并加密保存")
-    parser.add_argument("--out", default=_default_out_path("wx_key.dat"),
-                        help="口令文件路径（DPAPI 加密，仅当前用户可解）；"
-                             "默认 data/wx_key.dat")
-    parser.add_argument("--capture-out", default=None,
-                        help="把截获的内存片段另存为 JSONL，便于排查问题")
-    parser.add_argument("--login-wait", type=float, default=capture.LOGIN_WAIT,
-                        help="等待重新登录的秒数上限")
-    parser.add_argument("--rva", type=_parse_rva, default=0,
-                        help="手动指定口令设置函数的地址（如 0x6148a0）；"
-                             "省略则自动定位")
-    parser.add_argument("--json", action="store_true",
-                        help="用 JSON 行输出进度与结果，供界面读取")
+    parser.add_argument(
+        "--out",
+        default=_default_out_path("wx_key.dat"),
+        help="口令文件路径（DPAPI 加密，仅当前用户可解）；默认 data/wx_key.dat",
+    )
+    parser.add_argument(
+        "--capture-out", default=None, help="把截获的内存片段另存为 JSONL，便于排查问题"
+    )
+    parser.add_argument(
+        "--login-wait", type=float, default=capture.LOGIN_WAIT, help="等待重新登录的秒数上限"
+    )
+    parser.add_argument(
+        "--rva",
+        type=_parse_rva,
+        default=0,
+        help="手动指定口令设置函数的地址（如 0x6148a0）；省略则自动定位",
+    )
+    parser.add_argument("--json", action="store_true", help="用 JSON 行输出进度与结果，供界面读取")
     parser.add_argument("--verbose", action="store_true", help="打印调试日志")
     args = parser.parse_args(argv)
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
         format="%(levelname)s %(name)s: %(message)s",
-        stream=sys.stderr)
+        stream=sys.stderr,
+    )
 
     reporter = Reporter(args.json)
-    code, payload = run(args.out, capture_out=args.capture_out,
-                        login_wait_s=args.login_wait, manual_rva=args.rva,
-                        report=reporter.status)
+    code, payload = run(
+        args.out,
+        capture_out=args.capture_out,
+        login_wait_s=args.login_wait,
+        manual_rva=args.rva,
+        report=reporter.status,
+    )
     reporter.done(payload)
     return code
 

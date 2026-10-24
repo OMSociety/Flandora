@@ -10,11 +10,11 @@
 - 打开日志目录
 - 开机自启动（写 Startup 快捷方式）
 """
+
 from __future__ import annotations
 
 import os
 import queue
-import shutil
 import subprocess
 import sys
 import threading
@@ -24,13 +24,16 @@ import tkinter as tk
 # 单实例锁（Windows 具名互斥量）
 try:
     import ctypes
-    _mutex_handle = ctypes.windll.kernel32.CreateMutexW(None, False, "Global\\Flandora_SingleInstance")
+
+    _mutex_handle = ctypes.windll.kernel32.CreateMutexW(
+        None, False, "Global\\Flandora_SingleInstance"
+    )
     _already_running = ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
 except Exception:  # noqa: BLE001
     _mutex_handle = None
     _already_running = False
 from pathlib import Path
-from tkinter import filedialog, messagebox, scrolledtext, ttk
+from tkinter import messagebox, scrolledtext, ttk
 from typing import Optional
 
 # === 路径 ===
@@ -85,13 +88,16 @@ AUTOSTART_NAME = "Flandora-Manager"
 IS_WINDOWS = sys.platform == "win32"
 if IS_WINDOWS:
     import ctypes
+
     STARTUP_DIR = Path(os.environ["APPDATA"]) / r"Microsoft\Windows\Start Menu\Programs\Startup"
     AUTOSTART_LNK = STARTUP_DIR / f"{AUTOSTART_NAME}.lnk"
     APPDATA_AUTOSTART_BAT = STARTUP_DIR / f"{AUTOSTART_NAME}.bat"
     # 项目旧名留下的自启项：改名后它们指向已不存在的程序，开机时会静默失败。
     # 启动时顺手清掉，避免用户在启动项里看到一个没有用的条目。
-    LEGACY_AUTOSTART = (STARTUP_DIR / "WeBotBridge-Manager.lnk",
-                        STARTUP_DIR / "WeBotBridge-Manager.bat")
+    LEGACY_AUTOSTART = (
+        STARTUP_DIR / "WeBotBridge-Manager.lnk",
+        STARTUP_DIR / "WeBotBridge-Manager.bat",
+    )
 
 # 防止子进程弹出终端窗口（打包成 GUI exe 后没有控制台可继承）
 CREATE_NO_WINDOW_FLAG = 0x08000000 if IS_WINDOWS else 0
@@ -106,7 +112,8 @@ def _run_powershell(command: str, timeout: int = 5) -> bytes:
     if IS_WINDOWS:
         kwargs["creationflags"] = CREATE_NO_WINDOW_FLAG
     return subprocess.check_output(
-        ["powershell", "-NoProfile", "-Command", command], **kwargs  # type: ignore[arg-type]
+        ["powershell", "-NoProfile", "-Command", command],
+        **kwargs,  # type: ignore[arg-type]
     )
 
 
@@ -125,6 +132,7 @@ try:
     if IS_WINDOWS:
         import pystray  # type: ignore
         from PIL import Image, ImageDraw  # type: ignore
+
         TRAY_SUPPORTED = True
 except Exception:  # noqa: BLE001
     TRAY_SUPPORTED = False
@@ -276,7 +284,9 @@ class BridgeController:
                 cwd=str(HERE),
                 creationflags=flags,
             )
-            threading.Thread(target=self._reader_thread, args=(self.log_tail_proc,), daemon=True).start()
+            threading.Thread(
+                target=self._reader_thread, args=(self.log_tail_proc,), daemon=True
+            ).start()
         except Exception as exc:  # noqa: BLE001
             self.log_queue.put(f"[manager] 启动 log_tail 失败: {exc}\n")
 
@@ -308,7 +318,8 @@ class BridgeController:
                 try:
                     subprocess.run(
                         ["taskkill", "/F", "/PID", str(self.external_pid)],
-                        capture_output=True, timeout=5,
+                        capture_output=True,
+                        timeout=5,
                     )
                     msg_parts.append(f"外部 PID={self.external_pid} 已终止")
                 except Exception as exc:  # noqa: BLE001
@@ -320,7 +331,8 @@ class BridgeController:
                 try:
                     subprocess.run(
                         ["taskkill", "/F", "/PID", str(still)],
-                        capture_output=True, timeout=5,
+                        capture_output=True,
+                        timeout=5,
                     )
                     msg_parts.append(f"兜底 kill PID={still}")
                 except Exception:  # noqa: BLE001
@@ -368,7 +380,9 @@ class BridgeManagerApp:
 
         # 后台状态采集线程（避免 PowerShell 阻塞 Tk 主线程）
         self._stat_snapshot: dict[str, object] = {
-            "pid": None, "port_clients": -1, "wechat": "?",
+            "pid": None,
+            "port_clients": -1,
+            "wechat": "?",
         }
         self._stat_lock = threading.Lock()
         self._stat_dirty = threading.Event()
@@ -406,7 +420,9 @@ class BridgeManagerApp:
         top.pack(fill="x")
 
         self.status_var = tk.StringVar(value="状态：未知")
-        self.status_label = ttk.Label(top, textvariable=self.status_var, font=("Segoe UI", 11, "bold"))
+        self.status_label = ttk.Label(
+            top, textvariable=self.status_var, font=("Segoe UI", 11, "bold")
+        )
         self.status_label.pack(side="left")
 
         btn_box = ttk.Frame(top)
@@ -436,9 +452,13 @@ class BridgeManagerApp:
         tools = ttk.Frame(self.root, padding=(12, 0, 12, 6))
         tools.pack(fill="x")
         ttk.Button(tools, text="🌐 打开 WebUI", command=self._open_webui).pack(side="left", padx=2)
-        ttk.Button(tools, text="📁 打开日志目录", command=self._open_log_dir).pack(side="left", padx=2)
+        ttk.Button(tools, text="📁 打开日志目录", command=self._open_log_dir).pack(
+            side="left", padx=2
+        )
         ttk.Button(tools, text="🧹 清空日志", command=self._clear_log).pack(side="left", padx=2)
-        ttk.Button(tools, text="🪟 最小化到托盘", command=self._hide_to_tray).pack(side="left", padx=2)
+        ttk.Button(tools, text="🪟 最小化到托盘", command=self._hide_to_tray).pack(
+            side="left", padx=2
+        )
         self.autostart_var = tk.BooleanVar(value=self._is_autostart_enabled())
         ttk.Checkbutton(
             tools, text="开机自启动", variable=self.autostart_var, command=self._toggle_autostart
@@ -522,7 +542,9 @@ class BridgeManagerApp:
 
         icon_img = make_tray_icon_image()
         menu = pystray.Menu(
-            pystray.MenuItem("显示主窗口", lambda _: self.root.after(0, self._show_window), default=True),
+            pystray.MenuItem(
+                "显示主窗口", lambda _: self.root.after(0, self._show_window), default=True
+            ),
             pystray.MenuItem("▶ 启动", lambda _: self.root.after(0, self._cmd_start)),
             pystray.MenuItem("■ 停止", lambda _: self.root.after(0, self._cmd_stop)),
             pystray.MenuItem("↻ 重启", lambda _: self.root.after(0, self._cmd_restart)),
@@ -590,14 +612,10 @@ class BridgeManagerApp:
         if getattr(sys, "frozen", False):
             # 打包后直接启动管理器 exe：发布包里没有 bridge_manager.py，
             # 也不该要求用户装 Python
-            body = (
-                f'@echo off\r\n'
-                f'cd /d "{HERE}"\r\n'
-                f'start "" "{HERE / "Flandora-Manager.exe"}"\r\n'
-            )
+            body = f'@echo off\r\ncd /d "{HERE}"\r\nstart "" "{HERE / "Flandora-Manager.exe"}"\r\n'
         else:
             body = (
-                f'@echo off\r\n'
+                f"@echo off\r\n"
                 f'cd /d "{HERE}"\r\n'
                 f'start "" "{PYTHON_EXE}" "{HERE / "bridge_manager.py"}"\r\n'
             )
@@ -625,7 +643,10 @@ class BridgeManagerApp:
         while not self._stat_thread_stop.is_set():
             try:
                 # 1) 维护 log_tail 健康（死了就重启）
-                if self.controller.log_tail_proc is None or self.controller.log_tail_proc.poll() is not None:
+                if (
+                    self.controller.log_tail_proc is None
+                    or self.controller.log_tail_proc.poll() is not None
+                ):
                     self.controller._start_log_tail()
 
                 # 2) 核心：cached state 更新（含 PowerShell 调用，但只每 3 tick 一次）
@@ -737,7 +758,7 @@ class BridgeManagerApp:
             return
         self._log_buffer.extend(new_lines)
         if len(self._log_buffer) > self.MAX_LOG_LINES:
-            self._log_buffer = self._log_buffer[-self.MAX_LOG_LINES:]
+            self._log_buffer = self._log_buffer[-self.MAX_LOG_LINES :]
         # 一次性 update + 一次性 insert（避免逐行触发重绘）
         self.log_text.configure(state="normal")
         self.log_text.insert("end", "".join(new_lines))
@@ -758,6 +779,7 @@ def main() -> None:
     if _already_running:
         try:
             import tkinter.messagebox as mb
+
             mb.showwarning("Flandora", "管理器已在运行，请到系统托盘查看。")
         except Exception:  # noqa: BLE001
             pass
@@ -776,6 +798,7 @@ def main() -> None:
 def _icon_photo_png() -> bytes:
     """生成窗口标题栏小图标（PNG bytes）"""
     from io import BytesIO
+
     img = make_tray_icon_image().resize((32, 32))
     buf = BytesIO()
     img.save(buf, format="PNG")

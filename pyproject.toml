@@ -1,0 +1,20 @@
+# ruff 配置：只管 Python 侧（flandora/、tests/、tools/、构建脚本）。
+# 前端在 webui-frontend 下自带 Vite 生态，不归 ruff 管。
+
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+extend-exclude = ["webui-frontend", "flandora/webui/dist", "build", "dist", ".venv"]
+
+[tool.ruff.lint]
+# E/F/W 是 pyflakes 与 pycodestyle 的基础面；I 统一导入顺序。
+# 行宽交给 ruff format 处理，E501 不再重复告警（长字符串无法自动折行）。
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# 测试需要先把仓库根塞进 sys.path 再导入 flandora，导入落不到文件顶部是必然的
+"tests/*" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -18,6 +18,7 @@ WAL（每个库都有，最新消息常在里面）：
 
 AES 走 Windows CNG（bcrypt.dll），不引入第三方依赖。
 """
+
 import ctypes
 import hashlib
 import hmac
@@ -34,8 +35,8 @@ RESERVE = 80
 IV_SZ = 16
 KDF_ITER = 256000
 SALT_MASK = 0x3A
-CT_BODY = PAGE - RESERVE           # 4016：加密正文长度（不含 IV/HMAC）
-MAC_END = PAGE - RESERVE + IV_SZ   # 4032：页 HMAC 覆盖到这儿（IV 不参与计算）
+CT_BODY = PAGE - RESERVE  # 4016：加密正文长度（不含 IV/HMAC）
+MAC_END = PAGE - RESERVE + IV_SZ  # 4032：页 HMAC 覆盖到这儿（IV 不参与计算）
 WAL_HDR = 32
 WAL_FRAME_HDR = 24
 
@@ -78,26 +79,35 @@ def aes_cbc_decrypt(key: bytes, iv: bytes, data: bytes) -> bytes:
     h_alg = ctypes.c_void_p()
     h_key = ctypes.c_void_p()
     try:
-        _nt(b.BCryptOpenAlgorithmProvider(
-            ctypes.byref(h_alg), _BCRYPT_AES, None, 0), "BCryptOpenAlgorithmProvider")
+        _nt(
+            b.BCryptOpenAlgorithmProvider(ctypes.byref(h_alg), _BCRYPT_AES, None, 0),
+            "BCryptOpenAlgorithmProvider",
+        )
 
         mode = ctypes.create_unicode_buffer(_BCRYPT_CHAIN_MODE_CBC)
-        _nt(b.BCryptSetProperty(
-            h_alg, "ChainingMode", ctypes.cast(mode, ctypes.c_void_p),
-            ctypes.sizeof(mode), 0), "BCryptSetProperty(ChainingMode)")
+        _nt(
+            b.BCryptSetProperty(
+                h_alg, "ChainingMode", ctypes.cast(mode, ctypes.c_void_p), ctypes.sizeof(mode), 0
+            ),
+            "BCryptSetProperty(ChainingMode)",
+        )
 
         key_buf = ctypes.create_string_buffer(key, len(key))
-        _nt(b.BCryptGenerateSymmetricKey(
-            h_alg, ctypes.byref(h_key), None, 0, key_buf, len(key), 0),
-            "BCryptGenerateSymmetricKey")
+        _nt(
+            b.BCryptGenerateSymmetricKey(h_alg, ctypes.byref(h_key), None, 0, key_buf, len(key), 0),
+            "BCryptGenerateSymmetricKey",
+        )
 
         iv_buf = ctypes.create_string_buffer(iv, IV_SZ)
         out = ctypes.create_string_buffer(len(data))
         done = wintypes.ULONG(0)
-        _nt(b.BCryptDecrypt(
-            h_key, data, len(data), None, iv_buf, IV_SZ, out, len(data),
-            ctypes.byref(done), 0), "BCryptDecrypt")
-        return out.raw[:done.value]
+        _nt(
+            b.BCryptDecrypt(
+                h_key, data, len(data), None, iv_buf, IV_SZ, out, len(data), ctypes.byref(done), 0
+            ),
+            "BCryptDecrypt",
+        )
+        return out.raw[: done.value]
     finally:
         if h_key:
             b.BCryptDestroyKey(h_key)
@@ -108,6 +118,7 @@ def aes_cbc_decrypt(key: bytes, iv: bytes, data: bytes) -> bytes:
 # --------------------------------------------------------------------------
 # 密钥派生与页校验
 # --------------------------------------------------------------------------
+
 
 def derive_keys(passphrase: bytes, salt: bytes) -> tuple:
     """由口令与页 1 的 salt 派生 (enc_key, mac_key)。"""
@@ -125,8 +136,7 @@ def page_mac(mac_key: bytes, page: bytes, pgno: int, skip_salt: bool) -> bytes:
 
 
 def page_ok(mac_key: bytes, page: bytes, pgno: int, skip_salt: bool) -> bool:
-    return hmac.compare_digest(page_mac(mac_key, page, pgno, skip_salt),
-                               page[MAC_END:PAGE])
+    return hmac.compare_digest(page_mac(mac_key, page, pgno, skip_salt), page[MAC_END:PAGE])
 
 
 def check_page1(passphrase: bytes, page1: bytes) -> bool:
@@ -141,9 +151,10 @@ def check_page1(passphrase: bytes, page1: bytes) -> bool:
 # 页解密
 # --------------------------------------------------------------------------
 
+
 def _decrypt_page(enc_key: bytes, page: bytes, pgno: int) -> bytes:
     """主库里的整页解密。页 1 跳过开头 16 字节 salt。"""
-    iv = page[PAGE - RESERVE:PAGE - RESERVE + IV_SZ]
+    iv = page[PAGE - RESERVE : PAGE - RESERVE + IV_SZ]
     if pgno == 1:
         body = MAGIC + aes_cbc_decrypt(enc_key, iv, page[16:CT_BODY])
     else:
@@ -153,7 +164,7 @@ def _decrypt_page(enc_key: bytes, page: bytes, pgno: int) -> bytes:
 
 def _decrypt_wal_page(enc_key: bytes, page: bytes) -> bytes:
     """WAL 帧里的整页解密。帧不分页 1，一律整页加密。"""
-    iv = page[PAGE - RESERVE:PAGE - RESERVE + IV_SZ]
+    iv = page[PAGE - RESERVE : PAGE - RESERVE + IV_SZ]
     return aes_cbc_decrypt(enc_key, iv, page[0:CT_BODY]) + b"\x00" * RESERVE
 
 
@@ -192,27 +203,35 @@ def read_wal(wal_path: str):
     db_size = None
     for i in range(nframes):
         off = WAL_HDR + i * frame_sz
-        if struct.unpack(">II", raw[off + 8:off + 16]) != wal_salt:
+        if struct.unpack(">II", raw[off + 8 : off + 16]) != wal_salt:
             ignored = nframes - i
             break
-        pgno, dbsize = struct.unpack(">II", raw[off:off + 8])
-        frames.append((pgno, raw[off + WAL_FRAME_HDR:off + WAL_FRAME_HDR + PAGE]))
+        pgno, dbsize = struct.unpack(">II", raw[off : off + 8])
+        frames.append((pgno, raw[off + WAL_FRAME_HDR : off + WAL_FRAME_HDR + PAGE]))
         if dbsize:
             last_commit = i
             db_size = dbsize
 
     if ignored:
-        log.debug("%s 有 %d 帧 salt 与 WAL 头不符（WAL 复位后残留的旧帧），已丢弃",
-                  os.path.basename(wal_path), ignored)
+        log.debug(
+            "%s 有 %d 帧 salt 与 WAL 头不符（WAL 复位后残留的旧帧），已丢弃",
+            os.path.basename(wal_path),
+            ignored,
+        )
     if last_commit < 0:
         log.debug("%s 没有有效帧，按无 WAL 处理", os.path.basename(wal_path))
         return None
 
     dedup = {}
-    for pgno, page in frames[:last_commit + 1]:
+    for pgno, page in frames[: last_commit + 1]:
         dedup[pgno] = page
-    log.debug("WAL %s 有效 %d 帧，覆盖 %d 个页，提交后 %s 页",
-              os.path.basename(wal_path), last_commit + 1, len(dedup), db_size)
+    log.debug(
+        "WAL %s 有效 %d 帧，覆盖 %d 个页，提交后 %s 页",
+        os.path.basename(wal_path),
+        last_commit + 1,
+        len(dedup),
+        db_size,
+    )
     return dedup, db_size
 
 
@@ -220,8 +239,10 @@ def read_wal(wal_path: str):
 # 单库解密
 # --------------------------------------------------------------------------
 
-def decrypt_db(passphrase: bytes, db_path: str, wal_path: str = None,
-               expected_pages: int = None) -> bytes:
+
+def decrypt_db(
+    passphrase: bytes, db_path: str, wal_path: str = None, expected_pages: int = None
+) -> bytes:
     """把一个加密库解成完整的普通 SQLite 文件内容（已合并 WAL）。
 
     expected_pages 用于跨库校验口令：给出该库应有的大致页数，
@@ -243,7 +264,7 @@ def decrypt_db(passphrase: bytes, db_path: str, wal_path: str = None,
     pages = {}
     for i in range(npages):
         pgno = i + 1
-        page = raw[i * PAGE:(i + 1) * PAGE]
+        page = raw[i * PAGE : (i + 1) * PAGE]
         pages[pgno] = _decrypt_page(enc_key, page, pgno)
 
     head = pages[1]
@@ -253,15 +274,15 @@ def decrypt_db(passphrase: bytes, db_path: str, wal_path: str = None,
     db_size = struct.unpack(">I", head[28:32])[0] or npages
     if expected_pages and abs(db_size - expected_pages) > max(4, expected_pages // 2):
         raise WrongKey(
-            f"{os.path.basename(db_path)} 页数 {db_size} 与预期 {expected_pages} 偏离过大")
+            f"{os.path.basename(db_path)} 页数 {db_size} 与预期 {expected_pages} 偏离过大"
+        )
 
     if wal_path is None:
         wal_path = db_path + "-wal"
     wal = read_wal(wal_path)
     if wal:
         wal_pages, wal_size = wal
-        pages.update({pgno: _decrypt_wal_page(enc_key, p)
-                      for pgno, p in wal_pages.items()})
+        pages.update({pgno: _decrypt_wal_page(enc_key, p) for pgno, p in wal_pages.items()})
         if wal_size:
             db_size = wal_size
         if pages[1][:16] != MAGIC:
@@ -273,7 +294,8 @@ def decrypt_db(passphrase: bytes, db_path: str, wal_path: str = None,
         if page is None:
             raise ValueError(
                 f"{os.path.basename(db_path)} 第 {pgno} 页在主库与 WAL 里都缺失"
-                f"（库大小 {db_size} 页）")
+                f"（库大小 {db_size} 页）"
+            )
         out += page
     struct.pack_into(">I", out, 28, db_size)
     return bytes(out)
@@ -294,13 +316,16 @@ def decrypt_to_file(passphrase: bytes, db_path: str, out_path: str) -> int:
 # 自测
 # --------------------------------------------------------------------------
 
+
 def _selftest(argv):
     if len(argv) >= 2:
         db_path = argv[1]
         key_hex = argv[2] if len(argv) >= 3 else None
     else:
-        root = (r"D:\WeChatFiles"
-                r"\wxid_demouser10001\db_storage")
+        root = (
+            r"D:\WeChatFiles"
+            r"\wxid_demouser10001\db_storage"
+        )
         db_path = os.path.join(root, "message", "message_0.db")
         key_hex = None
 
@@ -327,18 +352,18 @@ def _selftest(argv):
         f.write(data)
     con = sqlite3.connect(f"file:{out}?mode=ro", uri=True)
     ok = con.execute("PRAGMA integrity_check").fetchone()[0]
-    tables = [r[0] for r in con.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
+    tables = [
+        r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+    ]
     print(f"库      {db_path}")
-    print(f"输出    {out}  {len(data):,} B（{len(data)//PAGE} 页）")
+    print(f"输出    {out}  {len(data):,} B（{len(data) // PAGE} 页）")
     print(f"耗时    {t1 - t0:.2f} s")
     print(f"完整性  {ok}")
     print(f"表      {tables}")
     for t in tables:
         if t.startswith("Msg_"):
             n = con.execute(f"SELECT COUNT(*) FROM [{t}]").fetchone()[0]
-            mx = con.execute(
-                f"SELECT MAX(create_time), MAX(local_id) FROM [{t}]").fetchone()
+            mx = con.execute(f"SELECT MAX(create_time), MAX(local_id) FROM [{t}]").fetchone()
             print(f"  {t}: {n} 行  最新 create_time={mx[0]} local_id={mx[1]}")
     con.close()
     return 0
@@ -346,5 +371,6 @@ def _selftest(argv):
 
 if __name__ == "__main__":
     import sys
+
     logging.basicConfig(level=logging.DEBUG, format="%(levelname)s %(name)s %(message)s")
     sys.exit(_selftest(sys.argv))

@@ -2,9 +2,10 @@
 
 不依赖真微信数据——用现造的 V2 文件（真结构、假内容）。
 """
+
 import os
-import sys
 import struct
+import sys
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PKG = os.path.join(REPO_ROOT, "flandora")
@@ -17,25 +18,35 @@ from flandora import wx_image
 def _encrypt(key: bytes, data: bytes) -> bytes:
     """用 AES-ECB 加密，给测试造数据用（复用解码器的 CNG 包装反过来调）。"""
     import ctypes
+
     bcrypt = ctypes.WinDLL("bcrypt")
     h_alg = ctypes.c_void_p()
     h_key = ctypes.c_void_p()
     try:
-        wx_image._nt(bcrypt.BCryptOpenAlgorithmProvider(
-            ctypes.byref(h_alg), "AES", None, 0), "open")
+        wx_image._nt(
+            bcrypt.BCryptOpenAlgorithmProvider(ctypes.byref(h_alg), "AES", None, 0), "open"
+        )
         mode = ctypes.create_unicode_buffer("ChainingModeECB")
-        wx_image._nt(bcrypt.BCryptSetProperty(
-            h_alg, "ChainingMode", ctypes.cast(mode, ctypes.c_void_p),
-            ctypes.sizeof(mode), 0), "mode")
+        wx_image._nt(
+            bcrypt.BCryptSetProperty(
+                h_alg, "ChainingMode", ctypes.cast(mode, ctypes.c_void_p), ctypes.sizeof(mode), 0
+            ),
+            "mode",
+        )
         kb = ctypes.create_string_buffer(key, len(key))
-        wx_image._nt(bcrypt.BCryptGenerateSymmetricKey(
-            h_alg, ctypes.byref(h_key), None, 0, kb, len(key), 0), "key")
+        wx_image._nt(
+            bcrypt.BCryptGenerateSymmetricKey(h_alg, ctypes.byref(h_key), None, 0, kb, len(key), 0),
+            "key",
+        )
         out = ctypes.create_string_buffer(len(data))
         done = ctypes.c_ulong(0)
-        wx_image._nt(bcrypt.BCryptEncrypt(
-            h_key, data, len(data), None, None, 0, out, len(data),
-            ctypes.byref(done), 0), "enc")
-        return out.raw[:done.value]
+        wx_image._nt(
+            bcrypt.BCryptEncrypt(
+                h_key, data, len(data), None, None, 0, out, len(data), ctypes.byref(done), 0
+            ),
+            "enc",
+        )
+        return out.raw[: done.value]
     finally:
         if h_key:
             bcrypt.BCryptDestroyKey(h_key)
@@ -111,14 +122,14 @@ def test_decode_rejects_out_of_range_lengths():
 def test_sniff_xor_key():
     """XOR 密钥能从文件尾部反推出来。"""
     import tempfile
+
     jpeg = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 2 + b"\xff\xd9"
     with tempfile.TemporaryDirectory() as d:
         for i, k in enumerate((0x5A, 0x5A, 0x5A, 0x87)):
             raw = _make_dat(jpeg, KEY, k)
             with open(os.path.join(d, f"f{i}.dat"), "wb") as fh:
                 fh.write(raw)
-        got = wx_image.sniff_xor_key(
-            [os.path.join(d, f"f{i}.dat") for i in range(4)], KEY)
+        got = wx_image.sniff_xor_key([os.path.join(d, f"f{i}.dat") for i in range(4)], KEY)
     assert got == 0x5A, hex(got)
 
 

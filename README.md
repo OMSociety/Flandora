@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/OMSociety/Flandora/releases"><img alt="最新版本" src="https://img.shields.io/github/v/release/OMSociety/Flandora?label=release&style=flat-square"></a>
-  <a href="https://www.python.org/downloads/"><img alt="Python 版本" src="https://img.shields.io/badge/python-3.13-3776ab?style=flat-square"></a>
-  <a href="https://github.com/OMSociety/Flandora"><img alt="支持平台" src="https://img.shields.io/badge/windows-10%20%7C%2011-0078d4?style=flat-square"></a>
-  <a href="LICENSE"><img alt="许可证" src="https://img.shields.io/github/license/OMSociety/Flandora?style=flat-square"></a>
-  <a href="https://github.com/OMSociety/Flandora/stargazers"><img alt="GitHub Stars" src="https://img.shields.io/github/stars/OMSociety/Flandora?style=flat-square"></a>
+  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.13-3776AB" alt="Python"></a>
+  <a href="https://github.com/OMSociety/Flandora"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/OMSociety/Flandora?color=07C160" alt="License"></a>
+  <a href="https://github.com/OMSociety/Flandora/stargazers"><img src="https://img.shields.io/github/stars/OMSociety/Flandora?color=07C160" alt="Stars"></a>
+  <a href="https://github.com/OMSociety/Flandora/issues"><img src="https://img.shields.io/github/issues/OMSociety/Flandora?color=07C160" alt="Issues"></a>
 </p>
 
 <p align="center">
@@ -232,19 +232,12 @@ npm run build   # 产物写入 flandora\webui\dist
 
 本工具通过自动化方式驱动你自己登录的微信客户端收发消息，这类用法可能与微信的用户协议冲突。请只用自己的号，并自行承担账号被限制或封禁的风险。项目为独立工具，与腾讯公司无任何关联，不承诺可用性与送达率；微信改版导致接口失效属官方行为，不在担保范围内。使用产生的一切后果由使用者自行承担。
 
+发布包内 `docs/third-party-licenses/` 收录了随包分发组件的许可证原文。
+
 ## 鸣谢与致谢
 
-本仓库的前身与上游是 [jessiongod/wechat-onebot-bridge](https://github.com/jessiongod/wechat-onebot-bridge)：收件、发送与 OneBot 协议层的早期设计来自这个项目，在此基础上的重做包括取钥链路、隔离桌面与接管、控制台与打包。早期结构与文档由顾海蔚蓝参与。
-
-随包分发与运行时依赖：
-
-- [frida](https://github.com/frida/frida)（wxWindows Library Licence）：取钥器注入微信进程截获口令，只打进 `Flandora-KeyTool.exe`
-- [uiautomation](https://github.com/yinkaisheng/Python-UIAutomation-for-Windows)（Apache-2.0）：窗口与控件自动化
-- [FastAPI](https://github.com/fastapi/fastapi) / [uvicorn](https://github.com/encode/uvicorn) / [websockets](https://github.com/python-websockets/websockets)：控制台后端与 OneBot 服务端
-- [pystray](https://github.com/moses-palmer/pystray)（LGPL-3.0）：托盘管理器
-- [Vue 3](https://github.com/vuejs/core)（MIT）、[@lucide/vue](https://github.com/lucide-icons/lucide)（ISC）、[Vite](https://github.com/vitejs/vite)（MIT）：控制台前端
-
-发布包内 `docs/third-party-licenses/` 收录了全部随包分发组件的许可证原文。
+- [jessiongod/wechat-onebot-bridge](https://github.com/jessiongod/wechat-onebot-bridge)：本仓库的前身与上游，收件、发送与 OneBot 协议层的早期设计来自这个项目
+- 顾海蔚蓝：早期结构与文档
 
 <p align="center">
   <a href="https://github.com/OMSociety/Flandora/graphs/contributors"><img src="https://contrib.rocks/image?repo=OMSociety/Flandora" alt="Flandora 贡献者" /></a>

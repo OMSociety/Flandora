@@ -223,7 +223,7 @@ npm run build   # 产物写入 flandora\webui\dist
 > [!TIP]
 > 打包前会检查 `flandora/webui/dist/index.html`：不存在才调用 npm 构建，已存在就原样打包。改过 `webui-frontend/` 就先自己 `npm run build`，否则旧界面会被打进安装包。
 
-取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。工程约定、目录边界与验收口径见 [`AGENTS.md`](AGENTS.md)，贡献流程见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。工程约定、目录边界与验收口径见 [`AGENTS.md`](AGENTS.md)。
 
 ## 使用边界与许可
 

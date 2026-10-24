@@ -218,3 +218,12 @@ test('password gate blocks the console until login succeeds', async ({ page }) =
   await expect(page.locator('.page-heading h1')).toBeVisible()
   await expect(page.locator('.status-grid article')).toHaveCount(4)
 })
+
+test('dashboard update card checks for a new release', async ({ page }) => {
+  const errors = await openPage(page)
+  await expect(page.getByRole('heading', { name: '版本与更新' })).toBeVisible()
+  await expect(page.getByText('当前 1.0.0，源码运行')).toBeVisible()
+  await page.getByRole('button', { name: '检查更新' }).click()
+  await expect(page.locator('.update-msg')).toHaveText('已经是最新版本')
+  expect(errors).toEqual([])
+})

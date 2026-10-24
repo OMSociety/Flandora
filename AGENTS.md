@@ -50,7 +50,8 @@ lint 与格式化统一用 ruff，配置在仓库根的 `pyproject.toml`（line-
 
 ```text
 run_bridge.py -> flandora.main
-   收件：wx_source -> wx_store -> wx_crypto/zstandard -> bridge_core -> ob_server/ws_pool -> OneBot 客户端
+   收件：wx_source -> wx_store -> wx_crypto/zstandard -> bridge_core -> ob_protocol -> ob_network -> OneBot 客户端
+   更新：webui 端点 -> updater（下载/暂存）+ 退出后执行的 PowerShell 替换脚本
    发件：WebUI /api/send 或 OneBot 调用 -> senders.create_sender() -> uia_sender -> wx_desktop（隔离桌面）
    面板：flandora/webui/app.py（FastAPI）读写 state 与 bridge_core，并静态托管 flandora/webui/dist
    取钥：wizard（状态机）-> wxkey（capture/locator/recover）+ wxkey.store（DPAPI）
@@ -74,12 +75,13 @@ run_bridge.py -> flandora.main
 | 加前端测试 | `webui-frontend/tests/console.spec.js`，夹具在 `tests/fixtures.js` |
 | 改「微信画面」页与隔离桌面控件 | `webui-frontend/src/pages/Desktop.vue`，端点见 `flandora/webui/app.py` 的 `/api/desktop/*` |
 | 改打包或安装器 | `build.py`、`installer/Flandora.iss` |
+| 改更新与替换 | `flandora/updater.py`、`flandora/webui/app.py` 的 `/api/update/*` |
 
 ## 数据流
 
 `wx_source` 轮询微信本地库（`wlog` 增量）→ `wx_store` 只读查询配合 `wx_crypto` 解密 → `bridge_core`
-组装 OneBot 事件（群消息带 `is_mentioned`）→ `ob_server` 推给已连接的客户端；发送方向由
-`senders` 选出的 `uia_sender` 在隔离桌面上把文本投递进微信输入框并回车。
+组装 OneBot 事件（群消息带 `is_mentioned`）→ `ob_protocol` 整形 → `ob_network` 按入口推给已连接的客户端；
+发送方向由 `senders` 选出的 `uia_sender` 在隔离桌面上把文本投递进微信输入框并回车。
 
 ## 修改契约
 

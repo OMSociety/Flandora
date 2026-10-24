@@ -13,6 +13,16 @@ export const statusFixture = {
   window_locked: false,
 }
 
+export const updateFixture = {
+  ok: true,
+  mode: 'source',
+  current: '1.0.0',
+  app_dir: 'C:/Flandora',
+  app_dir_writable: true,
+  latest: null,
+  pending: null,
+}
+
 export const configFixture = {
   bot_nicknames: ['芙兰朵露', '兰兰露'],
   bot_wxid: '',
@@ -87,6 +97,8 @@ export async function mockApi(page, options = {}) {
       return route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ ok: false, error: '未登录', auth_required: true }) })
     }
     if (url.pathname === '/api/status') return json(statusFixture)
+    if (url.pathname === '/api/update/status') return json(updateFixture)
+    if (url.pathname === '/api/update/check') return json({ ok: true, current: '1.0.0', newer: false, latest: { version: '1.0.0', tag: 'v1.0.0', url: 'https://github.com/OMSociety/Flandora/releases', asset: '' } })
     if (url.pathname === '/api/config' && request.method() === 'GET') return json(configFixture)
     if (url.pathname === '/api/config' && request.method() === 'PUT') return json({ ok: true, restart_required: ['ob_server_port'] })
     if (url.pathname === '/api/stats') return json({

@@ -14,6 +14,11 @@ FastAPI WebUI 应用。
 - GET  /api/debug/actions  动作目录（面板生成参数表单）
 - POST /api/debug/invoke   在本进程里执行一个动作 {"action", "params"}
 - GET  /api/debug/events   最近推送出去的事件
+- GET  /api/update/status  更新状态（安装形态、待安装包、上次查到的版本）
+- POST /api/update/check   现查 GitHub 发布页
+- POST /api/update/download 下载并暂存安装包
+- POST /api/update/install  拉起替换脚本并退出（仅打包安装）
+- POST /api/update/cancel   放弃待安装的包
 - GET  /api/desktop/status     隔离桌面运行/登录状态
 - POST /api/desktop/start      在隔离桌面上启动微信
 - POST /api/desktop/stop       结束隔离桌面上的微信
@@ -28,6 +33,7 @@ import asyncio
 import json
 import logging
 import os
+import threading
 import time
 from contextlib import asynccontextmanager
 
@@ -224,6 +230,112 @@ async def api_control(payload: dict):
 
     monitor.notify_status()
     return {"ok": True, **get_status()}
+
+
+# ============ 更新 ============
+
+
+@app.get("/api/update/status")
+def api_update_status():
+    """面板要的更新状态：当前版本、安装形态、待安装包、上次查到的版本。"""
+    from .. import updater
+
+    return {
+        "ok": True,
+        "mode": updater.install_mode(),
+        "current": VERSION,
+        "app_dir": updater.app_dir(),
+        "app_dir_writable": updater.can_write_app_dir(),
+        "latest": state.update_available,
+        "pending": updater.pending(),
+    }
+
+
+@app.post("/api/update/check")
+def api_update_check():
+    """现查一次 GitHub 发布页。查不到时把原因原样给出来，不假装是最新。"""
+    from .. import update_check, updater
+
+    try:
+        info = updater.latest_release()
+    except updater.UpdateError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 502)
+    newer = update_check.is_newer(info["version"], VERSION)
+    return {"ok": True, "latest": info, "newer": newer, "current": VERSION}
+
+
+def _download_and_stage() -> dict:
+    from .. import update_check, updater
+
+    info = updater.latest_release()
+    if not update_check.is_newer(info["version"], VERSION):
+        raise updater.UpdateError(f"当前已经是 {VERSION}，没有更新的版本")
+    archive = os.path.join(updater.updates_dir(), f"Flandora-v{info['version']}.zip")
+    updater.download(info["asset"], archive)
+    return updater.stage(archive, info["version"])
+
+
+@app.post("/api/update/download")
+async def api_update_download():
+    """下载并解压到 data/updates，登记为待安装；不碰正在运行的程序目录。"""
+    from .. import updater
+
+    try:
+        info = await asyncio.to_thread(_download_and_stage)
+    except updater.UpdateError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 502)
+    return {"ok": True, "pending": info}
+
+
+@app.post("/api/update/install")
+async def api_update_install():
+    """写好替换脚本、拉起它，然后退出本进程让脚本接手。"""
+    import subprocess
+
+    from .. import updater
+
+    info = updater.pending()
+    if not info:
+        return JSONResponse({"ok": False, "error": "还没有下载好的安装包"}, 400)
+    if updater.install_mode() != "frozen":
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "源码模式没有可替换的安装目录：请在仓库里 git pull 后重装依赖",
+            },
+            400,
+        )
+    if not updater.can_write_app_dir():
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": "程序目录不可写（常见于 Program Files）：请以管理员身份运行脚本",
+            },
+            400,
+        )
+    script = updater.write_swap_script(info)
+    subprocess.Popen(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script],
+        creationflags=getattr(subprocess, "DETACHED_PROCESS", 0),
+        close_fds=True,
+    )
+    threading.Timer(1.5, lambda: os._exit(0)).start()
+    log.info("[WebUI] 已拉起更新脚本，准备退出：%s", script)
+    return {"ok": True, "script": script, "message": "正在退出并替换，完成后会自动重启"}
+
+
+@app.post("/api/update/cancel")
+def api_update_cancel():
+    """放弃待安装的包（暂存目录与登记一起删掉）。"""
+    import shutil
+
+    from .. import updater
+
+    info = updater.pending()
+    if info and info.get("staging"):
+        shutil.rmtree(info["staging"], ignore_errors=True)
+    updater.clear_pending()
+    return {"ok": True}
 
 
 # ============ 配置 ============

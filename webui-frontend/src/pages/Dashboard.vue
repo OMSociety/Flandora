@@ -67,7 +67,53 @@ async function loadStats() {
   if (res.ok && res.data) stats.value = { counters: res.data.counters || {}, hourly: res.data.hourly || [], top_contacts: res.data.top_contacts || [] }
   else toast('加载消息统计失败', 'error')
 }
-onMounted(() => { loadStats() })
+const updateInfo = ref({ mode: '', current: '', app_dir_writable: true, pending: null, latest: null })
+const updateBusy = ref('')
+const updateMsg = ref('')
+const updateError = ref(false)
+const pendingUpdate = computed(() => updateInfo.value.pending)
+const latestUpdate = computed(() => updateInfo.value.latest)
+const canInstallUpdate = computed(() => updateInfo.value.mode === 'frozen' && updateInfo.value.app_dir_writable)
+const modeText = computed(() => (updateInfo.value.mode === 'frozen' ? '打包安装' : '源码运行'))
+function updateErrorText(res, fallback) { return (res && res.data && res.data.error) || fallback }
+async function loadUpdate() {
+  const res = await get('/api/update/status')
+  if (res.ok && res.data) updateInfo.value = { ...updateInfo.value, ...res.data }
+}
+async function checkUpdate() {
+  updateBusy.value = 'check'; updateMsg.value = ''
+  const res = await post('/api/update/check')
+  updateBusy.value = ''
+  if (res.ok && res.data && res.data.ok) {
+    updateInfo.value = { ...updateInfo.value, latest: res.data.latest }
+    updateMsg.value = res.data.newer ? `发现新版本 ${res.data.latest.version}` : '已经是最新版本'
+    updateError.value = false
+  } else { updateMsg.value = updateErrorText(res, '检查失败'); updateError.value = true }
+}
+async function downloadUpdate() {
+  updateBusy.value = 'download'; updateMsg.value = ''
+  const res = await post('/api/update/download')
+  updateBusy.value = ''
+  if (res.ok && res.data && res.data.ok) {
+    updateInfo.value = { ...updateInfo.value, pending: res.data.pending }
+    updateMsg.value = '安装包已下载并暂存'; updateError.value = false
+  } else { updateMsg.value = updateErrorText(res, '下载失败'); updateError.value = true }
+}
+async function installUpdate() {
+  updateBusy.value = 'install'; updateMsg.value = ''
+  const res = await post('/api/update/install')
+  updateBusy.value = ''
+  if (res.ok && res.data && res.data.ok) { updateMsg.value = res.data.message || '正在退出并替换，完成后会自动重启'; updateError.value = false }
+  else { updateMsg.value = updateErrorText(res, '安装失败'); updateError.value = true }
+}
+async function cancelUpdate() {
+  updateBusy.value = 'cancel'; updateMsg.value = ''
+  const res = await post('/api/update/cancel')
+  updateBusy.value = ''
+  if (res.ok && res.data && res.data.ok) { updateInfo.value = { ...updateInfo.value, pending: null }; updateMsg.value = '已放弃待安装的包'; updateError.value = false }
+  else { updateMsg.value = updateErrorText(res, '取消失败'); updateError.value = true }
+}
+onMounted(() => { loadStats(); loadUpdate() })
 </script>
 
 <template>
@@ -76,10 +122,29 @@ onMounted(() => { loadStats() })
       <div><h2>一眼看清桥接的每个环节。</h2><p>查看微信与 OneBot 客户端的连接状态。</p></div>
       <span class="version-label">Bridge {{ status.version || '1.0.0' }}</span>
     </div>
-    <div v-if="status.update?.latest" class="update-note">
-      <span><AppIcon name="Info" :size="16" />新版本 {{ status.update.latest }} 可用，当前为 {{ status.update.current }}</span>
-      <a :href="status.update.url" target="_blank" rel="noreferrer">查看发布页<AppIcon name="ArrowUpRight" :size="14" /></a>
-    </div>
+    <section class="card update-card">
+      <div class="update-head">
+        <div>
+          <h3 class="card-title">版本与更新</h3>
+          <p class="card-description">当前 {{ updateInfo.current || status.version }}，{{ modeText }}</p>
+        </div>
+        <button class="btn btn-outline btn-sm" :disabled="!!updateBusy" @click="checkUpdate">{{ updateBusy === 'check' ? '检查中…' : '检查更新' }}</button>
+      </div>
+      <p v-if="updateMsg" class="update-msg" :class="{ bad: updateError }">{{ updateMsg }}</p>
+      <div v-if="latestUpdate" class="update-line">
+        <span><AppIcon name="Info" :size="15" />最新 {{ latestUpdate.version }}</span>
+        <a :href="latestUpdate.url" target="_blank" rel="noreferrer">发布页<AppIcon name="ArrowUpRight" :size="13" /></a>
+        <button v-if="!pendingUpdate" class="btn btn-sm" :disabled="!!updateBusy" @click="downloadUpdate">{{ updateBusy === 'download' ? '下载中…' : '下载并暂存' }}</button>
+      </div>
+      <div v-if="pendingUpdate" class="update-line pending">
+        <span><AppIcon name="ArrowDownToLine" :size="15" />{{ pendingUpdate.version }} 已下载暂存</span>
+        <template v-if="canInstallUpdate">
+          <button class="btn btn-sm" :disabled="!!updateBusy" @click="installUpdate">{{ updateBusy === 'install' ? '安装中…' : '安装并重启' }}</button>
+          <button class="btn btn-outline btn-sm" :disabled="!!updateBusy" @click="cancelUpdate">取消</button>
+        </template>
+        <span v-else class="hint">{{ updateInfo.mode === 'frozen' ? '程序目录不可写，请以管理员身份运行 data/updates 里的脚本' : '源码模式：在仓库里 git pull 后重装依赖' }}</span>
+      </div>
+    </section>
 
     <section class="card service-panel" aria-labelledby="service-heading">
       <div class="service-main">
@@ -233,4 +298,12 @@ onMounted(() => { loadStats() })
   .update-note { align-items:flex-start; }
   .win-row { align-items:flex-start; flex-direction:column; }
 }
+.update-card { display:flex; flex-direction:column; gap:10px; }
+.update-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+.update-head .card-title { margin:0 0 2px; }
+.update-msg { margin:0; font-size:12.5px; color:var(--green, #1f9d55); }
+.update-msg.bad { color:var(--danger); }
+.update-line { display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:12.5px; }
+.update-line span, .update-line a { display:flex; align-items:center; gap:6px; }
+.update-line.pending { padding-top:8px; border-top:1px solid var(--border); }
 </style>

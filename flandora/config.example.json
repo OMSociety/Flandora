@@ -11,10 +11,8 @@
     "webui_auto_open": true,
     "webui_password": "",
     "_comment_webui_password": "面板登录密码的 PBKDF2 哈希，由 WebUI 保存时写入；留空 = 不校验（本机任何进程都能打开面板）。不要在这里手填明文，面板认不出明文会当成没设密码。",
-    "group_name_map": {
-        "47622228067@chatroom": "群名示例"
-    },
-    "_comment_group_name_map": "群 ID → 微信里显示的群名。微信搜索框搜不到 @chatroom 结尾的群 ID，发送到群时要靠这张表换成群名。",
+    "group_name_map": {},
+    "_comment_group_name_map": "群 ID → 微信里显示的群名。微信搜索框搜不到 @chatroom 结尾的群 ID，发送到群时要靠这张表换成群名。留空即可：群里来过一条消息后 Flandora 会自动学会群名，这里只用于预先指定或纠正。",
     "ob_server_host": "127.0.0.1",
     "ob_server_port": 7999,
     "ob_server_token": "",

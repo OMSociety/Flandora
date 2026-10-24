@@ -1448,22 +1448,85 @@ class UiaSender(BaseSender):
             self._last_error = f"输入 @ 之后没有出现成员选择弹层，无法在群里 @ {name}"
             log.error(f"[UIA失败] {self._last_error}")
             return False
+        # 逐字符收窄弹层：打全名会把列表筛空、弹层直接关掉，之后再没有东西可点，
+        # 所以一旦列表只剩一项就停下，用它当目标。
+        item = None
+        item_hwnd = 0
         for ch in name:
             self._post_char(ch)
-            time.sleep(0.04)
-        time.sleep(0.6)
-        for hwnd in fresh:
-            item = self._mention_item(name, hwnd)
-            if item is None:
-                continue
-            if not self._post_click(item, hwnd):
-                continue
-            time.sleep(0.4)
-            if name in self._input_text():
-                return True
-        self._last_error = f"成员选择弹层里没能选中「{name}」，本次发送已取消"
+            time.sleep(0.12)
+            for _ in range(4):
+                time.sleep(0.15)
+                found, found_hwnd = self._mention_unique(fresh)
+                if found is not None:
+                    item, item_hwnd = found, found_hwnd
+                    break
+            if item is not None:
+                break
+        if item is None:
+            self._last_error = f"成员选择弹层里没能选中「{name}」，本次发送已取消"
+            log.error(f"[UIA失败] {self._last_error}")
+            return False
+
+        # 弹层不激活时，投进去的鼠标消息不生效（实测点了等于没点）
+        try:
+            self._user32_inst().SetActiveWindow(item_hwnd)
+            time.sleep(0.2)
+        except Exception as e:  # noqa: BLE001
+            log.debug(f"激活成员弹层失败（继续尝试点击）: {e}")
+
+        # 选中后输入框里是一个内嵌对象（值里出现 U+FFFC），不是纯文本昵称
+        for attempt in range(3):
+            if not self._post_click(item, item_hwnd):
+                break
+            for _ in range(8):
+                time.sleep(0.15)
+                if self._mention_selected(name):
+                    return True
+            log.warning(f"第 {attempt + 1} 次点选「{name}」后输入框里还没有提及对象")
+
+        self._last_error = f"成员选择弹层里点中了「{name}」但没变成提及，本次发送已取消"
         log.error(f"[UIA失败] {self._last_error}")
         return False
+
+    def _mention_selected(self, name: str) -> bool:
+        """输入框里是否已经放进了提及对象。
+
+        真机上提及是内嵌对象，输入框的值里表现为 U+FFFC（对象占位符）；
+        少数路径会退化成「昵称 + U+2005」，两种都认。
+        """
+        text = self._input_text()
+        if "\ufffc" in text:
+            return True
+        return any(f"{name}{sep}" in text for sep in ("\u2005", "\u200b"))
+
+    def _mention_unique(self, hwnds):
+        """弹层里恰好只剩一项时返回该项及其窗口，否则返回 (None, 0)。"""
+        for hwnd in hwnds:
+            items = self._mention_items(hwnd)
+            if len(items) == 1:
+                return items[0], hwnd
+        return None, 0
+
+    def _mention_items(self, hwnd: int):
+        """弹层里所有成员项。"""
+        import uiautomation as auto
+
+        try:
+            root = auto.ControlFromHandle(hwnd)
+        except Exception as e:  # noqa: BLE001
+            log.debug(f"读取成员弹层失败: {e}")
+            return []
+        if root is None:
+            return []
+        items = []
+        for _, node in self._walk(root):
+            try:
+                if (node.ControlTypeName or "") == "ListItemControl":
+                    items.append(node)
+            except Exception:  # noqa: BLE001
+                continue
+        return items
 
     def _mention_item(self, name: str, hwnd: int):
         """弹层里指向该成员的那一项；找不到或候选不唯一时返回 None。"""

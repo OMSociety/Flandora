@@ -140,6 +140,15 @@ run_bridge.py -> flandora.main
   `*.silk`/`*.amr`/`*.mp3` 计数为 0）、给 `flandora/wx_store.py` 加语音文件定位（现只有
   `extract_image()` 在写死的 `Img` 目录里 glob）、给 `flandora/wx_image.py` 的解码链路加音频魔数
   与容器处理（`_MAGICS` 只认 jpg/png/gif/webp，`_sniff` 认不出即返回空）。文件与视频同理。
+- 撤回（`delete_msg`）：气泡能定位（聊天区里是 `ListItemControl`，Name 就是正文；会话列表里也有同名条目，靠 x 坐标区分），
+  但聊天区是自绘渲染子窗 `MMUIRenderSubWindowHW`，向主窗与它分别投 `WM_RBUTTONDOWN/UP`、`WM_CONTEXTMENU` 都不出菜单。
+  对照：同样往主窗投右键点会话列表能弹出会话菜单，说明投递本身有效，是这块子窗不认合成消息；非活动桌面上
+  `SetCursorPos` 直接失败，真实鼠标也没有落点。要么把隔离桌面切到前台（会占用户屏幕），要么由人在客户端里点。
+  实测记录见 `docs/needs-user.md` 第 2 节。
+- 拍一拍（`send_poke` / `friend_poke`）：头像与消息气泡在同一块自绘区域，和撤回撞同一堵墙。收件侧不受影响，
+  别人拍一拍会以 `notice/notify + sub_type=poke` 推出去（`tests/test_ob_notice.py` 覆盖）。
+- 引用回复（发送方向的 `reply` 段）：微信 PC 引用的入口同样是右键消息菜单，因此与撤回同一限制。收件方向已通
+  （`refermsg` 的 `svrid` 回查 `msg_ids` 得到被引 `message_id`），只有「主动引用某条历史消息」这一半挂着。
 - 语音转文字（ASR）已移除，不属于桥接职责：转写与回复策略归 OneBot v11 客户端。
 
 ## 已知风险区

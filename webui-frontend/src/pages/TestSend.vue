@@ -38,9 +38,9 @@ onMounted(loadContacts)
   </div>
 </template>
 <style scoped>
-.test-page { display:flex; flex-direction:column; gap:20px; }
-.test-layout { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(250px,1fr); gap:20px; align-items:start; max-width:1100px; }
-.compose-card { padding:24px; }
+.test-page { display:flex; flex-direction:column; gap:16px; }
+.test-layout { display:grid; grid-template-columns:minmax(0,1.65fr) minmax(250px,1fr); gap:16px; align-items:start; max-width:1100px; }
+.compose-card { padding:20px; }
 .section-head > .app-icon { color:var(--primary-deep); }
 .field + .field { margin-top:22px; }
 .contact-input { display:flex; align-items:center; gap:9px; border:1px solid var(--border-strong); border-radius:8px; padding:0 11px; color:var(--muted); }

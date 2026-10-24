@@ -47,7 +47,7 @@ onMounted(() => { loadInitialLogs(300); scrollToBottom() })
   </div>
 </template>
 <style scoped>
-.logs-page { display:flex; flex-direction:column; gap:18px; height:100%; min-height:550px; }
+.logs-page { display:flex; flex-direction:column; gap:16px; height:100%; min-height:550px; }
 .log-toolbar { padding:13px 16px; box-shadow:none; }
 .log-search { display:flex; align-items:center; gap:10px; padding-bottom:12px; border-bottom:1px solid var(--border); color:var(--muted); }
 .log-search input { flex:1; border:0; outline:0; background:transparent; color:var(--text-strong); font-size:12px; }

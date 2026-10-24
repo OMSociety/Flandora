@@ -206,7 +206,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); if (tickTimer) clearInt
 </template>
 
 <style scoped>
-.wiz-page { display:flex; flex-direction:column; gap:22px; }
+.wiz-page { display:flex; flex-direction:column; gap:16px; }
 .local-only { display:flex; align-items:center; gap:6px; color:var(--success); font-size:11px; white-space:nowrap; }
 .wizard-steps { display:grid; grid-template-columns:repeat(4,1fr); padding:0 10px 22px; list-style:none; border-bottom:1px solid var(--border); }
 .wizard-steps li { position:relative; display:flex; align-items:center; gap:10px; color:var(--muted); }

@@ -33,7 +33,7 @@ onMounted(() => loadInitialMessages(200))
   </div>
 </template>
 <style scoped>
-.messages-page { display:flex; flex-direction:column; gap:18px; }
+.messages-page { display:flex; flex-direction:column; gap:16px; }
 .live-label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; white-space:nowrap; }
 .live-label i { width:6px; height:6px; border-radius:50%; background:var(--primary); }
 .filter-panel { padding:13px 16px; box-shadow:none; }

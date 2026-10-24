@@ -287,9 +287,9 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.debug-page { display:flex; flex-direction:column; gap:20px; }
-.debug-layout { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); gap:20px; align-items:start; max-width:1180px; }
-.invoke-card, .builder-card, .events-card { padding:22px; }
+.debug-page { display:flex; flex-direction:column; gap:16px; }
+.debug-layout { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); gap:16px; align-items:start; max-width:1180px; }
+.invoke-card, .builder-card, .events-card { padding:20px; }
 .section-head > .app-icon { color:var(--primary-deep); }
 .action-brief { margin-top:14px; padding:12px 14px; border-radius:8px; background:var(--inset); }
 .action-summary { font-size:12.5px; color:var(--text-strong); }

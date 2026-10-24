@@ -122,11 +122,11 @@ onMounted(() => { loadStats(); loadUpdate() })
       <div><h2>一眼看清桥接的每个环节。</h2><p>查看微信与 OneBot 客户端的连接状态。</p></div>
       <span class="version-label">Bridge {{ status.version || '1.0.0' }}</span>
     </div>
-    <section class="card update-card">
+    <section class="card update-card" aria-labelledby="update-heading">
       <div class="update-head">
         <div>
-          <h3 class="card-title">版本与更新</h3>
-          <p class="card-description">当前 {{ updateInfo.current || status.version }}，{{ modeText }}</p>
+          <h3 id="update-heading" class="card-title">版本与更新</h3>
+          <p class="update-current">当前 <span class="mono">{{ updateInfo.current || status.version }}</span><span class="update-sep"> · </span>{{ modeText }}</p>
         </div>
         <button class="btn btn-outline btn-sm" :disabled="!!updateBusy" @click="checkUpdate">{{ updateBusy === 'check' ? '检查中…' : '检查更新' }}</button>
       </div>
@@ -198,11 +198,12 @@ onMounted(() => { loadStats(); loadUpdate() })
 </template>
 
 <style scoped>
-.dashboard { display:flex; flex-direction:column; gap:18px; }
+.dashboard { display:flex; flex-direction:column; gap:16px; }
+.dashboard .page-intro { margin-bottom:0; }
 .version-label { color:var(--muted); font-size:11px; white-space:nowrap; }
 .update-note { display:flex; align-items:center; justify-content:space-between; gap:10px; padding:11px 14px; border:1px solid var(--border); border-radius:10px; background:var(--card); font-size:12px; }
 .update-note span, .update-note a { display:flex; align-items:center; gap:8px; }
-.service-panel { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:22px; }
+.service-panel { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:20px; box-shadow:none; }
 .service-main { display:flex; align-items:center; gap:15px; min-width:0; }
 .service-icon { display:grid; place-items:center; width:48px; height:48px; flex-shrink:0; border-radius:12px; color:var(--muted); background:var(--inset); }
 .service-icon.online { color:var(--primary-deep); background:var(--primary-soft); }
@@ -212,29 +213,28 @@ onMounted(() => { loadStats(); loadUpdate() })
 .service-controls { display:flex; align-items:center; gap:9px; flex-shrink:0; }
 .restart-btn { border:1px solid var(--border); height:36px; width:36px; }
 .status-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:16px; }
-.status-tile { padding:17px 18px; box-shadow:none; }
-.tile-top { display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--muted); font-size:11px; }
+.status-tile { display:flex; flex-direction:column; min-height:132px; padding:18px; box-shadow:none; }
+.tile-top { display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--muted); font-size:11px; line-height:1.5; }
 .tile-top .app-icon { color:var(--faint); }
-.status-tile > strong { display:block; margin-top:10px; color:var(--text-strong); font-size:18px; font-weight:600; letter-spacing:-.02em; }
+.status-tile > strong { display:flex; align-items:center; min-height:26px; margin-top:12px; color:var(--text-strong); font-size:18px; font-weight:600; line-height:1.35; letter-spacing:-.01em; }
 .status-tile > strong.green { color:var(--success); }
 .status-tile > strong.gray { color:var(--text-strong); }
 .status-tile > strong.amber { color:var(--warning); }
-.tile-foot, .text-action { display:flex; align-items:center; gap:5px; margin-top:6px; font-size:10px; color:var(--muted); }
-.text-action { min-height:24px; padding:0; }
+.tile-foot, .text-action { display:flex; align-items:center; gap:5px; min-height:24px; margin-top:auto; padding-top:12px; font-size:11px; line-height:1.5; color:var(--muted); }
 .foot-sep { margin-inline:3px; color:var(--border-strong); }
 .mini-dot { width:5px; height:5px; border-radius:50%; background:var(--muted); }
 .mini-dot.green { background:var(--primary); }
 .text-action { padding:0; border:0; background:none; cursor:pointer; text-align:left; }
 .text-action:hover { color:var(--primary-deep); }
-.dashboard-grid { display:grid; grid-template-columns:minmax(0,1.75fr) minmax(260px,1fr); gap:18px; align-items:start; }
-.main-column, .side-column { display:flex; flex-direction:column; gap:18px; min-width:0; }
+.dashboard-grid { display:grid; grid-template-columns:minmax(0,1.75fr) minmax(260px,1fr); gap:16px; align-items:start; }
+.main-column, .side-column { display:flex; flex-direction:column; gap:16px; min-width:0; }
 .activity-card, .chart-card, .contacts-card { box-shadow:none; }
 .metric-grid { display:grid; grid-template-columns:repeat(3,1fr); }
 .metric-grid > div { padding:4px 18px; border-right:1px solid var(--border); }
 .metric-grid > div:first-child { padding-left:0; }
 .metric-grid > div:last-child { border:0; }
-.metric-grid strong { display:block; font-size:29px; font-weight:600; letter-spacing:-.04em; color:var(--text-strong); font-variant-numeric:tabular-nums; }
-.metric-grid span { display:flex; align-items:center; gap:6px; margin-top:5px; color:var(--muted); font-size:10px; white-space:nowrap; }
+.metric-grid strong { display:block; font-size:28px; font-weight:600; line-height:1.2; letter-spacing:-.03em; color:var(--text-strong); font-variant-numeric:tabular-nums; }
+.metric-grid span { display:flex; align-items:center; gap:6px; margin-top:8px; color:var(--muted); font-size:11px; line-height:1.5; white-space:nowrap; }
 .metric-dot { width:5px; height:5px; border-radius:50%; background:var(--primary); }
 .metric-dot.pushed { background:var(--muted); }
 .metric-dot.sent { background:var(--text); }
@@ -277,20 +277,25 @@ onMounted(() => { loadStats(); loadUpdate() })
 @media(min-width:1500px) { .status-tile { padding:20px 22px; } }
 @media(max-width:1150px) { .status-grid { grid-template-columns:repeat(2,1fr); } .dashboard-grid { grid-template-columns:1fr; } .side-column { display:grid; grid-template-columns:1fr 1fr; align-items:start; } }
 @media(max-width:767px) {
-  .dashboard { gap:14px; }
+  .dashboard { gap:12px; }
   .version-label { display:none; }
-  .service-panel { align-items:flex-start; flex-direction:column; gap:17px; padding:17px; }
+  .service-panel { align-items:flex-start; flex-direction:column; gap:16px; padding:16px; }
   .service-controls { width:100%; }
   .service-controls .btn:first-child { flex:1; }
   .status-grid { gap:10px; }
-  .status-tile { padding:14px; }
-  .status-tile > strong { font-size:15px; }
+  .status-tile { min-height:0; padding:14px; }
+  .status-tile > strong { min-height:22px; margin-top:10px; font-size:16px; }
   .tile-top { font-size:10px; }
-  .tile-foot, .text-action { font-size:9px; }
+  .tile-foot, .text-action { padding-top:10px; font-size:10px; }
   .side-column { display:flex; }
   .metric-grid > div { padding-inline:10px; }
-  .metric-grid strong { font-size:25px; }
-  .metric-grid span { font-size:9px; white-space:normal; }
+  .metric-grid strong { font-size:24px; }
+  .metric-grid span { font-size:10px; white-space:normal; }
+  .update-card { padding:16px; }
+  .update-head { align-items:flex-start; }
+  .update-current { font-size:11px; }
+  .update-line { gap:8px 10px; font-size:11px; }
+  .update-line .btn { margin-left:0; }
   .learning-detail { grid-template-columns:1fr; gap:18px; }
   .learning-progress { align-items:flex-start; flex-direction:column; gap:9px; }
   .learning-progress .progress-track { width:100%; }
@@ -298,12 +303,19 @@ onMounted(() => { loadStats(); loadUpdate() })
   .update-note { align-items:flex-start; }
   .win-row { align-items:flex-start; flex-direction:column; }
 }
-.update-card { display:flex; flex-direction:column; gap:10px; }
-.update-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-.update-head .card-title { margin:0 0 2px; }
-.update-msg { margin:0; font-size:12.5px; color:var(--green, #1f9d55); }
+.update-card { display:flex; flex-direction:column; padding:18px 20px; box-shadow:none; }
+.update-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.update-head .card-title { margin:0; }
+.update-current { margin-top:4px; font-size:12px; line-height:1.55; color:var(--muted); }
+.update-current .mono { color:var(--text); }
+.update-sep { margin:0 2px; color:var(--border-strong); }
+.update-msg { margin:12px 0 0; padding-top:12px; border-top:1px solid var(--border); font-size:12px; line-height:1.6; color:var(--success); }
 .update-msg.bad { color:var(--danger); }
-.update-line { display:flex; flex-wrap:wrap; align-items:center; gap:10px; font-size:12.5px; }
-.update-line span, .update-line a { display:flex; align-items:center; gap:6px; }
-.update-line.pending { padding-top:8px; border-top:1px solid var(--border); }
+.update-line { display:flex; flex-wrap:wrap; align-items:center; gap:8px 14px; margin-top:12px; padding-top:12px; border-top:1px solid var(--border); font-size:12px; line-height:1.6; }
+.update-line span, .update-line a { display:inline-flex; align-items:center; gap:6px; }
+.update-line a { color:var(--primary-deep); text-decoration:none; }
+.update-line a:hover { text-decoration:underline; }
+.update-line .btn { margin-left:auto; }
+.update-line.pending { margin-top:8px; }
+.update-line .hint { flex-basis:100%; margin:0; }
 </style>

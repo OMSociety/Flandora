@@ -81,7 +81,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
   </div>
 </template>
 <style scoped>
-.desktop-page { display:flex; flex-direction:column; gap:18px; }
+.desktop-page { display:flex; flex-direction:column; gap:16px; }
 .viewer-card { padding:0; overflow:hidden; box-shadow:none; }
 .viewer-toolbar { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:12px 16px; border-bottom:1px solid var(--border); }
 .viewer-title, .viewer-actions { display:flex; align-items:center; gap:9px; }

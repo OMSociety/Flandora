@@ -32,7 +32,9 @@
 | 装运行期与开发依赖 | `.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`（它 `-r` 了 `flandora/` 与 `manager/` 两份运行期清单） |
 | 跑全部后端测试 | `.venv\Scripts\python.exe -m pytest tests -q` |
 | 跑单个测试文件 | `.venv\Scripts\python.exe -m pytest tests/test_ob_server.py -q` |
-| 语法检查 | `.venv\Scripts\python.exe -m compileall -q flandora manager` |
+| 装 SDK / MCP（下游包） | `-m pip install -e sdk\python` 与 `-m pip install -e mcp\python`；自检 `-m flandora_mcp.server --selftest` |
+| 重新导出动作快照 | `.venv\Scripts\python.exe tools/gen_sdk_catalog.py`（改动作后必跑，CI 核对无差异） |
+| 语法检查 | `.venv\Scripts\python.exe -m compileall -q flandora manager sdk mcp` |
 | Lint | `.venv\Scripts\python.exe -m ruff check .` |
 | 格式化 | `.venv\Scripts\python.exe -m ruff format .`（CI 用 `--check`，不通过即红） |
 | 起桥接（源码） | `.venv\Scripts\python.exe run_bridge.py` |
@@ -113,7 +115,7 @@ run_bridge.py -> flandora.main
 
 改动完成 = 下列全部通过：
 
-1. `.venv\Scripts\python.exe -m compileall -q flandora manager`
+1. `.venv\Scripts\python.exe -m compileall -q flandora manager sdk mcp`
 2. `.venv\Scripts\python.exe -m ruff check .` 与 `.venv\Scripts\python.exe -m ruff format --check .`
 3. `.venv\Scripts\python.exe -m pytest tests -q`
 4. 改了 `webui-frontend/` 时追加：`cd webui-frontend; npm test` 与 `npm run build`

@@ -188,6 +188,18 @@ client.run_forever()
 
 用法、错误分类与已知边界见 [sdk/python/README.md](sdk/python/README.md)。
 
+## MCP 服务
+
+`flandora-mcp` 把动作目录与调用能力包成 MCP 服务，给支持 MCP 的 AI 客户端用：默认 `docs` 模式只读动作目录
+（不需要桥接在线），`read` 模式可调只读动作，`write` 模式才能发消息。源码在 `mcp/python/`：
+
+```powershell
+.venv\Scripts\python.exe -m pip install -e mcp\python
+.venv\Scripts\python.exe -m flandora_mcp.server --selftest
+```
+
+客户端配置、三种模式与工具清单见 [mcp/python/README.md](mcp/python/README.md)。
+
 ## 配置项
 
 配置文件是程序目录下的 `data/config.json`（源码模式即仓库根 `data/config.json`），首次启动自动生成。缺的键按默认值处理，改完重启 bridge 生效。
@@ -342,6 +354,9 @@ client.run_forever()
 
 # SDK（可选：在自己的项目里用它当客户端）
 .venv\Scripts\python.exe -m pip install -e sdk\python
+
+# MCP 服务（可选：给 AI 客户端用）
+.venv\Scripts\python.exe -m pip install -e mcp\python
 
 # 从源码起桥接
 .venv\Scripts\python.exe run_bridge.py

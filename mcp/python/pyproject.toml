@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flandora-mcp"
+version = "1.0.0"
+description = "Flandora 的 MCP 服务：把 OneBot 动作目录与调用能力提供给 AI 客户端"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = []
+
+[project.scripts]
+flandora-mcp = "flandora_mcp.server:main"
+
+[project.urls]
+Homepage = "https://github.com/OMSociety/Flandora"
+
+[tool.setuptools]
+packages = ["flandora_mcp"]
+
+[tool.setuptools.package-data]
+flandora_mcp = ["_catalog.json"]

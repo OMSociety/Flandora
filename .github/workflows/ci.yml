@@ -33,10 +33,16 @@ jobs:
         run: |
           python tools/gen_sdk_catalog.py
           git diff --exit-code -- sdk/python/flandora_sdk/_catalog.json
+          git diff --exit-code -- mcp/python/flandora_mcp/_catalog.json
       - name: 安装 SDK 并做导入冒烟
         run: |
           python -m pip install -e sdk/python
           python -c "import flandora_sdk; print(flandora_sdk.__version__, len(flandora_sdk.list_actions()))"
+
+      - name: 安装 MCP 服务并自检
+        run: |
+          python -m pip install -e mcp/python
+          python -m flandora_mcp.server --selftest
       - name: 单元测试
         run: python -m pytest tests -q
 

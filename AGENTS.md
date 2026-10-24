@@ -80,7 +80,7 @@ run_bridge.py -> flandora.main
 ## 数据流
 
 `wx_source` 轮询微信本地库（`wlog` 增量）→ `wx_store` 只读查询配合 `wx_crypto` 解密 → `bridge_core`
-组装 OneBot 事件（群消息带 `is_mentioned`）→ `ob_protocol` 整形 → `ob_network` 按入口推给已连接的客户端；
+组装 OneBot 事件（群消息带 `is_mentioned`；撤回与拍一拍先摘成 `notice`，不进消息流）→ `ob_protocol` 整形 → `ob_network` 按入口推给已连接的客户端，其中每条连接建立时推 `lifecycle(connect)`、停止时推 `disable`，心跳按 `ob_heartbeat_seconds` 定时推；
 发送方向由 `senders` 选出的 `uia_sender` 在隔离桌面上把文本投递进微信输入框并回车。
 
 ## 修改契约
@@ -90,7 +90,7 @@ run_bridge.py -> flandora.main
   少改一处就会出现「后端认、界面不认」的静默不一致。
 - 改 `/api/status`、`/api/desktop/status` 等响应字段：同步 `webui-frontend/tests/fixtures.js` 的夹具，
   否则前端断言与后端字段脱节，测试仍会绿。
-- 改 OneBot 事件字段或协议行为：改 `flandora/ob_protocol.py`，并跑 `tests/test_ob_server.py`。
+- 改 OneBot 事件字段或协议行为：改 `flandora/ob_protocol.py`，并跑 `tests/test_ob_server.py`；动通知事件或心跳时另跑 `tests/test_ob_notice.py`、`tests/test_ob_heartbeat.py`、`tests/test_ob_network.py`（后两者起真端口，meta_event 会混进会话，等事件要跳过它）。
   `ob_protocol.py` 用 `hasattr(bi, "_resolve_names")` 调 `bridge_core` 的方法，改名不会报错，
   只会让群历史里的发言人静默退化成 wxid。
 - 改前端：必须 `cd webui-frontend; npm run build`，因为后端只托管 `flandora/webui/dist`，

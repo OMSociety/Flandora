@@ -22,6 +22,11 @@ dist/
 config.json
 *.user.json
 
+# 测试临时目录（tests/conftest.py 把 pytest 的 tmp 根钉在这里）
+.pytest-tmp/
+.pytest_cache/
+.ruff_cache/
+
 # 前端测试与设计验收产物
 webui-frontend/test-results/
 webui-frontend/playwright-report/

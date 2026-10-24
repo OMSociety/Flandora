@@ -1,3 +1,17 @@
--r requirements.txt
+# 开发与 CI 的完整依赖：桥接运行期 + 托盘管理器运行期 + 测试与 lint。
+#
+# 安装：.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+#
+# 运行期依赖的版本区间写在各自清单里（flandora/ 与 manager/），这里只补
+# 开发工具，避免同一批版本号维护在两处。终端用户不需要这个文件——
+# 发行包由 PyInstaller 打包，解释器与依赖都随包分发。
+
+-r flandora/requirements.txt
+-r manager/requirements.txt
+
+# 测试：pytest 的临时目录在 tests/conftest.py 里钉到仓库内，避开受限机器上
+# 系统临时目录的权限问题。
 pytest==9.1.1
+
+# lint 与格式化：CI 跑 ruff check 与 ruff format --check，本地提交前同样跑一遍。
 ruff==0.17.2

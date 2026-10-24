@@ -16,14 +16,15 @@ jobs:
           python-version: "3.13"
           cache: pip
           cache-dependency-path: |
-            requirements.txt
+            flandora/requirements.txt
+            manager/requirements.txt
             requirements-dev.txt
       - name: 安装依赖
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
       - name: 语法编译检查
-        run: python -m compileall -q flandora
+        run: python -m compileall -q flandora manager
       - name: Lint
         run: python -m ruff check .
       - name: 格式检查

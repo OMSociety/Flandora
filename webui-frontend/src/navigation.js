@@ -12,6 +12,7 @@ export const NAV_GROUPS = [
     items: [
       { id: 'desktop', icon: 'Monitor', label: '微信画面', description: '隔离桌面实况与操作' },
       { id: 'logs', icon: 'TerminalSquare', label: '运行日志', description: '实时事件与故障诊断' },
+      { id: 'debug', icon: 'Wrench', label: '调试台', description: '直接调用动作与查看事件' },
       { id: 'wizard', icon: 'KeyRound', label: '取钥向导', description: '配置数据库与图片密钥' },
     ],
   },

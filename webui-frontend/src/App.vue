@@ -11,6 +11,7 @@ import Config from './pages/Config.vue'
 import Desktop from './pages/Desktop.vue'
 import Wizard from './pages/Wizard.vue'
 import TestSend from './pages/TestSend.vue'
+import Debug from './pages/Debug.vue'
 import Login from './pages/Login.vue'
 import { get } from './api'
 import { wsState, connectWS, on } from './ws'
@@ -160,6 +161,7 @@ onBeforeUnmount(() => {
         <Desktop v-else-if="tab === 'desktop'" />
         <Wizard v-else-if="tab === 'wizard'" />
         <TestSend v-else-if="tab === 'test'" />
+        <Debug v-else-if="tab === 'debug'" />
       </main>
     </div>
     <ToastContainer />

@@ -107,6 +107,32 @@ export async function mockApi(page, options = {}) {
     ] })
     if (url.pathname === '/api/wizard/status') return json(wizardFixture)
     if (url.pathname === '/api/desktop/status') return json(desktopStatus)
+    if (url.pathname === '/api/debug/actions') return json({
+      categories: ['消息', '信息'],
+      actions: [
+        {
+          name: 'send_msg', aliases: [], category: '消息', summary: '发送一条消息',
+          readOnly: false, implemented: true, wip: '',
+          params: [{ name: 'message_type', type: 'string', required: true, default: '', desc: 'group 或 private' }],
+        },
+        {
+          name: 'set_group_kick', aliases: [], category: '信息', summary: '踢出群成员',
+          readOnly: false, implemented: false, wip: '微信 PC 客户端不提供对应接口', params: [],
+        },
+      ],
+    })
+    if (url.pathname === '/api/debug/invoke') return json({
+      ok: true, elapsed_ms: 12,
+      response: { status: 'ok', retcode: 0, data: { message_id: 41 }, echo: 'webui' },
+    })
+    if (url.pathname === '/api/debug/events') return json({
+      events: [
+        {
+          message_id: 41, post_type: 'message', message_type: 'group', group_id: 1001,
+          user_id: 2002, nickname: '林同学', raw_message: '今晚八点开始',
+        },
+      ],
+    })
     if (url.pathname === '/api/contacts') return json({ contacts: [{ id: 'filehelper', name: '文件传输助手', kind: 'private' }, { id: 'example@chatroom', name: '测试群聊', kind: 'group' }] })
     if (url.pathname === '/api/send') return json({ ok: true })
     if (url.pathname === '/api/control' || url.pathname === '/api/mode' || url.pathname === '/api/windows/select') return json({ ok: true })

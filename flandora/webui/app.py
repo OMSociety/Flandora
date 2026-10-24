@@ -11,6 +11,9 @@ FastAPI WebUI 应用。
 - GET  /api/stats         统计（计数器 + 24h 分布 + 热门联系人）
 - GET  /api/contacts      已知联系人/群列表
 - POST /api/send          测试发送 {"contact", "text"}
+- GET  /api/debug/actions  动作目录（面板生成参数表单）
+- POST /api/debug/invoke   在本进程里执行一个动作 {"action", "params"}
+- GET  /api/debug/events   最近推送出去的事件
 - GET  /api/desktop/status     隔离桌面运行/登录状态
 - POST /api/desktop/start      在隔离桌面上启动微信
 - POST /api/desktop/stop       结束隔离桌面上的微信
@@ -426,6 +429,71 @@ async def api_send(payload: dict):
         return {"ok": True}
     log.warning(f"[WebUI] 测试发送失败 -> {contact}")
     return {"ok": False, "error": getattr(sender, "_last_error", "") or "发送失败，详见运行日志"}
+
+
+# ============ 调试台 ============
+
+
+@app.get("/api/debug/actions")
+def api_debug_actions():
+    """动作目录。
+
+    面板据此生成参数表单——与桥接派发用的是同一张表，所以这里列出来的东西
+    一定是真的会被执行的东西，不存在「面板里有、协议端没有」的漂移。
+    """
+    from .. import action_catalog
+
+    catalog = action_catalog.catalog_dict()
+    return {
+        "categories": catalog["categories"],
+        "actions": catalog["actions"],
+    }
+
+
+@app.post("/api/debug/invoke")
+async def api_debug_invoke(payload: dict):
+    """在本进程里直接跑一遍动作链路。
+
+    走的是客户端连进来时的那条同一条路（`_handle_ob_api`），返回真正的响应体，
+    所以这里调得通的东西，OneBot 客户端也调得通；不经过网络，省去连一条 WS。
+    """
+    from .. import ob_protocol
+
+    data = payload or {}
+    action = str(data.get("action") or "").strip()
+    if not action:
+        return JSONResponse({"ok": False, "error": "action 不能为空"}, 400)
+    params = data.get("params") or {}
+    if not isinstance(params, dict):
+        return JSONResponse({"ok": False, "error": "params 必须是对象"}, 400)
+
+    started = time.time()
+    try:
+        resp = await ob_protocol._handle_ob_api(
+            {"action": action, "params": params, "echo": "webui"}
+        )
+    except Exception as e:  # noqa: BLE001
+        log.error(f"[WebUI] 调试调用异常 {action}: {e}")
+        return JSONResponse({"ok": False, "error": f"{type(e).__name__}: {e}"}, 500)
+
+    return {
+        "ok": resp.get("status") == "ok",
+        "elapsed_ms": int((time.time() - started) * 1000),
+        "response": resp,
+    }
+
+
+@app.get("/api/debug/events")
+def api_debug_events(limit: int = 30):
+    """最近推送出去的事件（读消息存档，与客户端收到的是同一份）。"""
+    from .. import ob_store
+
+    try:
+        events = ob_store.message_store().recent(max(1, min(int(limit or 30), 200)))
+    except Exception as e:  # noqa: BLE001
+        log.error(f"[WebUI] 读取事件存档失败: {e}")
+        return JSONResponse({"ok": False, "error": str(e)}, 500)
+    return {"events": events}
 
 
 # ============ 微信窗口识别（多开场景） ============

@@ -35,6 +35,7 @@ export const configFixture = {
   ob_server_port: 7999,
   ob_server_token: '',
   ob_message_format: 'array',
+  ob_heartbeat_seconds: 30,
   ob_networks: [
     {
       type: 'ws_server',

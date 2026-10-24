@@ -10,6 +10,7 @@ import json
 import socket
 
 import pytest
+import websockets
 
 from flandora import ob_network
 
@@ -18,6 +19,18 @@ def _free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+async def _recv_event(ws, timeout: float = 10) -> dict:
+    """收下一条消息事件，跳过 meta_event。
+
+    客户端一连接就会先收到 lifecycle(connect)，那是通道就绪的信号，
+    不属于本组用例关心的消息推送。
+    """
+    while True:
+        payload = json.loads(await asyncio.wait_for(ws.recv(), timeout=timeout))
+        if payload.get("post_type") != "meta_event":
+            return payload
 
 
 def _event(text: str = "你好") -> dict:
@@ -123,20 +136,20 @@ def test_ws_server_serves_actions_and_pushes_events():
         try:
             async with connect(f"ws://127.0.0.1:{port}/?access_token=tk") as ws:
                 await ws.send(json.dumps({"action": "get_login_info", "echo": "e1"}))
-                resp = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                resp = await _recv_event(ws)
                 assert resp["echo"] == "e1"
                 assert resp["status"] == "ok"
 
                 # 推送要走到这条连接上
                 sent = await mgr._broadcast(_event("广播"))
                 assert sent == 1
-                ev = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                ev = await _recv_event(ws)
                 assert ev["message_id"] == 9001
 
                 # 从别的线程调同步 broadcast（桥接线程就是这么调的）
                 sent = await asyncio.to_thread(mgr.broadcast, _event("跨线程"))
                 assert sent == 1
-                ev = json.loads(await asyncio.wait_for(ws.recv(), timeout=10))
+                ev = await _recv_event(ws)
                 assert ev["raw_message"] == "跨线程"
         finally:
             await mgr.stop()
@@ -281,8 +294,11 @@ def test_ws_client_connects_and_receives_events():
 
         async def handler(ws):
             connected.set()
-            async for raw in ws:
-                got.append(json.loads(raw))
+            try:
+                async for raw in ws:
+                    got.append(json.loads(raw))
+            except websockets.exceptions.ConnectionClosed:
+                pass  # 单向关连接是正常收尾
 
         port = _free_port()
         async with serve(handler, "127.0.0.1", port):
@@ -309,11 +325,15 @@ def test_ws_client_connects_and_receives_events():
                     await asyncio.sleep(0.1)
                 else:
                     raise AssertionError("反向 WS 事件没有送到")
-                for _ in range(30):  # 发送是异步落地，等对端真的收到
-                    if got:
+                # 发送是异步落地：等到「非 meta 事件」真的收到为止。
+                # 连接时先到的 lifecycle(connect) 不算数，否则会提前判过。
+                messages: list[dict] = []
+                for _ in range(50):
+                    messages = [e for e in got if e.get("post_type") != "meta_event"]
+                    if messages:
                         break
                     await asyncio.sleep(0.1)
-                assert got and got[0]["raw_message"] == "反向"
+                assert messages and messages[0]["raw_message"] == "反向"
             finally:
                 await mgr.stop()
 

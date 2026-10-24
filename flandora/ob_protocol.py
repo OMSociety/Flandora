@@ -666,6 +666,84 @@ def make_message_event(
     return event
 
 
+def make_heartbeat_event(interval: int, *, online: bool = True, good: bool = True) -> dict:
+    """OneBot v11 心跳元事件。
+
+    框架靠它判断协议端还活着、账号还在线——连接不断和账号在线是两件事，
+    没有心跳时框架只能把「掉登录」当成「网络抖动」。
+    """
+    return {
+        "time": int(time.time()),
+        "self_id": state._self_id_int,
+        "post_type": "meta_event",
+        "meta_event_type": "heartbeat",
+        "status": {"online": bool(online), "good": bool(good)},
+        "interval": int(interval),
+    }
+
+
+def make_lifecycle_event(sub_type: str) -> dict:
+    """OneBot v11 生命周期元事件（connect / enable / disable）。"""
+    return {
+        "time": int(time.time()),
+        "self_id": state._self_id_int,
+        "post_type": "meta_event",
+        "meta_event_type": "lifecycle",
+        "sub_type": sub_type,
+    }
+
+
+def make_recall_event(
+    *,
+    group_id: int = 0,
+    user_id: int = 0,
+    operator_id: int = 0,
+    message_id: int = 0,
+    nickname: str = "",
+) -> dict:
+    """撤回通知。
+
+    微信 PC 的撤回提示不带被撤回消息的服务端号，`message_id` 只能给 0；
+    `message_id_known` 把这个事实明说出来，客户端才不会以为是自己查漏了。
+    """
+    event = {
+        "time": int(time.time()),
+        "self_id": state._self_id_int,
+        "post_type": "notice",
+        "notice_type": "group_recall" if group_id else "friend_recall",
+        "user_id": int(user_id),
+        "operator_id": int(operator_id or user_id),
+        "message_id": int(message_id),
+        "message_id_known": bool(message_id),
+        "nickname": nickname,
+    }
+    if group_id:
+        event["group_id"] = int(group_id)
+    return event
+
+
+def make_poke_event(
+    *, group_id: int = 0, user_id: int = 0, target_id: int = 0, suffix: str = ""
+) -> dict:
+    """拍一拍通知（notice/notify/poke）。
+
+    `user_id` 是拍的人，`target_id` 是被拍的人，`suffix` 是对方设置的拍一拍文案。
+    """
+    event = {
+        "time": int(time.time()),
+        "self_id": state._self_id_int,
+        "post_type": "notice",
+        "notice_type": "notify",
+        "sub_type": "poke",
+        "user_id": int(user_id),
+        "target_id": int(target_id),
+        "suffix": suffix,
+    }
+    if group_id:
+        event["group_id"] = int(group_id)
+    return event
+
+
 def _history_message_id(talker: str, local_id) -> int:
     """历史消息的 message_id：有本地行号就复用，没有就现发一个。"""
     try:

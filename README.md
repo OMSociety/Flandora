@@ -137,6 +137,21 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | `1406` | 动作支持，但传入的 ID 在本地库里查不到 |
 | `1500` | 执行失败（微信未登录、主窗口不可用、实现缺口） |
 
+### 事件面
+
+除消息事件外，桥接还推两类旁路事件。它们不占消息流，客户端按 `post_type` 分派即可：
+
+| 事件 | 触发 | 字段 |
+| --- | --- | --- |
+| `meta_event` / `heartbeat` | 每隔 `ob_heartbeat_seconds` 秒一次，取 0 关闭 | `interval`、`status.online`（桥接在跑且微信已接入）、`status.good`（发送通道也可用） |
+| `meta_event` / `lifecycle` | 每条连接建立时推 `connect`，桥接停止时推 `disable` | `sub_type`；`connect` 是逐连接发的，后连上的客户端同样收得到 |
+| `notice` / `group_recall`、`friend_recall` | 微信消息库里出现撤回系统消息 | `user_id`（撤回者）、`operator_id`、`message_id`、`message_id_known` |
+| `notice` / `notify` + `sub_type: poke` | 群里出现拍一拍 | `user_id`（发起者）、`target_id`（被拍的人）、`suffix`、有群时带 `group_id` |
+
+撤回与拍一拍**只走 notice，不再作为消息事件推送**：这两类内容在微信里是系统提示行，没有可回复的正文，混在消息流里会让客户端对着一行「XX 撤回了一条消息」生成回复。
+
+`message_id_known` 是给客户端的自证字段：微信 PC 端的撤回系统消息里没有被撤回消息的 id（本地库样本里 `newmsgid` 为空），所以 `message_id` 只能填 `0`。客户端看到 `message_id_known: false` 就该只更新界面，不要拿 `0` 去 `get_msg` 或 `delete_msg`。
+
 ## 控制台
 
 面板默认监听 `127.0.0.1:8766`，八页：仪表盘、消息记录、日志、桥接配置、微信与桌面、取钥向导、测试发送、调试台。调试台把动作目录整张列出来：选动作、按参数表填值、点执行，回来的响应原样打印；也能看最近推送的事件，或者拼好消息段直接生成 CQ 码。它调的是同一条动作链路，线上调不通的动作可以在这里先复现。面板本身可以设登录密码（配置页「打开面板时要密码」），设了之后所有接口与实时事件流都要先登录，密码只以 PBKDF2 哈希存在 `config.json` 里。
@@ -278,6 +293,7 @@ client.run_forever()
 | `ob_server_port` | 整数 | `7999` | 没有 `ob_networks` 时的正向 WebSocket 端口 |
 | `ob_server_token` | 字符串 | 空 | 没有 `ob_networks` 时的握手 token，留空不校验 |
 | `ob_message_format` | 字符串 | `array` | 事件里 `message` 的形态：`array` 为消息段数组，`string` 为 CQ 码字符串。`raw_message` 始终是 CQ 码字符串，发送方向两种都收 |
+| `ob_heartbeat_seconds` | 整数 | `30` | 心跳间隔秒数，取 `0` 关闭心跳；非 0 时限制在 5–3600，越界按 30 处理。`lifecycle` 不受它影响 |
 | `astrbot_attachments` | 字符串 | 空 | 客户端附件目录的绝对路径。填了之后图片与文件的本地路径按该目录（及其 `wechat_images` 子目录）拼出来 |
 
 ### 收件

@@ -154,6 +154,21 @@ SELF_NAME = config.get("self_name", "wechat-bot")
 _OB_FORMAT_RAW = str(config.get("ob_message_format", "array") or "array").strip().lower()
 OB_MESSAGE_FORMAT = _OB_FORMAT_RAW if _OB_FORMAT_RAW in ("array", "string") else "array"
 
+# 心跳间隔（秒）。0 = 不发心跳；可用区间 5–3600。
+# 框架靠心跳判断协议端还活着、账号还在线，与「连接没断」是两件事。
+_HEARTBEAT_RAW = config.get("ob_heartbeat_seconds", 30)
+_HEARTBEAT_ERROR = ""
+try:
+    OB_HEARTBEAT_SECONDS = int(_HEARTBEAT_RAW)
+except (TypeError, ValueError):
+    OB_HEARTBEAT_SECONDS = 30
+    _HEARTBEAT_ERROR = f"ob_heartbeat_seconds={_HEARTBEAT_RAW!r} 不是整数，已按 30 秒处理"
+if OB_HEARTBEAT_SECONDS != 0 and not 5 <= OB_HEARTBEAT_SECONDS <= 3600:
+    _HEARTBEAT_ERROR = (
+        f"ob_heartbeat_seconds={OB_HEARTBEAT_SECONDS} 超出 5–3600（0 表示不发），已按 30 秒处理"
+    )
+    OB_HEARTBEAT_SECONDS = 30
+
 # 网络入口：一份数组，每项是一个 HTTP/WS 入口（见 flandora/ob_network.py）。
 # 没有配 ob_networks 时按旧的 ob_server_host/port/token 造一个 WS 服务端，
 # 旧配置因此可以原样继续用。
@@ -212,6 +227,9 @@ if _OB_FORMAT_RAW != OB_MESSAGE_FORMAT:
     log.warning(
         "ob_message_format=%r 不认识，已按 array 处理（可选：array / string）", _OB_FORMAT_RAW
     )
+
+if _HEARTBEAT_ERROR:
+    log.warning("%s", _HEARTBEAT_ERROR)
 
 if _NETWORKS_ERROR:
     log.error(

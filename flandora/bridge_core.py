@@ -18,7 +18,12 @@ from collections import defaultdict
 from pathlib import Path
 
 from . import config, ob_ids, ob_inbound, state, wx_crypto, wx_source
-from .ob_protocol import make_message_event, push_event
+from .ob_protocol import (
+    make_message_event,
+    make_poke_event,
+    make_recall_event,
+    push_event,
+)
 
 try:
     from .webui import monitor
@@ -160,6 +165,16 @@ class Flandora:
             return
 
         now = time.time()
+        # 撤回与拍一拍不是聊天正文：转成 notice 事件，别混进 message 流
+        notice = self._notice_for(data, is_group, session_id_data)
+        if notice is not None:
+            push_event(notice)
+            log.info(
+                f"[OB11] 通知事件已推送：{notice.get('notice_type')}"
+                f"{'/' + notice['sub_type'] if notice.get('sub_type') else ''}"
+            )
+            return
+
         if content and content in self._sent_recently and now - self._sent_recently[content] < 120:
             log.info(f"自回复去重跳过: {content[:30]}")
             return
@@ -222,6 +237,49 @@ class Flandora:
                 timer.daemon = True
                 timer.start()
                 entry["timer"] = timer
+
+    def _notice_for(self, data, is_group: bool, session_handle: str):
+        """把撤回与拍一拍从消息流里摘出来，转成 OneBot 通知事件。
+
+        这两类在本地库里是独立行（`local_type=10000` 的 sysmsg、appmsg 子类型 62），
+        照常当正文推上去会让客户端收到「[撤回了一条消息]」「[拍一拍] …」这种假消息，
+        也没法据此更新会话状态。
+        """
+        revoke = data.get("revoke") or {}
+        pat = data.get("pat") or {}
+        if not revoke and not pat:
+            return None
+        group_id = ob_ids.contact_id(session_handle) if is_group else 0
+
+        if revoke:
+            nickname = str(revoke.get("nickname") or data.get("senderName") or "").strip()
+            wxid = self._wxid_for_name(session_handle, nickname)
+            user_id = ob_ids.contact_id(wxid) if wxid else 0
+            return make_recall_event(
+                group_id=group_id,
+                user_id=user_id,
+                operator_id=user_id,
+                message_id=0,
+                nickname=nickname,
+            )
+
+        from_wxid = str(pat.get("from") or "").strip()
+        to_wxid = str(pat.get("to") or "").strip()
+        return make_poke_event(
+            group_id=group_id,
+            user_id=ob_ids.contact_id(from_wxid) if from_wxid else 0,
+            target_id=ob_ids.contact_id(to_wxid) if to_wxid else 0,
+            suffix=str(pat.get("suffix") or "").strip(),
+        )
+
+    def _wxid_for_name(self, session_handle: str, name: str) -> str:
+        """按显示名反查 wxid；重名或查不到都返回空串（宁可给 0 也不猜一个人）。"""
+        if not name:
+            return ""
+        hits = [
+            wxid for wxid, shown in self._resolve_names(session_handle).items() if shown == name
+        ]
+        return hits[0] if len(hits) == 1 else ""
 
     def _resolve_names(self, session_id: str) -> dict:
         """解析会话成员 wxid → 显示名（带 10 分钟缓存）。

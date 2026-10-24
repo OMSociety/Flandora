@@ -66,6 +66,7 @@ RESTART_KEYS = (
     "ob_server_port",
     "ob_server_token",
     "ob_networks",
+    "ob_heartbeat_seconds",
     "web_port",
     "astrbot_ob_url",
     "astrbot_attachments",
@@ -405,6 +406,17 @@ def api_put_config(payload: dict, response: Response):
                 config.OB_SERVER_HOST, config.OB_SERVER_PORT, config.OB_SERVER_TOKEN
             )
         ]
+    if "ob_heartbeat_seconds" in payload:
+        try:
+            seconds = int(payload.get("ob_heartbeat_seconds"))
+        except (TypeError, ValueError):
+            return JSONResponse({"ok": False, "error": "ob_heartbeat_seconds 必须是整数"}, 400)
+        if seconds != 0 and not 5 <= seconds <= 3600:
+            return JSONResponse(
+                {"ok": False, "error": "ob_heartbeat_seconds 取 0（不发心跳）或 5–3600 秒"}, 400
+            )
+        payload = dict(payload, ob_heartbeat_seconds=seconds)
+        config.OB_HEARTBEAT_SECONDS = seconds
     try:
         current = _read_config_file()
         current.update(payload)

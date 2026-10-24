@@ -131,6 +131,62 @@ def quote_ref(body):
     }
 
 
+_SYSMSG_TYPE_RE = re.compile(r'<sysmsg[^>]*\btype="([^"]+)"')
+_REVOKE_TEXT_RE = re.compile(r'^"?(?P<nick>.+?)"?\s*撤回了一条消息\s*$')
+_PATINFO_RE = re.compile(r"<patinfo>(.*?)</patinfo>", re.S)
+
+
+def sysmsg_type(body) -> str:
+    """系统消息（local_type=10000）的 sysmsg 类型，取不到返回空串。"""
+    if not body:
+        return ""
+    text = body.decode("utf-8", "ignore") if isinstance(body, (bytes, bytearray)) else str(body)
+    m = _SYSMSG_TYPE_RE.search(text)
+    return (m.group(1) or "").strip() if m else ""
+
+
+def revoke_info(body) -> dict | None:
+    """撤回提示（sysmsg type="revokemsg"）。
+
+    PC 端的撤回提示只有一句 `"昵称" 撤回了一条消息`，**不带被撤回消息的服务端号**
+    （实测本机 6 条样本里没有 newmsgid / msgid 字段），因此调用方拿不到
+    message_id，只能如实给 0，不能猜一条。
+    """
+    if sysmsg_type(body) != "revokemsg":
+        return None
+    raw = body.decode("utf-8", "ignore") if isinstance(body, (bytes, bytearray)) else str(body)
+    # 客户端版本不同，这句提示可能落在 <content> 或 <replacemsg> 里
+    content = (_xml_value(raw, "content") or _xml_value(raw, "replacemsg")).strip()
+    # CDATA 包裹要剥掉，否则昵称会带上 <![CDATA[ 与 ]]>
+    if content.startswith("<![CDATA[") and content.endswith("]]>"):
+        content = content[len("<![CDATA[") : -3].strip()
+    m = _REVOKE_TEXT_RE.match(content)
+    nick = (m.group("nick") or "").strip() if m else ""
+    return {"nickname": nick}
+
+
+def pat_info(body) -> dict | None:
+    """拍一拍（appmsg 子类型 62）的结构化字段。
+
+    `<patinfo>` 里 fromusername / pattedusername 是 wxid，chatusername 是群 ID，
+    可以直接用；带引号的 `<title>` 只是给人看的那句话。
+    """
+    if not body:
+        return None
+    text = body.decode("utf-8", "ignore") if isinstance(body, (bytes, bytearray)) else str(body)
+    m = _PATINFO_RE.search(text)
+    if not m:
+        return None
+    inner = m.group(1)
+    return {
+        "from": _xml_value(inner, "fromusername").strip(),
+        "group": _xml_value(inner, "chatusername").strip(),
+        "to": _xml_value(inner, "pattedusername").strip(),
+        # 老版本用 <suffix>，新版本用 <patsuffix>，两个都认
+        "suffix": (_xml_value(inner, "patsuffix") or _xml_value(inner, "suffix")).strip(),
+    }
+
+
 def classify(local_type, body):
     """按 local_type 给出 (类别, 送给上游的文本)。
 
@@ -475,6 +531,8 @@ class WxStore:
                 body = _text_of(content)
                 kind, text = classify(local_type, body)
                 quote = quote_ref(body) if kind == "quote" else None
+                revoke = revoke_info(body) if kind == "system" else None
+                pat = pat_info(body) if kind == "pat" else None
                 out.append(
                     {
                         "local_id": local_id,
@@ -485,6 +543,8 @@ class WxStore:
                         "kind": kind,
                         "text": text,
                         "quote": quote or {},
+                        "revoke": revoke or {},
+                        "pat": pat or {},
                         "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
                     }
                 )
@@ -518,6 +578,8 @@ class WxStore:
                 body = _text_of(content)
                 kind, text = classify(local_type, body)
                 quote = quote_ref(body) if kind == "quote" else None
+                revoke = revoke_info(body) if kind == "system" else None
+                pat = pat_info(body) if kind == "pat" else None
                 out.append(
                     {
                         "local_id": local_id,
@@ -528,6 +590,8 @@ class WxStore:
                         "kind": kind,
                         "text": text,
                         "quote": quote or {},
+                        "revoke": revoke or {},
+                        "pat": pat or {},
                         "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
                     }
                 )

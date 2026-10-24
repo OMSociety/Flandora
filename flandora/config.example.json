@@ -34,6 +34,8 @@
     "_comment_ob_networks": "OneBot v11 网络入口，可同时挂多个。type 四选一：ws_server（等客户端连进来）、http_server（HTTP API）、ws_client（主动连框架的反向 WS，填 url）、http_client（把事件 POST 到框架，填 url）。role：api 只收动作请求 / event 只推事件 / universal 两者都做。message_format 留空=跟随 ob_message_format。这一项为空或删掉时，按上面的 ob_server_host/port/token 起一个 WS 服务端，旧配置可以原样继续用。",
     "ob_message_format": "array",
     "_comment_ob_message_format": "事件里 message 字段的格式：array = 消息段数组（多数客户端用这个），string = CQ 码字符串。raw_message 始终是 CQ 码字符串。发送方向两种都收，另外可以用 auto_escape 把字符串按纯文本发。",
+    "ob_heartbeat_seconds": 30,
+    "_comment_ob_heartbeat_seconds": "心跳间隔（秒），0 = 不发心跳，可用 5–3600。连上时会先推一条 lifecycle(connect)，之后按这个间隔推 meta_event/heartbeat，桥接停止时推 lifecycle(disable)。改这里需要重启桥接。",
     "astrbot_attachments": "",
     "_comment_astrbot_attachments": "发送方向的附件目录：客户端发来的图片、文件如果只给了文件名，就到这个目录下找（也找它的 wechat_images 子目录）。留空 = 只接受绝对路径或 base64。",
     "wechat_hwnd": 0,

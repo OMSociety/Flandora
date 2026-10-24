@@ -186,6 +186,7 @@ class NetworkManager:
         self._errors: dict[str, str] = {}
         self._lock = threading.Lock()
         self._started = False
+        self._heartbeat_interval = 0
 
     # ---------- 配置 ----------
 
@@ -221,7 +222,24 @@ class NetworkManager:
         if not self._tasks:
             log.warning("[OB11] 没有启用的网络入口，事件无处可发")
 
+        from . import config
+
+        interval = int(getattr(config, "OB_HEARTBEAT_SECONDS", 0) or 0)
+        if interval > 0 and self._tasks:
+            self._heartbeat_interval = interval
+            self._tasks.append(
+                loop.create_task(self._heartbeat_loop(interval), name="obnet-heartbeat")
+            )
+
     async def stop(self):
+        # 先道别再拆线：生命周期的 disable 只能趁连接还在时发。
+        # 与心跳开关无关——连接事件描述的是通道，不是心跳。
+        try:
+            from .ob_protocol import make_lifecycle_event
+
+            await self._broadcast(make_lifecycle_event("disable"))
+        except Exception as e:  # noqa: BLE001
+            log.debug(f"[OB11] 生命周期 disable 未送达：{e}")
         with self._lock:
             self._started = False
             tasks = self._tasks
@@ -241,6 +259,49 @@ class NetworkManager:
                     pass
             conns.clear()
         self._clients.clear()
+
+    async def _announce_connect(self, node: dict, ws):
+        """给新连上的客户端补一条 lifecycle(connect)。
+
+        lifecycle 描述的是「这条连接」的开始，不是进程的开始：框架晚连上来
+        也应该先收到一条 connect，否则它无法确认事件通道已经就绪。
+        """
+        if node.get("role") == ROLE_API:
+            return
+        from .ob_protocol import make_lifecycle_event
+
+        try:
+            await _safe_send(ws, make_lifecycle_event("connect"), node["name"])
+        except Exception as e:  # noqa: BLE001
+            log.debug(f"[OB11] lifecycle(connect) 未送达：{e}")
+
+    async def _heartbeat_loop(self, interval: int):
+        """按间隔推 heartbeat。
+
+        lifecycle 由每条连接自己发（见 `_announce_connect`）：它描述的是
+        「这条连接」的开始，与进程启动无关。心跳投递失败只记 debug——
+        某个入口掉了由它的监督任务负责重连，不该让心跳循环自己退出。
+        """
+        from . import state
+        from .ob_protocol import make_heartbeat_event
+
+        try:
+            while True:
+                await asyncio.sleep(interval)
+                status = self._heartbeat_status(state)
+                await self._broadcast(make_heartbeat_event(interval, **status))
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:  # noqa: BLE001
+            log.error(f"[OB11] 心跳循环异常退出：{e}")
+
+    @staticmethod
+    def _heartbeat_status(state) -> dict:
+        """心跳里的状态：桥接在跑且已挂上实例算在线，发送器就绪才算 good。"""
+        running = bool(getattr(state, "running", False)) and not bool(state.paused)
+        online = running and getattr(state, "bridge_instance", None) is not None
+        good = online and getattr(state, "sender_instance", None) is not None
+        return {"online": online, "good": good}
 
     async def _supervise(self, node: dict):
         """起一个入口，出错就记下来并退避重试——单个入口挂掉不该拖垮其余入口。"""
@@ -306,6 +367,7 @@ class NetworkManager:
         self._state[name] = "connected"
         log.info(f"[OB11] 客户端连上入口 {name}: {ws.remote_address}")
         _notify_status()
+        await self._announce_connect(node, ws)
         try:
             async for raw in ws:
                 if node["role"] == ROLE_EVENT:
@@ -417,6 +479,7 @@ class NetworkManager:
                     self._state[name] = "connected"
                     log.info(f"[OB11] 已连上反向 WS {name}: {url}")
                     _notify_status()
+                    await self._announce_connect(node, ws)
                     await self._read_ws_client(node, ws)
             except asyncio.CancelledError:
                 raise

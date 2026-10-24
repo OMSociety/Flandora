@@ -14,9 +14,9 @@ export const statusFixture = {
 }
 
 export const configFixture = {
-  bot_nicknames: ['小麦', '桥接助手'],
+  bot_nicknames: ['芙兰朵露', '兰兰露'],
   bot_wxid: '',
-  self_name: '小麦',
+  self_name: '芙兰朵露',
   send_method: 'uia',
   buffer_seconds: 5,
   web_port: 8766,

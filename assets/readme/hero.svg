@@ -1,0 +1,71 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="hero-title hero-desc">
+  <title id="hero-title">Flandora — 微信到 OneBot v11 的桥</title>
+  <desc id="hero-desc">Flandora 在登录瞬间截获数据库口令，只读解密本机库收取消息，并用 UI 自动化在隔离桌面上以本人身份发送，对外提供 OneBot v11 正向 WebSocket 服务端与控制台。</desc>
+
+  <defs>
+    <linearGradient id="hero-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#101815"/>
+      <stop offset="0.6" stop-color="#0c1210"/>
+      <stop offset="1" stop-color="#0a0f0d"/>
+    </linearGradient>
+    <linearGradient id="brand-line" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#07c160"/>
+      <stop offset="0.6" stop-color="#3fd68b"/>
+      <stop offset="1" stop-color="#8ceab8"/>
+    </linearGradient>
+    <filter id="soft-glow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="26"/>
+    </filter>
+    <style>
+      .sans { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif; }
+      .mono { font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+    </style>
+  </defs>
+
+  <rect width="1200" height="360" rx="28" fill="url(#hero-bg)"/>
+  <circle cx="1090" cy="40" r="150" fill="#07c160" opacity="0.10" filter="url(#soft-glow)"/>
+  <circle cx="146" cy="352" r="130" fill="#3fd68b" opacity="0.06" filter="url(#soft-glow)"/>
+  <rect x="0.75" y="0.75" width="1198.5" height="358.5" rx="27.25" fill="none" stroke="#24382c" stroke-width="1.5"/>
+
+  <g transform="translate(72 74)">
+    <rect width="96" height="96" rx="28" fill="#07c160"/>
+    <g transform="scale(2.4)" fill="#ffffff">
+      <rect x="8.25" y="10.75" width="15.5" height="11.5" rx="5.2"/>
+      <path d="M13.45 22.25L10.25 25.35L10.25 21.15Z"/>
+      <g opacity=".72">
+        <rect x="16.75" y="14.75" width="15" height="11.5" rx="5.2"/>
+        <path d="M26.55 26.25L28.75 29.25L28.75 25.75Z"/>
+      </g>
+    </g>
+  </g>
+
+  <text class="mono" x="202" y="70" fill="#5f7d6c" font-size="12" letter-spacing="3.2">WECHAT → ONEBOT V11 · WINDOWS</text>
+  <text class="sans" x="200" y="130" fill="#f3f8f4" font-size="54" font-weight="700" letter-spacing="-0.5">Flandora</text>
+  <text class="sans" x="202" y="170" fill="#9db3a6" font-size="19">把微信个人号接成标准的 OneBot v11 服务端。</text>
+
+  <rect x="202" y="192" width="132" height="3" rx="1.5" fill="url(#brand-line)"/>
+
+  <g class="sans" font-size="14">
+    <rect x="202" y="220" width="132" height="38" rx="19" fill="#132019" stroke="#22362b"/>
+    <text x="268" y="244" fill="#a9c3b5" text-anchor="middle">登录瞬间取钥</text>
+    <rect x="346" y="220" width="146" height="38" rx="19" fill="#132019" stroke="#22362b"/>
+    <text x="419" y="244" fill="#a9c3b5" text-anchor="middle">本地库只读读取</text>
+    <rect x="504" y="220" width="132" height="38" rx="19" fill="#132019" stroke="#22362b"/>
+    <text x="570" y="244" fill="#a9c3b5" text-anchor="middle">隔离桌面发送</text>
+  </g>
+
+  <g transform="translate(906 28) scale(6.1)" fill="none" opacity="0.05">
+    <rect width="40" height="40" rx="12" fill="#ffffff"/>
+    <rect x="8.25" y="10.75" width="15.5" height="11.5" rx="5.2" fill="#0a0f0d"/>
+    <path d="M13.45 22.25L10.25 25.35L10.25 21.15Z" fill="#0a0f0d"/>
+    <g opacity=".72">
+      <rect x="16.75" y="14.75" width="15" height="11.5" rx="5.2" fill="#0a0f0d"/>
+      <path d="M26.55 26.25L28.75 29.25L28.75 25.75Z" fill="#0a0f0d"/>
+    </g>
+  </g>
+
+  <g class="mono" fill="#3f5a4c" font-size="11" letter-spacing="1.4">
+    <text x="202" y="300">ONE EVENT IN · ONE EVENT OUT</text>
+    <text x="1128" y="300" text-anchor="end">127.0.0.1:7999 · 127.0.0.1:8766</text>
+  </g>
+</svg>

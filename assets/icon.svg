@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40" role="img" aria-labelledby="flandora-title">
+  <title id="flandora-title">Flandora</title>
+  <rect width="40" height="40" rx="12" fill="#07C160"/>
+  <rect x="8.25" y="10.75" width="15.5" height="11.5" rx="5.2" fill="#FFFFFF"/>
+  <path d="M13.45 22.25L10.25 25.35L10.25 21.15Z" fill="#FFFFFF"/>
+  <g opacity="0.72">
+    <rect x="16.75" y="14.75" width="15" height="11.5" rx="5.2" fill="#FFFFFF"/>
+    <path d="M26.55 26.25L28.75 29.25L28.75 25.75Z" fill="#FFFFFF"/>
+  </g>
+</svg>

@@ -86,6 +86,30 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 映射表与消息号表都在配置目录下，换机时连同 `config.json` 一起带走即可保持 ID 不变。
 
+## 动作面
+
+动作清单的唯一真相源是 `flandora/action_catalog.py`：哪些动作支持、要什么参数、能不能真正执行都写在里面。支持的动作按能力分四类：
+
+| 分类 | 动作 |
+| --- | --- |
+| 消息 | `send_msg`、`send_private_msg`、`send_group_msg`、`get_group_msg_history`、`get_friend_msg_history` |
+| 信息 | `get_login_info`、`get_status`、`get_version_info`、`can_send_image`、`can_send_record` |
+| 好友 | `get_friend_list`、`get_stranger_info`、`get_friend_info` |
+| 群 | `get_group_list`、`get_group_info`、`get_group_member_list`、`get_group_member_info` |
+
+名册类查询读的是微信本地库：好友不含群、公众号与文件传输助手，群成员带 `owner` / `member` 角色。本地库没有的字段（性别、年龄、入群时间、群容量）如实回 `unknown` / `0`，不猜。
+
+微信 PC 客户端确实没有对应能力的动作（群管理、群文件、点赞等）返回 `failed` 并在 `message` 里写明原因，不会回一个空对象假装成功：
+
+| `retcode` | 含义 |
+| --- | --- |
+| `0` | 成功 |
+| `1400` | 参数不合契约，或缺少定位会话所需的信息（例如群名映射还没学到） |
+| `1404` | 动作已知但暂未实现，`message` 是具体原因 |
+| `1405` | 动作名不在动作目录里 |
+| `1406` | 动作支持，但传入的 ID 在本地库里查不到 |
+| `1500` | 执行失败（微信未登录、主窗口不可用、实现缺口） |
+
 ## 控制台
 
 <table>

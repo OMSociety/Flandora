@@ -381,11 +381,86 @@ async def _handle_ob_api(data: dict):
         resp_data["data"] = {"yes": False}
 
     elif action == "get_group_info":
-        gid = params.get("group_id", "")
-        resp_data["data"] = {
-            "group_id": gid,
-            "group_name": state._ob_id_to_contact.get(gid, str(gid)),
-        }
+        gid = params.get("group_id")
+        handle = ob_ids.handle_of(gid) if isinstance(gid, int) else None
+        if not handle:
+            return _failure(
+                f"未知的 group_id：{gid}（这个 ID 不是 Flandora 分配过的群）",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        groups = await asyncio.to_thread(_groups_roster)
+        found = next((g for g in groups if g["username"] == handle), None)
+        if found is None:
+            return _failure(
+                f"本地库里没有群 {handle} 的资料（可能还没同步到本机）",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        resp_data["data"] = _group_object(found)
+
+    elif action == "get_group_list":
+        rows = await asyncio.to_thread(_groups_roster)
+        resp_data["data"] = [_group_object(g) for g in rows]
+
+    elif action == "get_friend_list":
+        rows = await asyncio.to_thread(_contacts_roster)
+        resp_data["data"] = [
+            {
+                "user_id": ob_ids.contact_id(c["username"]),
+                "nickname": c["nick_name"] or c["username"],
+                "remark": c["remark"],
+            }
+            for c in rows
+        ]
+
+    elif action in ("get_stranger_info", "get_friend_info"):
+        uid = params.get("user_id")
+        handle = ob_ids.handle_of(uid) if isinstance(uid, int) else None
+        if not handle:
+            return _failure(
+                f"未知的 user_id：{uid}（这个 ID 不是 Flandora 分配过的联系人）",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        info = await asyncio.to_thread(_contact_info, handle)
+        if info is None:
+            return _failure(
+                f"本地库里没有 {handle} 的资料（可能还没同步到本机）",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        resp_data["data"] = _user_object(info)
+
+    elif action in ("get_group_member_list", "get_group_member_info"):
+        gid = params.get("group_id")
+        ghandle = ob_ids.handle_of(gid) if isinstance(gid, int) else None
+        if not ghandle:
+            return _failure(
+                f"未知的 group_id：{gid}（这个 ID 不是 Flandora 分配过的群）",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        members = await asyncio.to_thread(_members_roster, ghandle)
+        if not members:
+            return _failure(
+                f"本地库里没有群 {ghandle} 的成员名单（可能还没同步到本机）",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        if action == "get_group_member_list":
+            resp_data["data"] = [_member_object(ob_ids.contact_id(ghandle), m) for m in members]
+        else:
+            uid = params.get("user_id")
+            handle = ob_ids.handle_of(uid) if isinstance(uid, int) else None
+            found = next((m for m in members if handle and m["username"] == handle), None)
+            if found is None:
+                return _failure(
+                    f"{handle or uid} 不在群 {ghandle} 里",
+                    action_catalog.RETCODE_NOT_FOUND,
+                    echo,
+                )
+            resp_data["data"] = _member_object(ob_ids.contact_id(ghandle), found)
 
     elif action in ("get_group_msg_history", "get_friend_msg_history"):
         # 从微信本地库拉取聊天历史（插件可主动读取上下文）
@@ -405,6 +480,14 @@ async def _handle_ob_api(data: dict):
             count = 20
         msgs = await asyncio.to_thread(_fetch_history_ob, handle, is_g, count)
         resp_data["data"] = {"messages": msgs}
+
+    else:
+        # 走到这里说明动作目录登记为「已实现」，派发链却没有对应分支——
+        # 是接线缺口，必须报错；回 ok + 空数据会让客户端以为调用成功了。
+        log.error(f"[OB11] 动作 {action} 已登记为已实现，但派发层没有处理分支")
+        return _failure(
+            f"动作 {action} 尚未接线（实现缺口）", action_catalog.RETCODE_INTERNAL, echo
+        )
 
     if echo:
         resp_data["echo"] = echo
@@ -513,6 +596,96 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
     except Exception as e:  # noqa: BLE001
         log.warning(f"[OB11] 拉取历史失败 (talker={talker}): {e}")
     return out
+
+
+def _store():
+    """取当前桥接实例的只读本地库句柄；收件源未就绪时返回 None。"""
+    return getattr(getattr(state.bridge_instance, "_source", None), "store", None)
+
+
+def _contacts_roster() -> list:
+    """在线程池中执行：通讯录里的好友（不含群、公众号、文件传输助手）。"""
+    store = _store()
+    if store is None:
+        return []
+    return store.contacts()
+
+
+def _groups_roster() -> list:
+    """在线程池中执行：通讯录里的群会话。"""
+    store = _store()
+    if store is None:
+        return []
+    return store.groups()
+
+
+def _members_roster(group_handle: str) -> list:
+    """在线程池中执行：某个群的成员名单。"""
+    store = _store()
+    if store is None:
+        return []
+    return store.group_members(group_handle)
+
+
+def _contact_info(handle: str) -> dict | None:
+    """在线程池中执行：按 wxid 在通讯录里找一个人，找不到返回 None。"""
+    for c in _contacts_roster():
+        if c["username"] == handle:
+            return c
+    return None
+
+
+def _group_object(g: dict) -> dict:
+    """群资料 → OneBot v11 群对象。
+
+    微信客户端只在本地库里存成员数，没有独立的「群容量」，因此
+    ``max_member_count`` 与 ``member_count`` 同值，不编造上限。
+    """
+    gid = ob_ids.contact_id(g["username"])
+    return {
+        "group_id": gid,
+        "group_name": g["name"],
+        "member_count": int(g.get("member_count") or 0),
+        "max_member_count": int(g.get("member_count") or 0),
+    }
+
+
+def _user_object(info: dict) -> dict:
+    """联系人资料 → OneBot v11 好友/陌生人对象。
+
+    本地库里没有性别与年龄，如实回 unknown / 0，不猜。
+    """
+    return {
+        "user_id": ob_ids.contact_id(info["username"]),
+        "nickname": info["nick_name"] or info["username"],
+        "remark": info.get("remark") or "",
+        "sex": "unknown",
+        "age": 0,
+    }
+
+
+def _member_object(group_id: int, m: dict) -> dict:
+    """群成员资料 → OneBot v11 群成员对象。
+
+    ``card`` 是群昵称，微信 4.x 的 contact.db 里没有独立字段，留空；
+    显示名已经把备注名优先合并进 ``nickname``。
+    """
+    return {
+        "group_id": group_id,
+        "user_id": ob_ids.contact_id(m["username"]),
+        "nickname": m["nick_name"] or m["username"],
+        "card": "",
+        "sex": "unknown",
+        "age": 0,
+        "join_time": 0,
+        "last_sent_time": 0,
+        "level": "0",
+        "role": m.get("role") or "member",
+        "unfriendly": False,
+        "title": "",
+        "title_expire_time": 0,
+        "card_changeable": False,
+    }
 
 
 def _decode_base64_image(b64_data: str) -> str | None:

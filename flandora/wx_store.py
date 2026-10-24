@@ -286,6 +286,145 @@ class WxStore:
         finally:
             con.close()
 
+    # ---------- 名册 ----------
+
+    @staticmethod
+    def _name_of(remark, nick_name, username):
+        """展示名：备注名优先，其次昵称，最后退回 wxid。"""
+        return (remark or "").strip() or (nick_name or "").strip() or (username or "")
+
+    def contacts(self):
+        """通讯录里的个人联系人。
+
+        不含群会话（`@chatroom`）、公众号（`gh_` 开头）、文件传输助手：
+        它们在微信里各自是独立入口，混进好友列表会让客户端给它们推消息。
+        """
+        con = self._con("contact.db")
+        try:
+            cols = [r[1] for r in con.execute("PRAGMA table_info(contact)")]
+            if not cols:
+                raise WxStoreError("contact.db 里没有 contact 表")
+            pick = [
+                c
+                for c in ("username", "remark", "nick_name", "alias", "big_head_url", "flag")
+                if c in cols
+            ]
+            where = "WHERE COALESCE(delete_flag, 0) = 0" if "delete_flag" in cols else ""
+            out = []
+            for row in con.execute(f"SELECT {', '.join(pick)} FROM contact {where}"):
+                d = dict(zip(pick, row))
+                username = (d.get("username") or "").strip()
+                if not username or "@" in username or username.startswith("gh_"):
+                    continue
+                if username == "filehelper":
+                    continue
+                if self.my_wxid and username == self.my_wxid:
+                    # 通讯录里可能含自己，好友列表不该把自己算成一个好友
+                    continue
+                out.append(
+                    {
+                        "username": username,
+                        "name": self._name_of(d.get("remark"), d.get("nick_name"), username),
+                        "remark": (d.get("remark") or "").strip(),
+                        "nick_name": (d.get("nick_name") or "").strip(),
+                        "alias": (d.get("alias") or "").strip(),
+                        "avatar": (d.get("big_head_url") or "").strip(),
+                        "starred": bool(int(d.get("flag") or 0) & 2),
+                    }
+                )
+            return out
+        except sqlite3.Error as e:
+            log.debug("读取联系人失败：%s", e)
+            return []
+        finally:
+            con.close()
+
+    def groups(self):
+        """群列表：群名、群主与成员数。
+
+        群名与成员数都可缺省（刚建的群 contact 里可能还没有行），缺了不丢群。
+        """
+        con = self._con("contact.db")
+        try:
+            has_room = con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chat_room'"
+            ).fetchone()
+            if not has_room:
+                return []
+            rows = con.execute(
+                "SELECT r.username, r.owner, c.remark, c.nick_name, "
+                "       (SELECT COUNT(*) FROM chatroom_member m WHERE m.room_id = r.id), "
+                "       d.announcement_ "
+                "FROM chat_room r "
+                "LEFT JOIN contact c ON c.username = r.username "
+                "LEFT JOIN chat_room_info_detail d ON d.room_id_ = r.id "
+                "ORDER BY r.id"
+            ).fetchall()
+            out = []
+            for username, owner, remark, nick_name, member_count, announcement in rows:
+                username = (username or "").strip()
+                if not username:
+                    continue
+                out.append(
+                    {
+                        "username": username,
+                        "name": self._name_of(remark, nick_name, username),
+                        "owner": (owner or "").strip(),
+                        "member_count": int(member_count or 0),
+                        "announcement": (announcement or "").strip(),
+                    }
+                )
+            return out
+        except sqlite3.Error as e:
+            log.debug("读取群列表失败：%s", e)
+            return []
+        finally:
+            con.close()
+
+    def group_members(self, group_username: str):
+        """某个群的成员名单（含群主标记）。
+
+        `chatroom_member` 的 room_id / member_id 实测与 `contact.id`（即
+        `name2id` 的 rowid）一一对应；用它连 `contact` 取备注与昵称。
+        """
+        con = self._con("contact.db")
+        try:
+            row = con.execute(
+                "SELECT r.id, r.owner FROM chat_room r WHERE r.username = ?",
+                (group_username,),
+            ).fetchone()
+            if not row:
+                return []
+            room_id, owner = row
+            rows = con.execute(
+                "SELECT c.username, c.remark, c.nick_name "
+                "FROM chatroom_member m JOIN contact c ON c.id = m.member_id "
+                "WHERE m.room_id = ? ORDER BY c.username",
+                (room_id,),
+            ).fetchall()
+            out = []
+            for username, remark, nick_name in rows:
+                username = (username or "").strip()
+                if not username:
+                    continue
+                out.append(
+                    {
+                        "username": username,
+                        "name": self._name_of(remark, nick_name, username),
+                        "remark": (remark or "").strip(),
+                        "nick_name": (nick_name or "").strip(),
+                        "role": "owner"
+                        if username and username == (owner or "").strip()
+                        else "member",
+                    }
+                )
+            return out
+        except sqlite3.Error as e:
+            log.debug("读取群成员失败：%s", e)
+            return []
+        finally:
+            con.close()
+
     # ---------- 消息 ----------
 
     def messages(self, username: str, after_local_id: int = 0, limit: int = 50):

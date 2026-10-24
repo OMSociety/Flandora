@@ -23,6 +23,7 @@ RETCODE_OK = 0
 RETCODE_BAD_PARAM = 1400
 RETCODE_NOT_IMPLEMENTED = 1404
 RETCODE_UNSUPPORTED = 1405
+RETCODE_NOT_FOUND = 1406
 RETCODE_INTERNAL = 1500
 
 CAT_INFO = "信息"
@@ -255,19 +256,15 @@ ACTIONS: tuple[Action, ...] = (
     Action(
         name="get_friend_list",
         category=CAT_FRIEND,
-        summary="获取好友列表",
+        summary="获取好友列表（读通讯录；不含公众号与文件传输助手）",
         read_only=True,
-        implemented=False,
-        wip=NOT_YET,
     ),
     Action(
         name="get_stranger_info",
         category=CAT_FRIEND,
-        summary="获取陌生人（任意联系人）资料",
+        summary="获取任意联系人资料",
         params=(P("user_id", "int", required=True), P("no_cache", "bool", default=False)),
         read_only=True,
-        implemented=False,
-        wip=NOT_YET,
     ),
     Action(
         name="get_friend_info",
@@ -275,8 +272,6 @@ ACTIONS: tuple[Action, ...] = (
         summary="获取好友资料（get_stranger_info 的别名）",
         params=(P("user_id", "int", required=True),),
         read_only=True,
-        implemented=False,
-        wip=NOT_YET,
     ),
     Action(
         name="send_like",
@@ -306,27 +301,23 @@ ACTIONS: tuple[Action, ...] = (
     Action(
         name="get_group_list",
         category=CAT_GROUP_INFO,
-        summary="获取群列表",
+        summary="获取群列表（读通讯录里的群会话）",
         params=(P("no_cache", "bool", default=False),),
         read_only=True,
-        implemented=False,
-        wip=NOT_YET,
     ),
     Action(
         name="get_group_info",
         category=CAT_GROUP_INFO,
-        summary="获取群资料",
+        summary="获取群资料（群名与成员数来自本地库）",
         params=(P("group_id", "int", required=True), P("no_cache", "bool", default=False)),
         read_only=True,
     ),
     Action(
         name="get_group_member_list",
         category=CAT_GROUP_INFO,
-        summary="获取群成员列表",
+        summary="获取群成员列表（含群主标记）",
         params=(P("group_id", "int", required=True), P("no_cache", "bool", default=False)),
         read_only=True,
-        implemented=False,
-        wip=NOT_YET,
     ),
     Action(
         name="get_group_member_info",
@@ -338,8 +329,6 @@ ACTIONS: tuple[Action, ...] = (
             P("no_cache", "bool", default=False),
         ),
         read_only=True,
-        implemented=False,
-        wip=NOT_YET,
     ),
     Action(
         name="get_group_at_all_remain",

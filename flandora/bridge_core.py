@@ -4,12 +4,11 @@
 职责：
 1. 从微信本地库收件（WxLocalSource 轮询，见 wx_source）
 2. 消息缓冲合并（BUFFER_SECONDS）
-3. 构造 OneBot 事件，推送给 MaiBot / AstrBot
+3. 构造 OneBot 事件，推送给已连接的客户端
 4. 多层消息去重（rawid、内容、自回复）
 """
 
 import base64
-import json
 import logging
 import os
 import queue
@@ -20,7 +19,6 @@ from collections import defaultdict
 from datetime import datetime
 from pathlib import Path
 
-import requests
 
 from . import state
 from . import config
@@ -89,8 +87,7 @@ class Flandora:
             return True
         if config.BOT_WXID and data.get("talkerId", "") == config.BOT_WXID:
             return True
-        # 语音消息（content == "[语音]"）由 add_to_buffer 的语音分支处理，
-        # 其它类型的空消息才忽略
+        # 语音消息的 content 是 "[语音]" 占位符，按普通文本上报，不走单独分支
         if not content or content.strip() == "":
             return True
         return False
@@ -148,12 +145,6 @@ class Flandora:
                 or content.startswith("[表情] ")):
             # 表情包消息：异步解析后推送
             threading.Thread(target=self.process_emoji_message,
-                           args=(data,), daemon=True).start()
-            return
-
-        if content == "[语音]":
-            # 语音消息：先 ASR 转文字，再走 buffer
-            threading.Thread(target=self.process_audio_message,
                            args=(data,), daemon=True).start()
             return
 
@@ -444,52 +435,6 @@ class Flandora:
             # 确保 Event 被设置
             img_event.set()
 
-    # ---------------------------------------------------------------- #
-    # 语音消息：下载 wav → ASR → 走 buffer 推送
-    # ---------------------------------------------------------------- #
-
-    def process_audio_message(self, data):
-        """处理语音消息。
-
-        本地库收件模式下微信语音的 .dat 尚未还原，拿不到音频文件，因此直接跳过。
-        保留方法体是为了不动调用方的分派逻辑，将来补上解码后在这里接回 ASR。
-        """
-        session_id = data.get("sessionId", "")
-        source_name = data.get("sourceName", "") or data.get("talkerName", "") or "未知"
-        group_name = data.get("groupName", "")
-        is_group = bool(group_name) or "@chatroom" in session_id
-        sender_in_group = data.get("senderName", "") or data.get("sourceName", "")
-
-        log.info(
-            f"收到语音: {source_name}" +
-            (f" (群:{group_name})" if group_name else "")
-        )
-
-        log.warning(
-            "跳过语音推送：本地库收件模式下微信语音未还原"
-            "（.dat 封装尚未解出，见 docs/known-limits-dat-format.md）"
-        )
-        return
-
-        text = transcribe_audio_via_fun_asr("")
-        if not text:
-            log.warning("语音转写失败，跳过推送")
-            return
-
-        log.info(f"语音转写: {text[:80]}...")
-
-        # 推给麦麦（沿用 add_to_buffer 流程，但 content 用转写结果）
-        # 用 _dispatch_message_to_buffer 复用 buffer 创建/调度逻辑
-        new_data = dict(data)
-        new_data["content"] = f"语音消息：{text}"
-        new_data["senderName"] = sender_in_group
-        self._dispatch_message_to_buffer(new_data)
-
-    def _dispatch_message_to_buffer(self, data):
-        """通用 buffer 注入：需要复走文字分派的消息走这里。"""
-        # 直接调用 add_to_buffer 即可；content 已不是语音占位符，不会再进语音分支
-        self.add_to_buffer(data)
-
     def process_emoji_message(self, data):
         """处理表情包消息：以 image 段转发图片。
 
@@ -561,89 +506,3 @@ class Flandora:
                 entry["timer"] = timer
                 entry["timer_version"] = version
 
-
-def transcribe_audio_via_fun_asr(audio_path: str) -> str | None:
-    """通过阿里云 DashScope Fun-ASR 把 wav/mp3 转成中文文本。
-
-    要求 audio 已经是 16k 16bit 单声道 wav 或 mp3。
-    DashScope 同步接口要求 base64 ≤ 10MB，60 秒以内。
-    """
-    try:
-        import base64
-        # 用后缀猜 mime，默认 wav
-        ext = os.path.splitext(audio_path)[1].lower()
-        if ext in (".mp3", ".mpeg"):
-            mime = "audio/mpeg"
-            fmt = "mp3"
-        elif ext in (".ogg", ".opus"):
-            mime = "audio/ogg"
-            fmt = "ogg"
-        else:
-            mime = "audio/wav"
-            fmt = "wav"
-
-        with open(audio_path, "rb") as f:
-            data = f.read()
-        size_mb = len(data) / 1024 / 1024
-        if size_mb > 10:
-            log.warning(f"音频过大 ({size_mb:.1f}MB)，超过 DashScope 同步接口限制")
-            return None
-        data_uri = f"data:{mime};base64,{base64.b64encode(data).decode()}"
-
-        workspace_id = state.fun_asr_workspace_id
-        api_key = state.fun_asr_api_key
-        region = (state.fun_asr_region or "cn").lower()
-        if region in ("intl", "sg", "ap-southeast"):
-            host = f"https://{workspace_id}.ap-southeast-1.maas.aliyuncs.com"
-        else:
-            host = f"https://{workspace_id}.cn-beijing.maas.aliyuncs.com"
-
-        if not workspace_id or not api_key:
-            log.warning("FunASR 未配置（fun_asr_workspace_id / fun_asr_api_key），跳过转写")
-            return None
-
-        url = f"{host}/api/v1/services/aigc/multimodal-generation/generation"
-        payload = {
-            "model": state.fun_asr_model,
-            "input": {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "input_audio", "input_audio": {"data": data_uri}}
-                        ],
-                    }
-                ]
-            },
-            "parameters": {"format": fmt, "sample_rate": 16000},
-        }
-        headers = {
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-            "X-DashScope-SSE": "disable",
-        }
-        resp = requests.post(url, json=payload, headers=headers, timeout=60)
-        if resp.status_code != 200:
-            log.warning(f"FunASR HTTP {resp.status_code}: {resp.text[:200]}")
-            return None
-
-        body = resp.json()
-        # DashScope Fun-ASR 同步接口的真实响应结构：
-        # 顶层有 sentence / text / request_id / output / usage，
-        # text 也在 body["sentence"]["text"] 或 body["output"]["sentence"]["text"]。
-        text = ""
-        sentence = body.get("sentence") or body.get("output", {}).get("sentence") or {}
-        if isinstance(sentence, dict):
-            text = sentence.get("text", "")
-        if not text:
-            text = body.get("text", "") or body.get("output", {}).get("text", "")
-        text = (text or "").strip()
-        if not text:
-            log.warning(f"FunASR 返回空文本: {json.dumps(body)[:300]}")
-            return None
-        return text
-    except requests.Timeout:
-        log.warning("FunASR 转写超时 (60s)")
-    except Exception as e:
-        log.warning(f"FunASR 转写失败: {e}")
-    return None

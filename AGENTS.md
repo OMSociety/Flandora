@@ -5,14 +5,14 @@
 
 ## 项目概览
 
-一句话定位：把微信个人号接入 OneBot v11 的桥接服务（麦麦、AstrBot 等客户端通过 WebSocket 收发），
+一句话定位：把微信个人号接入 OneBot v11 的桥接服务（任意 OneBot v11 客户端通过 WebSocket 收发），
 收消息读微信本地加密库，发消息走 Windows UI 自动化。目标平台 Windows。
 
 技术栈：
 
 - Python 3.13（仓库根 `.venv`，已 gitignore），运行期依赖见 `flandora/requirements.txt`
 - FastAPI + uvicorn：控制面板 `http://127.0.0.1:8766`
-- websockets 16–17：OneBot v11 服务端（默认 7998，以 `data/config.json` 为准）
+- websockets 16–17：OneBot v11 服务端（默认 7999，以 `data/config.json` 为准）
 - Vue 3.5 + Vite 6（`webui-frontend/`），图标 `@lucide/vue`
 - pytest（后端）、Playwright（前端），PyInstaller + Inno Setup（打包）
 - 专有依赖：`uiautomation`（窗口自动化）、`frida`（只打进取钥器）、`zstandard`、`Pillow`
@@ -124,6 +124,15 @@ run_bridge.py -> flandora.main
   并在 body 逐条列出破坏点（改了哪个配置键、哪个文件名、哪个行为）。
 - 仓库不维护 CHANGELOG，变更说明写在 commit body。
 - 直接提交到 `main`。
+
+## 待办与未实现
+
+- 语音与音频本体：现在只把语音当作 `[语音]` 占位文本上报，客户端拿不到音频文件。要走通至少三处
+  改动：确认微信 4.x 把语音落在哪个目录（本机 `msg/attach/<会话>/<月>/` 下只有 `Img`，全盘
+  `*.silk`/`*.amr`/`*.mp3` 计数为 0）、给 `flandora/wx_store.py` 加语音文件定位（现只有
+  `extract_image()` 在写死的 `Img` 目录里 glob）、给 `flandora/wx_image.py` 的解码链路加音频魔数
+  与容器处理（`_MAGICS` 只认 jpg/png/gif/webp，`_sniff` 认不出即返回空）。文件与视频同理。
+- 语音转文字（ASR）已移除，不属于桥接职责：转写与回复策略归 OneBot v11 客户端。
 
 ## 已知风险区
 

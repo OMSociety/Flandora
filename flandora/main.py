@@ -99,7 +99,7 @@ def _bridge_loop():
     import ctypes
     ctypes.windll.ole32.CoInitialize(None)
 
-    log.info(f"Bridge | 收件: local | OB11: {config.ASTRBOT_OB_URL} | 发送: uia")
+    log.info(f"Bridge | 收件: local | OB11: ws://{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT} | 发送: uia")
 
     bridge = Flandora(state.sender_instance)
     with state.bridge_lock:
@@ -192,11 +192,6 @@ def main() -> int:
     state._self_id_int = state._wxid_demouser10001(config.BOT_WXID or "wechat_bot")
     state._self_name = config.SELF_NAME
 
-    # 初始化运行时可变的 FunASR 配置
-    state.fun_asr_workspace_id = config.FUN_ASR_WORKSPACE_ID
-    state.fun_asr_region = config.FUN_ASR_REGION
-    state.fun_asr_api_key = config.FUN_ASR_API_KEY
-    state.fun_asr_model = config.FUN_ASR_MODEL
 
     PID_FILE = os.path.join(config.data_dir(), "flandora.pid")
 
@@ -243,7 +238,7 @@ def main() -> int:
             log.error(f"[WebUI] 启动失败: {type(e).__name__}: {e}")
         log.error(
             f"[WebUI] WebUI 不可用，但 OneBot 服务仍在监听 "
-            f"{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT}，MaiBot 侧不受影响"
+            f"{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT}，已连接的客户端不受影响"
         )
         log.error(
             f"[WebUI] 请检查端口 {config.WEB_PORT} 是否被占用；"

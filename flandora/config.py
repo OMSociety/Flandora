@@ -142,13 +142,10 @@ WEB_PORT = config.get("web_port", 8766)
 # 启动 bridge 时自动用默认浏览器打开 WebUI（false 关闭）
 WEBUI_AUTO_OPEN = bool(config.get("webui_auto_open", True))
 
-# 早期对接 AstrBot 的客户端 URL（已弃用，保留兼容）
-ASTRBOT_OB_URL = config.get("astrbot_ob_url", "ws://127.0.0.1:19777")
-
 # ====== OneBot v11 服务端 ======
 # bridge 作为 WS 服务端，任意 OneBot v11 客户端（适配器、框架、脚本）都可连接
 OB_SERVER_HOST = config.get("ob_server_host", "127.0.0.1")
-OB_SERVER_PORT = config.get("ob_server_port", 7998)
+OB_SERVER_PORT = config.get("ob_server_port", 7999)
 OB_SERVER_TOKEN = config.get("ob_server_token", "")
 SELF_NAME = config.get("self_name", "wechat-bot")
 
@@ -170,12 +167,6 @@ WECHAT_EXE = config.get("wechat_exe", "")
 # 例: {"47622228067@chatroom": "我的测试群"}
 GROUP_NAME_MAP = config.get("group_name_map", {})
 
-# 语音转写配置（DashScope Fun-ASR）
-# workspace_id 是阿里云百炼业务空间 ID；region: cn (北京) / intl (新加坡)
-FUN_ASR_WORKSPACE_ID = config.get("fun_asr_workspace_id", "")
-FUN_ASR_REGION = config.get("fun_asr_region", "cn")
-FUN_ASR_API_KEY = config.get("fun_asr_api_key", "")
-FUN_ASR_MODEL = config.get("fun_asr_model", "fun-asr-flash-2026-06-15")
 
 # ============ 日志 ============
 

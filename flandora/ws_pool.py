@@ -10,7 +10,7 @@ import threading
 
 log = logging.getLogger("ob11-bridge")
 
-# 已连接的 WS 客户端（多个 MaiBot 实例可同时连接）
+# 已连接的 WS 客户端（多个客户端可同时连接）
 _clients: set = set()
 _loop: asyncio.AbstractEventLoop | None = None
 _ws_ready = threading.Event()

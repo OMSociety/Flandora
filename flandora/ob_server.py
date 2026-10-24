@@ -1,9 +1,9 @@
 """
-OneBot v11 WebSocket 服务端模块（对接 MaiBot 微信适配器）。
+OneBot v11 WebSocket 服务端模块（对接 OneBot v11 客户端）。
 
-MaiBot 的微信适配器作为 WS 客户端连接本服务端：
-- 接收 MaiBot 发来的 action 请求（send_msg 等），处理后响应 echo
-- 向所有连接的 MaiBot 客户端推送 OneBot 事件（消息等）
+任意 OneBot v11 客户端作为 WS 客户端连接本服务端：
+- 接收客户端发来的 action 请求（send_msg 等），处理后响应 echo
+- 向所有已连接的客户端推送 OneBot 事件（消息等）
 - 支持 Bearer token 校验
 """
 

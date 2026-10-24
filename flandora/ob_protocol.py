@@ -1,9 +1,9 @@
 """
-OneBot v11 协议处理模块（对接 MaiBot 微信适配器）。
+OneBot v11 协议处理模块（对接 OneBot v11 客户端）。
 
 - make_message_event() — 构造 OneBot 消息事件 JSON
-- push_event() — 广播事件给所有连接的 MaiBot 客户端
-- _handle_ob_api() — 处理 MaiBot 发来的 API 请求（send_msg、get_login_info 等）
+- push_event() — 广播事件给所有已连接的 OneBot v11 客户端
+- _handle_ob_api() — 处理客户端发来的 API 请求（send_msg、get_login_info 等）
 """
 
 import asyncio
@@ -51,7 +51,7 @@ QQ_FACE_TO_WECHAT = {
 
 
 def push_event(event: dict) -> int:
-    """广播 OneBot 事件给所有 MaiBot 客户端。返回成功推送数。"""
+    """广播 OneBot 事件给所有已连接的客户端。返回成功推送数。"""
     return push_event_broadcast(event)
 
 
@@ -65,7 +65,7 @@ async def _send_resp_to(ws, resp_data: dict):
 
 
 async def _handle_ob_api(data: dict):
-    """处理 MaiBot 微信适配器发来的 API 请求。
+    """处理客户端发来的 API 请求。
 
     返回响应 dict（由服务端 handler 负责发送）；返回 None 表示无需响应。
     """
@@ -218,7 +218,7 @@ async def _handle_ob_api(data: dict):
                 # 发到聊天窗口（mp3 文件卡片，双击可播放）。
                 #
                 # 接受两种 data 格式：
-                #   1. {"file": "base64://<mp3 base64>"} — MaiBot voice segment（base64 内联）
+                #   1. {"file": "base64://<mp3 base64>"} — 客户端 voice 段（base64 内联）
                 #   2. {"file": "/abs/path/to/xxx.mp3"}   — 已落盘的本地文件
                 file_val = seg_data.get("file", "") or seg_data.get("data", "")
                 if not file_val:

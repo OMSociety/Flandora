@@ -1,12 +1,12 @@
 """
-微信 ↔ MaiBot 桥接（OneBot v11 版）
+微信 ↔ OneBot v11 桥接
 =====================================
 消息接收：直接读微信本地库（微信自己加密的 SQLite 副本，只读）
-AI 服务：MaiBot 通过微信适配器（OneBot v11 WS 客户端）接入
-消息发送：bridge 接收 MaiBot 的 API 调用 → 隔离桌面上的微信窗口（UIA）
+AI 服务：任意 OneBot v11 客户端（WS）接入
+消息发送：bridge 接收客户端的 API 调用 → 隔离桌面上的微信窗口（UIA）
 
 架构：
-  微信本地库 ──轮询──→ flandora/main.py ──WS 服务端(7999)──→ MaiBot 微信适配器
+  微信本地库 ──轮询──→ flandora/main.py ──WS 服务端(7999)──→ OneBot v11 客户端
                     ↑ 监听端口，等待客户端连入
                     发送 OneBot 事件            返回 API 响应
 """
@@ -41,10 +41,6 @@ def _wxid_demouser10001(wxid: str) -> int:
 # ============ 桥接实例 / 发送器 ============
 
 # 语音转写配置（运行时可变，Web 面板保存后即时生效）
-fun_asr_workspace_id = ""
-fun_asr_region = "cn"
-fun_asr_api_key = ""
-fun_asr_model = "fun-asr-flash-2026-06-15"
 
 bridge_instance = None
 bridge_lock = threading.Lock()

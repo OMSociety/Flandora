@@ -156,8 +156,11 @@ async def _handle_ob_api(data: dict):
         contact = state._ob_id_to_contact.get(target_id) or ""
         if not target_id:
             return _failure("缺少 user_id / group_id", action_catalog.RETCODE_BAD_PARAM, echo)
-        # 群聊：微信搜索框搜不到 @chatroom ID，必须有群名
+        # 群聊：微信搜索框搜不到 @chatroom ID，必须有群名。
+        # 名字来源按「本次运行收到的群消息 → 本地库群名册」取，配置里的映射只作覆盖。
         if is_group:
+            if not contact and contact_handle:
+                contact = await asyncio.to_thread(_group_name, contact_handle)
             mapped_name = config.GROUP_NAME_MAP.get(contact_handle) or config.GROUP_NAME_MAP.get(
                 str(target_id)
             )
@@ -166,8 +169,8 @@ async def _handle_ob_api(data: dict):
                 log.info(f"[OB11] 群名映射: {target_id} -> {mapped_name}")
             if not contact:
                 return _failure(
-                    f"无法定位群 {target_id}：还没有群名映射。先让该群发一条消息（Flandora 会自动学习群名），"
-                    "或在 config.json 的 group_name_map 中手动配置。",
+                    f"无法定位群 {target_id}：本地库里没有这个群，也没有收到过它的消息。"
+                    "让该群发一条消息即可自动学会群名，或在 config.json 的 group_name_map 中手动指定。",
                     action_catalog.RETCODE_BAD_PARAM,
                     echo,
                 )
@@ -831,6 +834,14 @@ def _groups_roster() -> list:
     if store is None:
         return []
     return store.groups()
+
+
+def _group_name(handle: str) -> str:
+    """在线程池中执行：按群 wxid 取微信里显示的群名，找不到返回空串。"""
+    for group in _groups_roster():
+        if group.get("username") == handle:
+            return str(group.get("name") or "")
+    return ""
 
 
 def _members_roster(group_handle: str) -> list:

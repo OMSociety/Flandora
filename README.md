@@ -240,7 +240,7 @@ client.run_forever()
 | `bot_nicknames` | 字符串数组 | 必填 | 机器人微信昵称。群里 @ 到其中任意一个，`is_mentioned` 即为 `true`；可填多个 |
 | `bot_wxid` | 字符串 | 空 | 机器人自己的 wxid，留空从当前登录账号推断 |
 | `self_name` | 字符串 | `wechat-bot` | 推送给客户端时显示的发送者名 |
-| `group_name_map` | 对象 | `{}` | 群 ID 到群名的映射。微信搜索框搜不到 `@chatroom` 结尾的群 ID，发群消息要靠它换名 |
+| `group_name_map` | 对象 | `{}` | 群 ID 到群名的覆盖映射。群名默认从微信本地库与收到的群消息解析，只有想改写或预先指定时才填 |
 
 ### 面板
 

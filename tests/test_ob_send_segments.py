@@ -321,3 +321,36 @@ def test_invalid_message_shape_is_bad_param(monkeypatch, isolated_ids):
     )
     assert resp["status"] == "failed"
     assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
+
+
+def test_group_name_falls_back_to_roster(monkeypatch, isolated_ids):
+    """没收到过消息、也没配映射时，群名从本地库名册取。"""
+    sender = FakeSender()
+    monkeypatch.setattr(state, "sender_instance", sender, raising=False)
+    monkeypatch.setattr(ob_protocol, "_group_name", lambda handle: "名册里的群")
+    gid = ob_ids.contact_id("50071592949@chatroom")
+    resp = _call(
+        {
+            "action": "send_group_msg",
+            "params": {"group_id": gid, "message": [{"type": "text", "data": {"text": "hi"}}]},
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.texts == [("名册里的群", "hi")]
+
+
+def test_group_without_any_name_is_reported(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    monkeypatch.setattr(state, "sender_instance", sender, raising=False)
+    monkeypatch.setattr(ob_protocol, "_group_name", lambda handle: "")
+    gid = ob_ids.contact_id("60000000000@chatroom")
+    resp = _call(
+        {
+            "action": "send_group_msg",
+            "params": {"group_id": gid, "message": [{"type": "text", "data": {"text": "hi"}}]},
+        }
+    )
+    assert resp["status"] == "failed"
+    assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
+    assert "本地库里没有这个群" in resp["message"]
+    assert sender.texts == []

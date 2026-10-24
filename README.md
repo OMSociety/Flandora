@@ -239,7 +239,6 @@ npm run build   # 产物写入 flandora\webui\dist
 - [WeChat-Onebot-Bridge](https://github.com/jessiongod/wechat-onebot-bridge)：本仓库的前身与上游，收件、发送与 OneBot 协议层的早期设计来自这个项目
 - [WeFlow](https://github.com/hicccc77/WeFlow)：上游的收件链路基于它的本地微信数据接口；本仓库改为只读解密本地库，不再依赖它运行
 - [OneBot v11](https://github.com/botuniverse/onebot-11)：对外提供的事件与动作遵循这份协议规范
-- 顾海蔚蓝：早期结构与文档
 
 <p align="center">
   <a href="https://github.com/OMSociety/Flandora/graphs/contributors"><img src="https://contrib.rocks/image?repo=OMSociety/Flandora" alt="Flandora 贡献者" /></a>

@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 
-from . import __version__, config, state, update_check, wechat_account
+from . import __version__, config, ob_ids, state, update_check, wechat_account
 from .bridge_core import Flandora
 from .ob_server import _run_ob_server
 from .senders import create_sender
@@ -154,7 +154,7 @@ def _rebuild_for_account(old, new):
     """
     old_wxid = old.wxid if old else "（未识别）"
     state._ob_id_to_contact.clear()
-    state._self_id_int = state._wxid_demouser10001(new.wxid)
+    state._self_id_int = ob_ids.contact_id(new.wxid)
     state._self_name = config.SELF_NAME or new.wxid
     log.warning("=" * 64)
     log.warning(f"[账号] 微信登录账号已切换：{old_wxid} -> {new.wxid}")
@@ -186,7 +186,7 @@ def start_account_watch():
 
 def main() -> int:
     # 从 config 初始化 state 中需要计算的值
-    state._self_id_int = state._wxid_demouser10001(config.BOT_WXID or "wechat_bot")
+    state._self_id_int = ob_ids.contact_id(config.BOT_WXID or "wechat_bot")
     state._self_name = config.SELF_NAME
 
     PID_FILE = os.path.join(config.data_dir(), "flandora.pid")

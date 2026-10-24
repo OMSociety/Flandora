@@ -33,11 +33,6 @@ _self_id_int = 0  # 启动时从 config 初始化
 _self_name = "wechat-bot"  # 机器人昵称（给 get_login_info 用）
 
 
-def _wxid_demouser10001(wxid: str) -> int:
-    """将微信 wxid 映射为稳定的整数 ID。"""
-    return abs(hash(wxid)) % (2**31)
-
-
 # ============ 桥接实例 / 发送器 ============
 
 # 语音转写配置（运行时可变，Web 面板保存后即时生效）
@@ -45,7 +40,7 @@ def _wxid_demouser10001(wxid: str) -> int:
 bridge_instance = None
 bridge_lock = threading.Lock()
 sender_instance = None
-_ob_id_to_contact: dict[int, str] = {}  # OneBot user_id/group_id → 微信联系名
+_ob_id_to_contact: dict[int, str] = {}  # OneBot user_id/group_id → 微信联系名（发送时搜索用）
 ob_server_started = False
 
 # 新版本提示：update_check 查到有新版时填 {"latest","current","url"}，否则 None

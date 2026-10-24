@@ -74,6 +74,18 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 > [!WARNING]
 > `ob_server_token` 与客户端 `token` 必须一致。留空表示不校验鉴权，此时服务端只监听 `127.0.0.1`；要让别的机器连进来，改 `ob_server_host`、在防火墙放行 7999，并务必填一串随机 token。
 
+## ID 约定
+
+微信侧的标识是 wxid（`wxid_xxx`）与群会话 ID（`xxx@chatroom`），OneBot v11 要求整数。Flandora 在 `data/id_map.json` 里维护一张双向映射表：wxid 首次出现时分配一个正整数并落盘，之后每次启动、每次升级都是同一个数，客户端存下的 `user_id` 不会因为重启而失效。
+
+| 字段 | 含义 |
+| --- | --- |
+| `user_id` | 发言人（私聊即对方）的 wxid 映射。群消息里按发言人拆分，同一个人在不同群里是同一个 `user_id` |
+| `group_id` | 群会话 ID 的映射；私聊事件里为 `0` |
+| `message_id` | 非零正整数。收件时按微信本地库的消息行号分配，同一条消息重复上报得到同一个号；发送成功后返回新号 |
+
+映射表与消息号表都在配置目录下，换机时连同 `config.json` 一起带走即可保持 ID 不变。
+
 ## 控制台
 
 <table>
@@ -191,17 +203,20 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 需要 Python 3.13 与 Node.js（构建前端时）。以下命令在仓库根执行：
 
 ```powershell
-# 装依赖
-.venv\Scripts\python.exe -m pip install -r flandora\requirements.txt
-.venv\Scripts\python.exe -m pip install -r manager\requirements.txt
+# 装依赖（运行期 + 测试 + ruff，一份清单装全）
+.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
 
-# 语法检查与后端测试
-.venv\Scripts\python.exe -m compileall -q flandora
+# 语法检查、lint、后端测试
+.venv\Scripts\python.exe -m compileall -q flandora manager
+.venv\Scripts\python.exe -m ruff check .
+.venv\Scripts\python.exe -m ruff format --check .
 .venv\Scripts\python.exe -m pytest tests -q
 
 # 从源码起桥接
 .venv\Scripts\python.exe run_bridge.py
 ```
+
+这三步与 CI（`.github/workflows/ci.yml`）跑的是同一组命令，提交前本地跑绿即可。
 
 前端在 `webui-frontend/`（Vue 3 + Vite）：
 

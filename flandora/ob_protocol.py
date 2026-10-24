@@ -14,7 +14,7 @@ import os
 import tempfile
 import time
 
-from . import __version__, action_catalog, config, state
+from . import __version__, action_catalog, config, ob_ids, state
 from .ws_pool import broadcast as push_event_broadcast
 
 try:
@@ -131,17 +131,28 @@ async def _handle_ob_api(data: dict):
                 action_catalog.RETCODE_NOT_IMPLEMENTED,
                 echo,
             )
-        contact = state._ob_id_to_contact.get(target_id, str(target_id))
-        # 群聊：优先用群名映射（微信搜索框搜不到 @chatroom ID）
+        contact_handle = ob_ids.handle_of(target_id) or ""
+        contact = state._ob_id_to_contact.get(target_id) or ""
+        if not target_id:
+            return _failure("缺少 user_id / group_id", action_catalog.RETCODE_BAD_PARAM, echo)
+        # 群聊：微信搜索框搜不到 @chatroom ID，必须有群名
         if is_group:
-            mapped_name = config.GROUP_NAME_MAP.get(str(target_id), "")
+            mapped_name = config.GROUP_NAME_MAP.get(contact_handle) or config.GROUP_NAME_MAP.get(
+                str(target_id)
+            )
             if mapped_name:
                 contact = mapped_name
                 log.info(f"[OB11] 群名映射: {target_id} -> {mapped_name}")
-            elif str(target_id).endswith("@chatroom"):
-                log.warning(
-                    f"[OB11] 群 {target_id} 未配置群名映射，微信搜索可能失败。请在 config.json 的 group_name_map 中配置群名。"
+            if not contact:
+                return _failure(
+                    f"无法定位群 {target_id}：还没有群名映射。先让该群发一条消息（Flandora 会自动学习群名），"
+                    "或在 config.json 的 group_name_map 中手动配置。",
+                    action_catalog.RETCODE_BAD_PARAM,
+                    echo,
                 )
+        else:
+            # 私聊：缓存里的备注名优先，其次按 wxid 搜索（微信能搜到好友的 wxid）
+            contact = contact or contact_handle or str(target_id)
 
         sent_count = 0
         failures: list[str] = []
@@ -320,7 +331,10 @@ async def _handle_ob_api(data: dict):
                         except Exception:
                             pass
 
-        resp_data["data"] = {"message_id": int(time.time() * 1000) % 1000000000}
+        # message_id 必须是真实发出去的号：客户端拿它做回复引用与撤回，
+        # 顺手给的假号会让「撤回自己刚发的消息」永远找不到目标。
+        if sent_count:
+            resp_data["data"] = {"message_id": ob_ids.allocate_message_id(contact_handle)}
 
         # 一段都没发出去（典型：微信未登录 / 主窗口不可用）时必须回报失败，
         # 否则调用方会以为消息已送达并把它记进上下文。
@@ -376,12 +390,20 @@ async def _handle_ob_api(data: dict):
     elif action in ("get_group_msg_history", "get_friend_msg_history"):
         # 从微信本地库拉取聊天历史（插件可主动读取上下文）
         is_g = action == "get_group_msg_history"
-        talker = str(params.get("group_id" if is_g else "user_id", "") or "")
+        key = "group_id" if is_g else "user_id"
+        target = params.get(key)
+        handle = ob_ids.handle_of(target) if isinstance(target, int) else None
+        if not handle:
+            return _failure(
+                f"未知的 {key}：{target}（这个 ID 不是 Flandora 分配过的会话）",
+                action_catalog.RETCODE_BAD_PARAM,
+                echo,
+            )
         try:
             count = int(params.get("count", 20) or 20)
         except (TypeError, ValueError):
             count = 20
-        msgs = await asyncio.to_thread(_fetch_history_ob, talker, is_g, count)
+        msgs = await asyncio.to_thread(_fetch_history_ob, handle, is_g, count)
         resp_data["data"] = {"messages": msgs}
 
     if echo:
@@ -396,37 +418,51 @@ def make_message_event(
     group_id: int = 0,
     group_name: str = "",
     nickname: str = "",
+    message_id: int = 0,
 ) -> dict:
-    """构造 OneBot v11 消息事件"""
+    """构造 OneBot v11 消息事件。"""
     event = {
         "time": int(time.time()),
         "self_id": state._self_id_int,
         "post_type": "message",
+        "message_id": message_id,
     }
+    raw_text = "".join(
+        seg.get("data", {}).get("text", "") for seg in message if seg.get("type") == "text"
+    )
     if message_type == "group":
         event["message_type"] = "group"
         event["group_id"] = group_id
         event["user_id"] = user_id
         event["message"] = message
-        event["raw_message"] = "".join(
-            seg.get("data", {}).get("text", "") for seg in message if seg.get("type") == "text"
-        )
+        event["raw_message"] = raw_text
         event["sender"] = {"user_id": user_id, "nickname": nickname or str(user_id)}
         event["group_name"] = group_name or str(group_id)
     else:
         event["message_type"] = "private"
         event["user_id"] = user_id
         event["message"] = message
-        event["raw_message"] = "".join(
-            seg.get("data", {}).get("text", "") for seg in message if seg.get("type") == "text"
-        )
+        event["raw_message"] = raw_text
         event["sender"] = {"user_id": user_id, "nickname": nickname or str(user_id)}
     return event
+
+
+def _history_message_id(talker: str, local_id) -> int:
+    """历史消息的 message_id：有本地行号就复用，没有就现发一个。"""
+    try:
+        lid = int(local_id or 0)
+    except (TypeError, ValueError):
+        lid = 0
+    if lid > 0:
+        return ob_ids.ensure_message_id(talker, lid)
+    return ob_ids.allocate_message_id(talker)
 
 
 def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
     """从微信本地库取会话历史，转换为 OneBot v11 消息格式列表。
 
+    ``talker`` 是微信会话原始标识（wxid 或 ``xxx@chatroom``）；返回的 user_id /
+    group_id 与实时事件一样走 ID 层，因此客户端拿到的是同一套整数 ID。
     在线程池中执行（asyncio.to_thread）。失败返回空列表，不抛异常。
     """
     out = []
@@ -448,6 +484,7 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
         except Exception:  # noqa: BLE001
             names = {}
 
+    group_id = ob_ids.contact_id(talker) if is_group else 0
     try:
         for m in store.recent_messages(talker, limit=count):
             text = (m.get("text") or "").strip()
@@ -458,19 +495,19 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
                 nick = config.SELF_NAME or "bot"
             else:
                 sender_wxid = m.get("sender") or ""
-                uid = sender_wxid
+                uid = ob_ids.contact_id(sender_wxid) if sender_wxid else 0
                 nick = names.get(sender_wxid) or sender_wxid or "未知"
             msg = {
                 "time": m.get("create_time", 0) or 0,
                 "message_type": "group" if is_group else "private",
-                "message_id": m.get("local_id", 0),
+                "message_id": _history_message_id(talker, m.get("local_id")),
                 "user_id": uid,
                 "sender": {"user_id": uid, "nickname": nick},
                 "raw_message": text,
                 "message": [{"type": "text", "data": {"text": text}}],
             }
             if is_group:
-                msg["group_id"] = talker
+                msg["group_id"] = group_id
             out.append(msg)
         log.info(f"[OB11] 历史拉取 {talker}: {len(out)} 条")
     except Exception as e:  # noqa: BLE001

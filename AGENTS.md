@@ -29,18 +29,20 @@
 
 | 目的 | 命令 |
 |---|---|
-| 装运行期依赖 | `.venv\Scripts\python.exe -m pip install -r flandora\requirements.txt` |
-| 装测试依赖 | `.venv\Scripts\python.exe -m pip install pytest`（`requirements.txt` 不含它） |
+| 装运行期与开发依赖 | `.venv\Scripts\python.exe -m pip install -r requirements-dev.txt`（它 `-r` 了 `flandora/` 与 `manager/` 两份运行期清单） |
 | 跑全部后端测试 | `.venv\Scripts\python.exe -m pytest tests -q` |
 | 跑单个测试文件 | `.venv\Scripts\python.exe -m pytest tests/test_ob_server.py -q` |
-| 语法检查 | `.venv\Scripts\python.exe -m compileall -q flandora` |
+| 语法检查 | `.venv\Scripts\python.exe -m compileall -q flandora manager` |
+| Lint | `.venv\Scripts\python.exe -m ruff check .` |
+| 格式化 | `.venv\Scripts\python.exe -m ruff format .`（CI 用 `--check`，不通过即红） |
 | 起桥接（源码） | `.venv\Scripts\python.exe run_bridge.py` |
 | 装前端依赖 | `cd webui-frontend; npm install` |
 | 跑前端测试 | `cd webui-frontend; npm test`（Playwright 自动在 4175 起 vite，无需手工起服务） |
 | 构建前端 | `cd webui-frontend; npm run build`（产物写入 `flandora/webui/dist`） |
 | 打包发行版 | `.venv\Scripts\python.exe build.py`（产物在 `dist/`，Inno Setup 缺失时只出 portable zip） |
 
-仓库没有 linter / formatter / 类型检查配置，不要凭经验编造 lint 命令。
+lint 与格式化统一用 ruff，配置在仓库根的 `pyproject.toml`（line-length 100、`E/F/W/I` 规则、
+`E501` 交给 formatter）。仓库没有类型检查配置，不要凭经验编造 mypy/pyright 命令。
 
 ## 架构边界
 
@@ -111,11 +113,13 @@ run_bridge.py -> flandora.main
 
 改动完成 = 下列全部通过：
 
-1. `.venv\Scripts\python.exe -m compileall -q flandora`
-2. `.venv\Scripts\python.exe -m pytest tests -q`
-3. 改了 `webui-frontend/` 时追加：`cd webui-frontend; npm test` 与 `npm run build`
+1. `.venv\Scripts\python.exe -m compileall -q flandora manager`
+2. `.venv\Scripts\python.exe -m ruff check .` 与 `.venv\Scripts\python.exe -m ruff format --check .`
+3. `.venv\Scripts\python.exe -m pytest tests -q`
+4. 改了 `webui-frontend/` 时追加：`cd webui-frontend; npm test` 与 `npm run build`
 
-仓库没有 CI，以上是唯一的验收口径。真实环境验证需要 Windows 桌面与已登录的微信，
+`.github/workflows/ci.yml` 在 push 到 `main` 与 PR 上跑同一组命令（另加前端 job），
+本地先跑绿能省一轮往返。真实环境验证需要 Windows 桌面与已登录的微信，
 涉及桌面/发送/取钥的改动要另外重启桥接看日志，测试通过不能替代这一步。
 
 ## 提交与协作

@@ -21,7 +21,6 @@ const categories = [
   { id: 'bot', label: '收件与身份', icon: 'MessageCircle', description: '昵称与显示名称' },
   { id: 'onebot', label: 'OneBot 连接', icon: 'Zap', description: '服务端与鉴权' },
   { id: 'bridge', label: '消息与桥接', icon: 'SlidersHorizontal', description: '缓冲与发送' },
-  { id: 'groups', label: '群名映射', icon: 'MessagesSquare', description: '群 ID 与显示名称' },
 ]
 const activeCategory = ref('bot')
 const activeLabel = computed(() => categories.find((c) => c.id === activeCategory.value)?.label)
@@ -37,7 +36,6 @@ const saved = ref(false)
 const jsonMode = ref(false)
 const jsonText = ref('')
 const jsonValid = ref(true)
-const groupRows = reactive([])
 const nickInput = ref('')
 
 function applyConfig(obj) {
@@ -48,12 +46,7 @@ function applyConfig(obj) {
   if (!cfg.group_name_map || typeof cfg.group_name_map !== 'object' || Array.isArray(cfg.group_name_map)) cfg.group_name_map = {}
   pwEnabled.value = !!cfg.webui_password_set
   pwNew.value = ''
-  rebuildGroupRows()
 }
-function rebuildGroupRows() { groupRows.splice(0, groupRows.length, ...Object.keys(cfg.group_name_map || {}).map((key) => ({ key, value: cfg.group_name_map[key] }))) }
-function buildGroupMap() { return Object.fromEntries(groupRows.filter((row) => row.key).map((row) => [row.key, row.value])) }
-function addRow() { groupRows.push({ key: '', value: '' }) }
-function removeRow(i) { groupRows.splice(i, 1) }
 function addNick() {
   const value = nickInput.value.trim()
   if (value && !cfg.bot_nicknames.includes(value)) cfg.bot_nicknames.push(value)
@@ -62,7 +55,7 @@ function addNick() {
 function addNickFromKey(event) {
   if (['Enter', ',', '，'].includes(event.key)) { event.preventDefault(); addNick() }
 }
-function showJson() { cfg.group_name_map = buildGroupMap(); jsonText.value = JSON.stringify(cfg, null, 2); jsonValid.value = true; jsonMode.value = true }
+function showJson() { jsonText.value = JSON.stringify(cfg, null, 2); jsonValid.value = true; jsonMode.value = true }
 function hideJson() {
   try { applyConfig(JSON.parse(jsonText.value)); jsonValid.value = true; jsonMode.value = false }
   catch { toast('JSON 格式错误，请修正后切换回表单', 'error') }
@@ -78,7 +71,6 @@ async function save() {
     try { payload = JSON.parse(jsonText.value) }
     catch { toast('JSON 格式错误，无法保存', 'error'); return }
   } else {
-    cfg.group_name_map = buildGroupMap()
     payload = JSON.parse(JSON.stringify(cfg))
     // 密码只以哈希存在后端：这里只传明文或「清空」两种意图
     delete payload.webui_password_set
@@ -129,8 +121,7 @@ onMounted(load)
         <section v-show="activeCategory === 'bot'" class="card config-section"><div class="section-head"><div><h3 class="card-title">收件与身份</h3><p class="card-description">昵称用于判断群消息是否 @ 了机器人；自我称呼是推送给客户端时显示的发送者名。</p></div><AppIcon name="MessageCircle" :size="19" /></div><div class="form-grid"><div class="field span-full"><label for="bot-nicknames">机器人昵称</label><div class="nick-editor"><span v-for="(n, i) in cfg.bot_nicknames" :key="i" class="chip">{{ n }}<button type="button" class="chip-x" :aria-label="`删除昵称 ${n}`" @click="cfg.bot_nicknames.splice(i, 1)"><AppIcon name="X" :size="12" /></button></span><input id="bot-nicknames" v-model="nickInput" class="nick-input" placeholder="输入昵称，回车或逗号添加" @keydown="addNickFromKey" @blur="addNick" /></div><p class="hint">可添加多个昵称；群聊中 @ 其中任意昵称即可触发。</p></div><div class="field"><label for="bot-wxid">机器人 wxid</label><input id="bot-wxid" v-model="cfg.bot_wxid" class="input" placeholder="留空以自动识别" /></div><div class="field"><label for="self-name">自我称呼</label><input id="self-name" v-model="cfg.self_name" class="input" placeholder="推送给客户端时显示的发送者名" /></div></div></section>
         <section v-show="activeCategory === 'onebot'" class="card config-section"><div class="section-head"><div><h3 class="card-title">OneBot 服务端</h3><p class="card-description">任意 OneBot v11 客户端通过这些信息连接到桥接。</p></div><AppIcon name="Zap" :size="19" /></div><div class="form-grid"><div class="field"><label for="ob-host">监听 Host</label><input id="ob-host" v-model="cfg.ob_server_host" class="input" placeholder="127.0.0.1" /><p class="hint">本机使用建议保持回环地址。</p></div><div class="field"><label for="ob-port">监听端口</label><input id="ob-port" v-model.number="cfg.ob_server_port" class="input" type="number" min="1" max="65535" /></div><div class="field"><label for="ob-token">访问令牌</label><PasswordInput id="ob-token" v-model="cfg.ob_server_token" placeholder="与客户端配置保持一致，留空则不校验" /></div><div class="field"><label for="ob-format">消息格式</label><select id="ob-format" v-model="cfg.ob_message_format" class="input"><option value="array">消息段数组（array）</option><option value="string">CQ 码字符串（string）</option></select><p class="hint">事件里 message 字段的形态，raw_message 始终是 CQ 码字符串；发送方向两种都收。</p></div><div class="field"><label for="ob-heartbeat">心跳间隔（秒）</label><input id="ob-heartbeat" v-model.number="cfg.ob_heartbeat_seconds" class="input" type="number" min="0" max="3600" /><p class="hint">0 = 不发心跳。连上先推 lifecycle(connect)，之后按间隔推 heartbeat。</p></div></div><div class="net-block"><h4 class="card-title">网络入口</h4><p class="hint">OneBot 可开多个入口：正向的 WS 与 HTTP 服务端给别人连，反向 WS 与 HTTP 上报由桥接连出去。</p><NetworkEditor v-model="cfg.ob_networks" :legacy="legacyNode" /></div><div v-if="!hasNetworks" class="endpoint-preview"><span class="mini-dot"></span>OneBot v11 正向 WebSocket<span class="mono">ws://{{ cfg.ob_server_host }}:{{ cfg.ob_server_port }}</span></div></section>
         <section v-show="activeCategory === 'bridge'" class="card config-section"><div class="section-head"><div><h3 class="card-title">消息与桥接</h3><p class="card-description">控制消息缓冲与发送通道。</p></div><AppIcon name="SlidersHorizontal" :size="19" /></div><div class="form-grid"><div class="field"><label for="buffer-seconds">消息缓冲（秒）</label><input id="buffer-seconds" v-model.number="cfg.buffer_seconds" class="input" type="number" min="0" /><p class="hint">合并同一联系人在此时间内的连续消息。</p></div><div class="field"><label for="web-port">Web 面板端口</label><input id="web-port" v-model.number="cfg.web_port" class="input" type="number" min="1" max="65535" /></div><div class="field"><label class="check-label"><input type="checkbox" v-model="pwEnabled" /> 打开面板时要密码</label><PasswordInput v-if="pwEnabled" id="webui-password" v-model="pwNew" :placeholder="cfg.webui_password_set ? '已设置，留空表示不改' : '至少 6 位'" /><p class="hint">{{ cfg.webui_password_set ? '改密码会让其它浏览器上已登录的会话立刻失效。' : '设置后这块面板与它的全部接口都要先登录。' }}</p></div><div class="field"><label for="send-method">发送方式</label><input id="send-method" value="UI 自动化（uia）" class="input" disabled /></div><div class="field"><label for="attachments">客户端附件目录</label><input id="attachments" v-model="cfg.astrbot_attachments" class="input" placeholder="D:\attachments" /></div></div></section>
-        <section v-show="activeCategory === 'groups'" class="card config-section"><div class="section-head"><div><h3 class="card-title">群名映射</h3><p class="card-description">把微信群 ID 映射为易读的真实群名。</p></div><button class="btn btn-outline btn-sm" @click="addRow"><AppIcon name="Plus" :size="14" />添加映射</button></div><div v-if="groupRows.length" class="mapping-head"><span>群 ID @chatroom</span><span>微信中显示的群名</span><span></span></div><div v-for="(row, i) in groupRows" :key="i" class="mapping-row"><input v-model="row.key" class="input" :aria-label="`第 ${i + 1} 行群 ID`" placeholder="群ID@chatroom" /><input v-model="row.value" class="input" :aria-label="`第 ${i + 1} 行群名`" placeholder="微信中显示的群名" /><button class="icon-btn" :aria-label="`删除第 ${i + 1} 行映射`" @click="removeRow(i)"><AppIcon name="Trash2" :size="16" /></button></div><div v-if="!groupRows.length" class="empty"><AppIcon name="MessagesSquare" :size="24" />尚未添加群名映射</div><p class="hint mapping-hint">这一项只作覆盖：群名默认从微信本地库读取，收到过群消息后也会自动学会。</p></section>
-      </div>
+              </div>
     </div>
     <div v-if="loaded" class="save-bar"><div><strong>{{ jsonMode ? '完整配置' : activeLabel }}</strong><span>部分配置需要重启桥接后生效</span></div><button class="btn save-btn" :disabled="saving || (jsonMode && !jsonValid)" @click="save"><AppIcon :name="saving ? 'LoaderCircle' : saved ? 'Check' : 'CheckCheck'" :size="16" />{{ saving ? '正在保存…' : saved ? '已保存' : '保存配置' }}</button></div>
   </div>

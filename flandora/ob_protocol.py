@@ -14,7 +14,7 @@ import os
 import tempfile
 import time
 
-from . import __version__, action_catalog, config, ob_ids, ob_segments, state
+from . import __version__, action_catalog, config, ob_ids, ob_segments, ob_store, state
 from .ws_pool import broadcast as push_event_broadcast
 
 try:
@@ -78,7 +78,16 @@ QQ_FACE_TO_WECHAT = {
 
 
 def push_event(event: dict) -> int:
-    """广播 OneBot 事件给所有已连接的客户端。返回成功推送数。"""
+    """广播 OneBot 事件给所有已连接的客户端。返回成功推送数。
+
+    推送前先落一份存档：客户端可能在很久之后拿 message_id 回来取原文，
+    而微信本地库与内存都留不住它。存档失败只记日志，不阻断推送——
+    送达优先级高于归档。
+    """
+    try:
+        ob_store.message_store().save_event(event)
+    except Exception as e:
+        log.error(f"[OB11] 推送事件未能存档（message_id={event.get('message_id')}）：{e}")
     return push_event_broadcast(event)
 
 
@@ -486,6 +495,23 @@ async def _handle_ob_api(data: dict):
                     echo,
                 )
             resp_data["data"] = _member_object(ob_ids.contact_id(ghandle), found)
+
+    elif action == "get_msg":
+        mid = params.get("message_id", 0)
+        try:
+            mid = int(mid)
+        except (TypeError, ValueError):
+            return _failure(
+                f"message_id 必须是整数：{mid!r}", action_catalog.RETCODE_BAD_PARAM, echo
+            )
+        event = await asyncio.to_thread(ob_store.message_store().get, mid)
+        if event is None:
+            return _failure(
+                f"没有 message_id={mid} 的消息：存档里只有 Flandora 推送过的事件",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        resp_data["data"] = event
 
     elif action in ("get_group_msg_history", "get_friend_msg_history"):
         # 从微信本地库拉取聊天历史（插件可主动读取上下文）

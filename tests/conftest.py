@@ -39,3 +39,16 @@ def isolated_ids(tmp_path):
     finally:
         ob_ids.reset_singletons()
         state._ob_id_to_contact.clear()
+
+
+@pytest.fixture
+def isolated_store(tmp_path):
+    """把消息存档单例指到临时目录，测试不会往真实 data/messages.db 里写。"""
+    from flandora import ob_store
+
+    ob_store.reset_singletons()
+    ob_store._store = ob_store.MessageStore(str(tmp_path / "messages.db"))
+    try:
+        yield ob_store
+    finally:
+        ob_store.reset_singletons()

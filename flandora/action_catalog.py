@@ -187,11 +187,9 @@ ACTIONS: tuple[Action, ...] = (
     Action(
         name="get_msg",
         category=CAT_MESSAGE,
-        summary="按 message_id 取回消息原文",
+        summary="按 message_id 取回消息原文（存档只保留 Flandora 推送过的消息）",
         params=(P("message_id", "int", required=True),),
         read_only=True,
-        implemented=False,
-        wip=NOT_YET,
     ),
     Action(
         name="get_group_msg_history",

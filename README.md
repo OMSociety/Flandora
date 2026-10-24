@@ -92,12 +92,14 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 | 分类 | 动作 |
 | --- | --- |
-| 消息 | `send_msg`、`send_private_msg`、`send_group_msg`、`get_group_msg_history`、`get_friend_msg_history` |
+| 消息 | `send_msg`、`send_private_msg`、`send_group_msg`、`get_msg`、`get_group_msg_history`、`get_friend_msg_history` |
 | 信息 | `get_login_info`、`get_status`、`get_version_info`、`can_send_image`、`can_send_record` |
 | 好友 | `get_friend_list`、`get_stranger_info`、`get_friend_info` |
 | 群 | `get_group_list`、`get_group_info`、`get_group_member_list`、`get_group_member_info` |
 
 名册类查询读的是微信本地库：好友不含群、公众号与文件传输助手，群成员带 `owner` / `member` 角色。本地库没有的字段（性别、年龄、入群时间、群容量）如实回 `unknown` / `0`，不猜。
+
+`get_msg` 取的是 Flandora 自己推送过的消息——每条上报的事件都在 `data/messages.db` 里留了副本，客户端可以用收到的 `message_id` 回查原文。存档不自动清理：`message_id` 是撤回、引用与取原文的长期凭据，静默回收会让老客户端的引用指向不存在的消息。
 
 微信 PC 客户端确实没有对应能力的动作（群管理、群文件、点赞等）返回 `failed` 并在 `message` 里写明原因，不会回一个空对象假装成功：
 
@@ -208,6 +210,9 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | `data/config.json` | 全部配置（含 token 与 API key，别提交进仓库） |
 | `data/wx_key.dat` | 数据库口令（DPAPI 加密） |
 | `data/wx_image_key.json` | 图片密钥 |
+| `data/id_map.json` | wxid / 群 ID 与整数 ID 的映射表，删了 ID 会重新分配 |
+| `data/msg_ids.db` | 消息号表（`message_id` 与微信库行号的对应） |
+| `data/messages.db` | 已推送事件的存档，供 `get_msg` 与历史检索 |
 | `data/wx_cache/` | 解密副本与游标，可随时删 |
 | `data/flandora.log` | 运行日志（UTF-8） |
 

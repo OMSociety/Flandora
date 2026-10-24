@@ -185,6 +185,42 @@ def enum_wechat_windows(desktop_name: str = "") -> list[dict]:
     return results
 
 
+def enum_process_windows(pid: int, desktop_name: str = "") -> list[int]:
+    """枚举某个进程的所有顶层窗口句柄（含没有标题的 Qt 弹层）。
+
+    `enum_wechat_windows` 只认标题里带「微信 / WeChat」的主窗口，而成员选择
+    弹层、搜索弹层这类 Qt popover 没有标题，只能按 PID 找。按「输入 @ 前后
+    比对窗口集合、多出来的那个就是弹层」的方式定位弹层，靠的就是这里。
+    """
+    if not pid:
+        return []
+    user32 = ctypes.windll.user32
+    out: list[int] = []
+    Proto = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def _cb(hwnd, _lparam):
+        try:
+            owner = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+            if int(owner.value) == int(pid):
+                out.append(int(hwnd))
+        except Exception:
+            pass
+        return True
+
+    if desktop_name:
+        hdesk = user32.OpenDesktopW(desktop_name, 0, False, 0x000F01FF)
+        if not hdesk:
+            return out
+        try:
+            user32.EnumDesktopWindows(hdesk, Proto(_cb), 0)
+        finally:
+            user32.CloseDesktop(hdesk)
+    else:
+        user32.EnumWindows(Proto(_cb), 0)
+    return out
+
+
 def flash_window(hwnd: int, count: int = 5) -> bool:
     """让指定窗口的任务栏按钮闪烁（不抢焦点），用于视觉辨认。"""
     try:
@@ -1293,6 +1329,178 @@ class UiaSender(BaseSender):
                 return False
             finally:
                 self._detach_input()
+
+    # ================================================================
+    # 发送带 @ 的文字
+    # ================================================================
+
+    def send_mention_text(self, contact: str, mentions: list[str], text: str) -> bool:
+        """在群里发一条带 @ 的文字。
+
+        微信里的 @ 不是正文，而是一个「提及」对象：必须从成员选择弹层里选出
+        来，直接把 `@昵称` 打进输入框只会变成普通文字。所以这条路径是：输入
+        `@` → 确认弹层出现 → 输入昵称 → 点中唯一匹配项 → 校验输入框里确实
+        带上了这个提及 → 输入正文 → 回车发送。
+
+        任何一步对不上就清空输入框返回 False（fail-closed）：宁可这一条不发，
+        也不能把 `@昵称` 当正文发出去，更不能 @ 错人。
+        """
+        names = [str(n or "").strip() for n in (mentions or []) if str(n or "").strip()]
+        if not names:
+            self._last_error = "没有可以 @ 的成员名"
+            return False
+        if not self._foreground_gate(contact):
+            self._last_error = self._last_error or "发送通道未启用或被前台占用"
+            return False
+        with self._send_lock:
+            self._fg_before = self._foreground_window()
+            try:
+                return self._send_mention_impl(contact, names, text)
+            except Exception as e:
+                self._last_error = f"发送异常，窗口可能已失效: {e}"
+                log.error(f"[UIA失败] {contact}: {self._last_error}")
+                with self._lock:
+                    self._invalidate_window()
+                return False
+            finally:
+                self._restore_foreground(self._fg_before)
+                self._fg_before = 0
+
+    def _send_mention_impl(self, contact: str, names: list[str], text: str) -> bool:
+        with self._lock:
+            if not self._ensure_window():
+                return False
+            if not self._prepare_target(contact):
+                return False
+            self._release_foreground()
+            self._attach_input()
+            try:
+                summary_before = self._session_summary(contact) or ""
+                if not self._clear_input():
+                    self._last_error = self._last_error or "输入框未能清空"
+                    log.error(f"[UIA失败] {contact}: {self._last_error}")
+                    return False
+                self._release_foreground()
+                for name in names:
+                    if not self._pick_mention(name):
+                        self._clear_input()
+                        return False
+                    self._release_foreground()
+                if text and not self._type_suffix(text):
+                    self._clear_input()
+                    self._last_error = self._last_error or "正文未能完整进到输入框"
+                    log.error(f"[UIA失败] {contact}: {self._last_error}")
+                    return False
+                self._release_foreground()
+                if self._open_chat_title() != contact:
+                    self._clear_input()
+                    self._last_error = "输入期间会话已改变，本次发送已取消"
+                    log.error(f"[UIA失败] {contact}: {self._last_error}")
+                    return False
+                self._post_key(VK_RETURN)
+                self._release_foreground()
+                time.sleep(0.6)
+                if not self._confirm_sent(contact, text or names[0], summary_before):
+                    self._last_error = "回车后摘要未更新，消息可能没发出去"
+                    log.error(f"[UIA失败] {contact}: {self._last_error}")
+                    return False
+                log.info(f"[UIA成功] {contact}: @{'、'.join(names)} {text[:40]}")
+                return True
+            except Exception as e:
+                log.error(f"[UIA失败] {contact}: {e}")
+                return False
+            finally:
+                self._detach_input()
+
+    def _type_suffix(self, text: str) -> bool:
+        """在已有的 @ 提及之后追加正文，并校验输入框以它结尾。
+
+        `_type_text` 要求输入框内容与正文完全相等；带上提及之后输入框里还有
+        `@昵称` 那段，不可能相等。所以这里只要求结尾是本段正文，提及保持原样。
+        """
+        for _ in range(3):
+            for ch in text:
+                self._post_char(ch)
+                time.sleep(random.uniform(0.02, 0.04))
+            time.sleep(0.3)
+            if self._input_text().endswith(text):
+                return True
+            log.warning("正文回读不符合（输入框尾部与正文不一致），清空重打")
+            self._clear_input()
+        return False
+
+    def _pick_mention(self, name: str) -> bool:
+        """把某个成员变成输入框里的「提及」对象。
+
+        弹层是独立顶层窗口且没有标题，`enum_wechat_windows` 看不到它；这里按
+        PID 枚举窗口、比对输入 `@` 前后的差集来定位。
+        """
+        pid = self._self_pid()
+        before = set(enum_process_windows(pid, self.isolated_desktop))
+        self._post_char("@")
+        time.sleep(0.8)
+        fresh = [
+            hwnd
+            for hwnd in enum_process_windows(pid, self.isolated_desktop)
+            if hwnd not in before and hwnd != self._hwnd
+        ]
+        if not fresh:
+            self._last_error = f"输入 @ 之后没有出现成员选择弹层，无法在群里 @ {name}"
+            log.error(f"[UIA失败] {self._last_error}")
+            return False
+        for ch in name:
+            self._post_char(ch)
+            time.sleep(0.04)
+        time.sleep(0.6)
+        for hwnd in fresh:
+            item = self._mention_item(name, hwnd)
+            if item is None:
+                continue
+            if not self._post_click(item, hwnd):
+                continue
+            time.sleep(0.4)
+            if name in self._input_text():
+                return True
+        self._last_error = f"成员选择弹层里没能选中「{name}」，本次发送已取消"
+        log.error(f"[UIA失败] {self._last_error}")
+        return False
+
+    def _mention_item(self, name: str, hwnd: int):
+        """弹层里指向该成员的那一项；找不到或候选不唯一时返回 None。"""
+        import uiautomation as auto
+
+        try:
+            root = auto.ControlFromHandle(hwnd)
+        except Exception:
+            return None
+        if root is None:
+            return None
+        exact, prefixed = [], []
+        for _, node in self._walk(root):
+            try:
+                node_name = (node.Name or "").strip()
+            except Exception:
+                continue
+            if not node_name:
+                continue
+            if node_name == name:
+                exact.append(node)
+            elif len(name) >= 2 and node_name.startswith(name):
+                prefixed.append(node)
+        candidates = exact or prefixed
+        if len(candidates) > 1:
+            log.warning(f"成员弹层里「{name}」有 {len(candidates)} 个候选，无法确定是哪一位")
+            return None
+        return candidates[0] if candidates else None
+
+    def _self_pid(self) -> int:
+        try:
+            user32 = self._user32_inst()
+            pid = wintypes.DWORD()
+            user32.GetWindowThreadProcessId(self._hwnd, ctypes.byref(pid))
+            return int(pid.value)
+        except Exception:
+            return 0
 
     # ================================================================
     # 发送图片

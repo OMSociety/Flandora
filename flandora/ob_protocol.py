@@ -14,7 +14,16 @@ import os
 import tempfile
 import time
 
-from . import __version__, action_catalog, config, ob_ids, ob_segments, ob_store, state
+from . import (
+    __version__,
+    action_catalog,
+    config,
+    ob_ids,
+    ob_segments,
+    ob_store,
+    send_plan,
+    state,
+)
 from .ob_network import broadcast as push_event_broadcast
 
 try:
@@ -186,7 +195,37 @@ async def _handle_ob_api(data: dict):
                 log.error(f"[OB11] {kind}发送失败（消息未真正发出）: {contact}")
             return ok
 
-        for seg in message:
+        async def _send_mention(kind: str, names: list[str], body: str) -> bool:
+            """发一条带 @ 的文字。
+
+            微信的 @ 是「提及」对象而不是正文，发送器必须走成员选择弹层；
+            发送器没有这条路径时如实记账，不退回纯文字（那会变成假提及）。
+            """
+            fn = getattr(state.sender_instance, "send_mention_text", None)
+            if not callable(fn):
+                failures.append("@ 提及发送失败（发送器不支持）")
+                log.error("[OB11] 发送器没有 send_mention_text，@ 未发送")
+                return False
+            return await _send(kind, fn, contact, names, body)
+
+        for item in send_plan.plan_message(message):
+            kind = str(item.get("kind") or "")
+            if kind == "mention":
+                body = str(item.get("text") or "")
+                names, problem = await asyncio.to_thread(
+                    _resolve_mentions, item.get("targets") or [], is_group, contact_handle
+                )
+                if problem:
+                    failures.append(problem)
+                    log.warning(f"[OB11] @ 未发送：{problem}")
+                    continue
+                if await _send_mention("文字+@", names, body):
+                    _record_out(contact, is_group, f"@{' @'.join(names)} {body}".strip())
+                continue
+            if kind == "text":
+                seg = {"type": "text", "data": {"text": item.get("text") or ""}}
+            else:
+                seg = item.get("segment") or {}
             if not isinstance(seg, dict):
                 continue
             seg_type = seg.get("type", "")
@@ -345,8 +384,50 @@ async def _handle_ob_api(data: dict):
                         except Exception:
                             pass
 
+            elif seg_type == "video":
+                # 视频段：微信 PC 端没有「提交视频消息」的入口，只能当文件发。
+                # 文件一定能到对方手里；呈现形态（文件卡片还是视频气泡）由微信
+                # 客户端按扩展名决定，这里不对它做断言。
+                file_val = seg_data.get("file", "")
+                if not file_val:
+                    failures.append("视频缺少 file")
+                    continue
+                video_path, tmp_video = None, ""
+                if isinstance(file_val, str) and file_val.startswith("base64://"):
+                    try:
+                        raw = base64.b64decode(file_val[9:])
+                    except Exception as e:
+                        failures.append(f"视频 base64 解码失败：{e}")
+                        log.warning(f"[OB11] video base64 解码失败: {e}")
+                        continue
+                    with tempfile.NamedTemporaryFile(
+                        prefix="bridge_video_", suffix=".mp4", delete=False
+                    ) as tmp:
+                        tmp.write(raw)
+                        video_path = tmp_video = tmp.name
+                    log.info(
+                        f"[OB11] 视频已解码: {os.path.basename(video_path)} ({len(raw)} bytes)"
+                    )
+                elif os.path.isfile(file_val):
+                    video_path = file_val
+                else:
+                    failures.append("视频文件未找到")
+                    log.warning(f"[OB11] 视频文件未找到: {file_val}")
+                    continue
+                try:
+                    if video_path and await _send(
+                        "视频（文件形式）", state.sender_instance.send_file, contact, video_path
+                    ):
+                        _record_out(contact, is_group, "[视频]")
+                finally:
+                    if tmp_video:
+                        try:
+                            os.unlink(tmp_video)
+                        except Exception:
+                            pass
+
             else:
-                # 未接线的段类型（file / video / at / forward 等）绝不静默跳过：
+                # 未接线的段类型（file / forward 等）绝不静默跳过：
                 # 跳过会让「零段发送」看起来像成功，客户端随即把内容记进上下文。
                 log.warning(f"[OB11] 不支持的消息段类型: {seg_type!r}")
                 failures.append(f"不支持的消息段 {seg_type or '（空类型）'}")
@@ -740,6 +821,59 @@ def _member_object(group_id: int, m: dict) -> dict:
         "title_expire_time": 0,
         "card_changeable": False,
     }
+
+
+def _resolve_mentions(targets: list, is_group: bool, group_handle: str) -> tuple[list[str], str]:
+    """把 @ 段的目标解析成群成员的显示名。
+
+    返回 ``(names, problem)``：``problem`` 非空表示这一条 @ 不能发，原因直接
+    回给客户端（未知 ID、@全体、名册不可用）；``names`` 是成员选择弹层里用来
+    筛人的名字。解析必须落在真实名册上，否则会 @ 到错的人。
+    """
+    if not is_group:
+        return [], "@ 只能用在群消息里"
+    members = _members_roster(group_handle)
+    if not members:
+        return [], "拿不到群成员名册（微信库未就绪），无法 @ 成员"
+    by_handle = {m["username"]: m for m in members}
+
+    names: list[str] = []
+    for target in targets or []:
+        if not isinstance(target, dict):
+            continue
+        qq = target.get("qq")
+        name = str(target.get("name") or "").strip()
+        if str(qq) in ("all", "all_pending") or name in ("全体成员", "all"):
+            return [], "微信 PC 端没有 @ 全体成员的入口"
+        member = None
+        if isinstance(qq, int) and qq > 0:
+            handle = ob_ids.handle_of(qq)
+            member = by_handle.get(handle or "")
+            if member is None:
+                return [], f"未知的 user_id：{qq}（不是这个群的成员）"
+        elif name:
+            for candidate in members:
+                if name in (
+                    candidate.get("name"),
+                    candidate.get("remark"),
+                    candidate.get("nick_name"),
+                    candidate.get("username"),
+                ):
+                    member = candidate
+                    break
+            if member is None:
+                return [], f"群成员里没有「{name}」"
+        else:
+            continue
+        display = (
+            member.get("name") or member.get("nick_name") or member.get("username") or ""
+        ).strip()
+        if not display:
+            return [], "这个群成员没有可用的显示名"
+        names.append(display)
+    if not names:
+        return [], "@ 段里没有可识别的成员"
+    return names, ""
 
 
 def _decode_base64_image(b64_data: str) -> str | None:

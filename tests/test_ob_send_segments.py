@@ -1,7 +1,7 @@
-"""发送链路的消息形态：CQ 码字符串、auto_escape、未支持段与只发引用段。
+"""发送链路的段形态：视频、@ 提及、未支持段与只发引用段。
 
-重点不是「能发出去」，而是**发不出去时必须报错**。此前未接线的段类型会被静默
-跳过，客户端收到 ok 就以为发出去了，把内容记进上下文；这里逐条钉住失败语义。
+重点不是「能发出去」，而是**发不出去时必须报错**：未接线的段类型静默跳过会让
+客户端把内容记进上下文；@ 必须走真实名册与提及对象，不能退化成「@昵称」正文。
 """
 
 import asyncio
@@ -16,16 +16,30 @@ from flandora import action_catalog, ob_ids, ob_protocol, state  # noqa: E402
 
 
 class FakeSender:
-    """只认 send_text 的发送器；send_image/其他一律当失败。"""
+    """记录调用结果的假发送器；send_image/其他一律当失败。"""
 
     def __init__(self, ok: bool = True):
         self.ok = ok
         self.texts: list[tuple[str, str]] = []
+        self.files: list[tuple[str, str, bytes]] = []
+        self.mentions: list[tuple[str, list[str], str]] = []
         self._last_error = ""
 
     def send_text(self, contact: str, text: str) -> bool:
         if self.ok:
             self.texts.append((contact, text))
+        return self.ok
+
+    def send_file(self, contact: str, path: str) -> bool:
+        with open(path, "rb") as fh:
+            payload = fh.read()
+        if self.ok:
+            self.files.append((contact, path, payload))
+        return self.ok
+
+    def send_mention_text(self, contact: str, names: list[str], text: str) -> bool:
+        if self.ok:
+            self.mentions.append((contact, names, text))
         return self.ok
 
 
@@ -38,6 +52,15 @@ def _prepare(monkeypatch, sender) -> int:
     uid = ob_ids.contact_id("wxid_zhangsan")
     state._ob_id_to_contact[uid] = "张三"
     return uid
+
+
+def _prepare_group(monkeypatch, sender, members: list[dict]) -> tuple[int, int]:
+    monkeypatch.setattr(state, "sender_instance", sender, raising=False)
+    monkeypatch.setattr(ob_protocol, "_members_roster", lambda handle: members)
+    gid = ob_ids.contact_id("50071592949@chatroom")
+    state._ob_id_to_contact[gid] = "测试群"
+    uid = ob_ids.contact_id("wxid_lisi")
+    return gid, uid
 
 
 def test_cq_string_is_parsed_into_segments(monkeypatch, isolated_ids):
@@ -75,13 +98,177 @@ def test_unsupported_segment_reports_failure(monkeypatch, isolated_ids):
     resp = _call(
         {
             "action": "send_private_msg",
-            "params": {"user_id": uid, "message": [{"type": "video", "data": {"file": "x.mp4"}}]},
+            "params": {"user_id": uid, "message": [{"type": "forward", "data": {"id": "1"}}]},
         }
     )
     assert resp["status"] == "failed"
     assert resp["retcode"] == action_catalog.RETCODE_INTERNAL
-    assert "video" in resp["message"]
+    assert "forward" in resp["message"]
     assert sender.texts == []
+
+
+def test_video_segment_is_sent_as_file(monkeypatch, isolated_ids, tmp_path):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    path = tmp_path / "clip.mp4"
+    payload = b"\x00\x00\x00\x18ftypmp42" + b"\x00" * 32
+    path.write_bytes(payload)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": uid, "message": [{"type": "video", "data": {"file": str(path)}}]},
+        }
+    )
+    assert resp["status"] == "ok"
+    assert resp["data"]["message_id"] > 0
+    assert sender.files and sender.files[0][0] == "张三"
+    assert sender.files[0][2] == payload
+
+
+def test_video_base64_is_written_and_removed(monkeypatch, isolated_ids):
+    import base64
+
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    raw = b"\x00\x00\x00\x18ftypmp42" + b"x" * 16
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [
+                    {
+                        "type": "video",
+                        "data": {"file": "base64://" + base64.b64encode(raw).decode()},
+                    }
+                ],
+            },
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.files and sender.files[0][2] == raw
+    assert sender.files[0][1].endswith(".mp4")
+    # 临时文件在发送结束后删掉，不留在 data 目录里
+    assert not os.path.exists(sender.files[0][1])
+
+
+def test_video_without_file_reports_failure(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": uid, "message": [{"type": "video", "data": {}}]},
+        }
+    )
+    assert resp["status"] == "failed"
+    assert "视频缺少 file" in resp["message"]
+
+
+def test_mention_is_sent_with_member_name(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    members = [
+        {
+            "username": "wxid_lisi",
+            "name": "李四",
+            "remark": "",
+            "nick_name": "李四",
+            "role": "member",
+        }
+    ]
+    gid, uid = _prepare_group(monkeypatch, sender, members)
+    resp = _call(
+        {
+            "action": "send_group_msg",
+            "params": {
+                "group_id": gid,
+                "message": [
+                    {"type": "at", "data": {"qq": uid}},
+                    {"type": "text", "data": {"text": " 看一下"}},
+                ],
+            },
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.mentions == [("测试群", ["李四"], " 看一下")]
+    assert sender.texts == []
+
+
+def test_mention_unknown_member_is_reported(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    members = [
+        {
+            "username": "wxid_lisi",
+            "name": "李四",
+            "remark": "",
+            "nick_name": "李四",
+            "role": "member",
+        }
+    ]
+    gid, _uid = _prepare_group(monkeypatch, sender, members)
+    stranger = ob_ids.contact_id("wxid_wangwu")
+    resp = _call(
+        {
+            "action": "send_group_msg",
+            "params": {
+                "group_id": gid,
+                "message": [
+                    {"type": "at", "data": {"qq": stranger}},
+                    {"type": "text", "data": {"text": "hi"}},
+                ],
+            },
+        }
+    )
+    assert resp["status"] == "failed"
+    assert "不是这个群的成员" in resp["message"]
+    assert sender.mentions == []
+
+
+def test_mention_at_all_is_refused(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    members = [
+        {
+            "username": "wxid_lisi",
+            "name": "李四",
+            "remark": "",
+            "nick_name": "李四",
+            "role": "member",
+        }
+    ]
+    gid, _uid = _prepare_group(monkeypatch, sender, members)
+    resp = _call(
+        {
+            "action": "send_group_msg",
+            "params": {
+                "group_id": gid,
+                "message": [
+                    {"type": "at", "data": {"qq": "all"}},
+                    {"type": "text", "data": {"text": "开会"}},
+                ],
+            },
+        }
+    )
+    assert resp["status"] == "failed"
+    assert "全体成员" in resp["message"]
+
+
+def test_mention_in_private_chat_is_refused(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [
+                    {"type": "at", "data": {"qq": uid}},
+                    {"type": "text", "data": {"text": "hi"}},
+                ],
+            },
+        }
+    )
+    assert resp["status"] == "failed"
+    assert "@ 只能用在群消息里" in resp["message"]
 
 
 def test_reply_only_message_reports_not_implemented(monkeypatch, isolated_ids):
@@ -117,7 +304,7 @@ def test_partial_failure_keeps_message_id_and_counts_segments(monkeypatch, isola
             "params": {
                 "user_id": uid,
                 "message": [{"type": "text", "data": {"text": "hi"}}]
-                + [{"type": "video", "data": {"file": "x.mp4"}}],
+                + [{"type": "forward", "data": {"id": "1"}}],
             },
         }
     )

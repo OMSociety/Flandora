@@ -109,7 +109,7 @@ def P(name: str, type_: str, required: bool = False, default: Any = None, desc: 
 
 
 NOT_QQ = "微信 PC 客户端不提供对应接口"
-NOT_YET = "尚未接入，见 docs/roadmap.md"
+NOT_YET = "尚未接入，见 docs/wip.md"
 
 ACTIONS: tuple[Action, ...] = (
     # ---------------------------------------------------------------- 信息
@@ -182,7 +182,7 @@ ACTIONS: tuple[Action, ...] = (
         summary="撤回已发送的消息",
         params=(P("message_id", "int", required=True),),
         implemented=False,
-        wip=f"{NOT_YET}（撤回需要定位到具体消息气泡）",
+        wip="撤回要右键会话里的消息气泡，UIA 无法按 message_id 定位到某一条；见 docs/needs-user.md",
     ),
     Action(
         name="get_msg",
@@ -491,7 +491,7 @@ ACTIONS: tuple[Action, ...] = (
             P("group_id", "int", default=0, desc="0 表示私聊窗口"),
         ),
         implemented=False,
-        wip=f"{NOT_YET}（需要双击对方头像，UIA 无法稳定定位）",
+        wip="拍一拍要双击成员头像，UIA 无法稳定定位头像；见 docs/needs-user.md",
     ),
     Action(
         name="friend_poke",
@@ -499,7 +499,7 @@ ACTIONS: tuple[Action, ...] = (
         summary="拍一拍好友（send_poke 的别名）",
         params=(P("user_id", "int", required=True),),
         implemented=False,
-        wip=f"{NOT_YET}（需要双击对方头像，UIA 无法稳定定位）",
+        wip="拍一拍要双击成员头像，UIA 无法稳定定位头像；见 docs/needs-user.md",
     ),
     Action(
         name="set_essence_msg",

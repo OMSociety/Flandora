@@ -114,6 +114,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 ## 控制台
 
+面板默认监听 `127.0.0.1:8766`，七页：仪表盘、消息记录、日志、桥接配置、微信与桌面、取钥向导、测试发送。面板本身可以设登录密码（配置页「打开面板时要密码」），设了之后所有接口与实时事件流都要先登录，密码只以 PBKDF2 哈希存在 `config.json` 里。
 <table>
 <tr>
 <td width="50%" align="center"><img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/dashboard.png" alt="仪表盘：运行状态、收发计数与 24 小时消息量"></td>
@@ -162,6 +163,14 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | `bot_wxid` | 字符串 | 空 | 机器人自己的 wxid，留空从当前登录账号推断 |
 | `self_name` | 字符串 | `wechat-bot` | 推送给客户端时显示的发送者名 |
 | `group_name_map` | 对象 | `{}` | 群 ID 到群名的映射。微信搜索框搜不到 `@chatroom` 结尾的群 ID，发群消息要靠它换名 |
+
+### 面板
+
+| 配置项 | 类型 | 默认值 | 说明 |
+| --- | --- | --- | --- |
+| `web_port` | 整数 | `8766` | 面板端口，只监听回环地址 |
+| `webui_auto_open` | 布尔 | `true` | 启动 bridge 时自动用默认浏览器打开面板 |
+| `webui_password` | 字符串 | 空 | 面板登录密码的 PBKDF2 哈希，由面板写入。留空即不校验；手填明文不会生效 |
 
 ### 网络入口
 

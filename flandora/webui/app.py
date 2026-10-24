@@ -28,13 +28,13 @@ import os
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__, config, ob_network, state
 from ..ob_network import manager as ob_networks
-from . import monitor
+from . import auth, monitor
 from .monitor import bus
 
 log = logging.getLogger("ob11-bridge")
@@ -137,6 +137,58 @@ def _write_config_file(cfg: dict):
         f.write("\n")
 
 
+# ============ 登录 ============
+
+
+@app.middleware("http")
+async def _require_login(request: Request, call_next):
+    """开着密码时，除登录接口外所有 /api 都要会话；静态前端不挡，登录页才加载得出来。"""
+    if request.url.path.startswith("/api/") and not auth.is_public_api(request.url.path):
+        if auth.enabled() and not auth.sessions.valid(request.cookies.get(auth.COOKIE_NAME)):
+            return JSONResponse({"ok": False, "error": "未登录", "auth_required": True}, 401)
+    return await call_next(request)
+
+
+@app.get("/api/auth")
+def api_auth(request: Request):
+    on = auth.enabled()
+    return {
+        "enabled": on,
+        "authenticated": (not on) or auth.sessions.valid(request.cookies.get(auth.COOKIE_NAME)),
+    }
+
+
+@app.post("/api/login")
+def api_login(payload: dict, response: Response, request: Request):
+    if not auth.enabled():
+        return {"ok": True, "enabled": False}
+    if auth.throttle.blocked():
+        return JSONResponse({"ok": False, "error": "尝试次数太多，请一分钟后再试"}, 429)
+    password = str((payload or {}).get("password") or "")
+    if not auth.check(password):
+        auth.throttle.fail()
+        return JSONResponse({"ok": False, "error": "密码不对"}, 401)
+    auth.throttle.reset()
+    token = auth.sessions.issue()
+    response.set_cookie(
+        auth.COOKIE_NAME,
+        token,
+        max_age=int(auth.SESSION_TTL),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    log.info("[WebUI] 面板登录成功")
+    return {"ok": True, "enabled": True}
+
+
+@app.post("/api/logout")
+def api_logout(request: Request, response: Response):
+    auth.sessions.drop(request.cookies.get(auth.COOKIE_NAME))
+    response.delete_cookie(auth.COOKIE_NAME, path="/")
+    return {"ok": True}
+
+
 # ============ 状态与控制 ============
 
 
@@ -177,15 +229,46 @@ async def api_control(payload: dict):
 @app.get("/api/config")
 def api_get_config():
     try:
-        return _read_config_file()
+        cfg = _read_config_file()
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, 500)
+    # 哈希本身不算凭据，但也没必要发给浏览器；面板只需要知道「设没设」
+    cfg["webui_password_set"] = bool(str(cfg.pop("webui_password", "") or ""))
+    return cfg
 
 
 @app.put("/api/config")
-def api_put_config(payload: dict):
+def api_put_config(payload: dict, response: Response):
     if not isinstance(payload, dict):
         return JSONResponse({"ok": False, "error": "请求体必须是 JSON 对象"}, 400)
+    # 登录密码只以哈希落盘，明文不出后端：面板传上来的明文在这里就地换掉
+    payload.pop("webui_password_set", None)
+    if "webui_password" in payload or "webui_password_clear" in payload:
+        plain = str(payload.pop("webui_password", "") or "")
+        clear = bool(payload.pop("webui_password_clear", False))
+        if clear:
+            hashed = ""
+        elif plain:
+            try:
+                hashed = auth.hash_password(plain)
+            except ValueError as e:
+                return JSONResponse({"ok": False, "error": str(e)}, 400)
+        else:
+            hashed = None  # 两者都没给实质内容：不动现有密码
+        if hashed is not None:
+            payload["webui_password"] = hashed
+            config.WEBUI_PASSWORD = hashed
+            # 密码变了，之前发出去的会话一律作废；当前这个浏览器立刻换一张新的
+            auth.sessions.clear()
+            if hashed:
+                response.set_cookie(
+                    auth.COOKIE_NAME,
+                    auth.sessions.issue(),
+                    max_age=int(auth.SESSION_TTL),
+                    httponly=True,
+                    samesite="lax",
+                    path="/",
+                )
     # 枚举字段先校验再落盘：写进去再静默回退，用户改错了也看不出来
     if "ob_message_format" in payload:
         fmt = str(payload.get("ob_message_format") or "").strip().lower()
@@ -636,6 +719,10 @@ def api_wizard_reset():
 
 @app.websocket("/ws")
 async def ws_endpoint(websocket: WebSocket):
+    if auth.enabled() and not auth.sessions.valid(websocket.cookies.get(auth.COOKIE_NAME)):
+        # 先关再收：没登录的连接拿不到任何事件
+        await websocket.close(code=4401)
+        return
     await websocket.accept()
     q = bus.subscribe()
     try:

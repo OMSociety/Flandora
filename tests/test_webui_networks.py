@@ -32,7 +32,7 @@ def saved(monkeypatch):
 
 
 def test_valid_nodes_are_normalized_and_live(saved):
-    rest = webui_app.api_put_config({"ob_networks": [NODE]})
+    rest = webui_app.api_put_config({"ob_networks": [NODE]}, webui_app.Response())
 
     assert rest["ok"] is True
     assert "ob_networks" in rest["restart_required"]
@@ -43,7 +43,9 @@ def test_valid_nodes_are_normalized_and_live(saved):
 
 
 def test_bad_node_is_refused_before_writing(saved):
-    rest = webui_app.api_put_config({"ob_networks": [{"type": "carrier-pigeon"}]})
+    rest = webui_app.api_put_config(
+        {"ob_networks": [{"type": "carrier-pigeon"}]}, webui_app.Response()
+    )
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
@@ -52,7 +54,7 @@ def test_bad_node_is_refused_before_writing(saved):
 
 
 def test_empty_list_falls_back_to_legacy_entry(saved):
-    rest = webui_app.api_put_config({"ob_networks": []})
+    rest = webui_app.api_put_config({"ob_networks": []}, webui_app.Response())
 
     assert rest["ok"] is True
     assert saved["cfg"]["ob_networks"] == []
@@ -64,7 +66,9 @@ def test_empty_list_falls_back_to_legacy_entry(saved):
 def test_bad_entry_keeps_previous_nodes(saved, monkeypatch):
     monkeypatch.setattr(config, "OB_NETWORKS", [ob_network.legacy_node("127.0.0.1", 7999, "")])
 
-    rest = webui_app.api_put_config({"ob_networks": [dict(NODE, role="god-mode")]})
+    rest = webui_app.api_put_config(
+        {"ob_networks": [dict(NODE, role="god-mode")]}, webui_app.Response()
+    )
 
     assert isinstance(rest, JSONResponse)
     assert config.OB_NETWORKS[0]["type"] == "ws_server"

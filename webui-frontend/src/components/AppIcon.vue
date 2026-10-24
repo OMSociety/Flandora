@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import {
   Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Check, CheckCheck,
   ChevronRight, CircleAlert, CircleCheck, CircleX, Clock3, Eye, EyeOff,
-  FileText, Info, KeyRound, LayoutDashboard, LoaderCircle, Menu, MessageCircle,
+  FileText, Info, KeyRound, LayoutDashboard, LogIn, LoaderCircle, Menu, MessageCircle,
   MessagesSquare, Minimize2, Monitor, Moon, MoreHorizontal, Pause, Play,
   PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Search, Send, Settings2, ShieldCheck, SlidersHorizontal,
   Square, Sun, TerminalSquare, Trash2, X, Zap,
@@ -12,7 +12,7 @@ import {
 const icons = {
   Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Check, CheckCheck,
   ChevronRight, CircleAlert, CircleCheck, CircleX, Clock3, Eye, EyeOff,
-  FileText, Info, KeyRound, LayoutDashboard, LoaderCircle, Menu, MessageCircle,
+  FileText, Info, KeyRound, LayoutDashboard, LogIn, LoaderCircle, Menu, MessageCircle,
   MessagesSquare, Minimize2, Monitor, Moon, MoreHorizontal, Pause, Play,
   PanelLeftClose, PanelLeftOpen, Plus, RefreshCw, RotateCcw, Search, Send, Settings2, ShieldCheck, SlidersHorizontal,
   Square, Sun, TerminalSquare, Trash2, X, Zap,

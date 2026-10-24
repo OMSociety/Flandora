@@ -20,6 +20,7 @@ export const configFixture = {
   send_method: 'uia',
   buffer_seconds: 5,
   web_port: 8766,
+  webui_password_set: false,
   ob_server_host: '127.0.0.1',
   ob_server_port: 7999,
   ob_server_token: '',
@@ -66,11 +67,25 @@ export async function mockApi(page, options = {}) {
     state: 'absent', desktop: 'WeBotSandbox', exe_found: true, error: '',
     ...(options.desktopStatus || {}),
   }
+  // options.auth = { password } 时模拟「面板设了密码」：登录前所有接口都回 401。
+  let authed = !options.auth
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
     requests.push({ path: url.pathname, method: request.method(), body: request.postDataJSON() })
     const json = (body) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) })
+    if (url.pathname === '/api/auth') return json({ enabled: !!options.auth, authenticated: authed })
+    if (url.pathname === '/api/login') {
+      const body = request.postDataJSON() || {}
+      if (options.auth && body.password === options.auth.password) {
+        authed = true
+        return json({ ok: true, enabled: true })
+      }
+      return route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ ok: false, error: '密码不对' }) })
+    }
+    if (options.auth && !authed) {
+      return route.fulfill({ status: 401, contentType: 'application/json', body: JSON.stringify({ ok: false, error: '未登录', auth_required: true }) })
+    }
     if (url.pathname === '/api/status') return json(statusFixture)
     if (url.pathname === '/api/config' && request.method() === 'GET') return json(configFixture)
     if (url.pathname === '/api/config' && request.method() === 'PUT') return json({ ok: true, restart_required: ['ob_server_port'] })

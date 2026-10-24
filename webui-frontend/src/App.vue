@@ -11,6 +11,8 @@ import Config from './pages/Config.vue'
 import Desktop from './pages/Desktop.vue'
 import Wizard from './pages/Wizard.vue'
 import TestSend from './pages/TestSend.vue'
+import Login from './pages/Login.vue'
+import { get } from './api'
 import { wsState, connectWS, on } from './ws'
 import { startStatusPolling, stopStatusPolling, refreshStatus, setMessages, setLogs, addMessage, addLog, status } from './store'
 import { PAGE_MAP, pageFromHash } from './navigation'
@@ -72,7 +74,14 @@ function skipToMain(event) {
   main?.scrollIntoView({ block: 'start' })
 }
 
-onMounted(() => {
+// 面板设了密码时，未登录不拉数据也不连实时流：拿到的只会是 401。
+const auth = ref({ checked: false, enabled: false, authenticated: true })
+const authed = computed(() => !auth.value.enabled || auth.value.authenticated)
+let booted = false
+
+function boot() {
+  if (booted) return
+  booted = true
   startStatusPolling()
   on('msg', addMessage)
   on('log', addLog)
@@ -82,19 +91,43 @@ onMounted(() => {
   })
   on('status', () => refreshStatus(true))
   connectWS()
+}
+
+async function loadAuth() {
+  const res = await get('/api/auth', true)
+  const data = res.data || {}
+  auth.value = { checked: true, enabled: !!data.enabled, authenticated: !!data.authenticated }
+  if (authed.value) boot()
+}
+
+function onAuthRequired() {
+  auth.value = { ...auth.value, checked: true, enabled: true, authenticated: false }
+}
+
+async function onLoggedIn() {
+  auth.value = { ...auth.value, checked: true, authenticated: true }
+  await refreshStatus(true)
+  boot()
+}
+
+onMounted(async () => {
   window.addEventListener('hashchange', onHashChange)
   window.addEventListener('keydown', onKeydown)
+  window.addEventListener('flandora:auth-required', onAuthRequired)
+  await loadAuth()
 })
 onBeforeUnmount(() => {
   stopStatusPolling()
   popOverlay(drawerOverlayId)
   window.removeEventListener('hashchange', onHashChange)
   window.removeEventListener('keydown', onKeydown)
+  window.removeEventListener('flandora:auth-required', onAuthRequired)
 })
 </script>
 
 <template>
-  <div class="app-shell">
+  <Login v-if="auth.checked && !authed" @logged-in="onLoggedIn" />
+  <div v-else-if="auth.checked" class="app-shell">
     <a href="#main-content" class="skip-link" @click="skipToMain">跳到主要内容</a>
     <aside class="desktop-sidebar" :class="{ collapsed: sidebarCollapsed }"><Sidebar :active="tab" :collapsed="sidebarCollapsed" @change="changePage" /></aside>
     <Teleport to="body">
@@ -131,4 +164,5 @@ onBeforeUnmount(() => {
     </div>
     <ToastContainer />
   </div>
+  <div v-else class="app-boot" role="status">正在检查登录状态…</div>
 </template>

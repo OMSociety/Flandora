@@ -201,3 +201,20 @@ test('missing WeChat install is called out instead of offering a dead start butt
   await expect(page.getByRole('button', { name: '启动微信', exact: true })).toBeDisabled()
   await expect(page.getByText('没有可启动的微信', { exact: true })).toBeVisible()
 })
+
+test('password gate blocks the console until login succeeds', async ({ page }) => {
+  await mockApi(page, { auth: { password: 'secret123' } })
+  await page.goto('/#/dashboard')
+
+  await expect(page.locator('.login-card h1')).toHaveText('进入控制台')
+  await expect(page.locator('.page-heading h1')).toHaveCount(0)
+
+  await page.getByLabel('密码').fill('wrong-pass')
+  await page.getByRole('button', { name: '进入控制台' }).click()
+  await expect(page.locator('.login-error')).toHaveText('密码不对')
+
+  await page.getByLabel('密码').fill('secret123')
+  await page.getByRole('button', { name: '进入控制台' }).click()
+  await expect(page.locator('.page-heading h1')).toBeVisible()
+  await expect(page.locator('.status-grid article')).toHaveCount(4)
+})

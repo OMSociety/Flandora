@@ -140,6 +140,8 @@ BUFFER_SECONDS = config.get("buffer_seconds", 5)
 WEB_PORT = config.get("web_port", 8766)
 # 启动 bridge 时自动用默认浏览器打开 WebUI（false 关闭）
 WEBUI_AUTO_OPEN = bool(config.get("webui_auto_open", True))
+# 面板登录密码（PBKDF2 哈希，由面板写入）。留空 = 不校验，谁都能打开面板。
+WEBUI_PASSWORD = str(config.get("webui_password", "") or "")
 
 # ====== OneBot v11 服务端 ======
 # bridge 作为 WS 服务端，任意 OneBot v11 客户端（适配器、框架、脚本）都可连接

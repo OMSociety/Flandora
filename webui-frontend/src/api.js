@@ -24,6 +24,11 @@ export async function request(path, options = {}) {
   } catch (err) {
     data = null
   }
+  // 会话过期或没登录：交给 App.vue 切到登录页，别在这儿连弹一串错误
+  if (res.status === 401 && data && data.auth_required) {
+    window.dispatchEvent(new Event('flandora:auth-required'))
+    return { ok: false, status: 401, data }
+  }
   if (!silent && !res.ok && !(data && typeof data === 'object' && 'ok' in data)) {
     toast(`请求失败 (${res.status})`, 'error')
   }

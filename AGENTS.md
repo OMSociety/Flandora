@@ -135,11 +135,12 @@ run_bridge.py -> flandora.main
 
 ## 待办与未实现
 
-- 语音与音频本体：现在只把语音当作 `[语音]` 占位文本上报，客户端拿不到音频文件。要走通至少三处
-  改动：确认微信 4.x 把语音落在哪个目录（本机 `msg/attach/<会话>/<月>/` 下只有 `Img`，全盘
-  `*.silk`/`*.amr`/`*.mp3` 计数为 0）、给 `flandora/wx_store.py` 加语音文件定位（现只有
-  `extract_image()` 在写死的 `Img` 目录里 glob）、给 `flandora/wx_image.py` 的解码链路加音频魔数
-  与容器处理（`_MAGICS` 只认 jpg/png/gif/webp，`_sniff` 认不出即返回空）。文件与视频同理。
+- 语音与视频本体：真机实测（2026-10-24 私聊收到一条语音 + 一个视频）后确认，本体**不在本地磁盘**：
+  语音是 `local_type=34`，XML 只给 `voiceurl`/`aeskey`/`length`（5699 字节，`voiceformat=4`）；
+  视频是 `local_type=43`，XML 只给 `cdnvideourl`/`aeskey`/`length`（2.7 MB）/`md5`，本地仅落
+  未加密缩略图 `msg/video/<月>/<hash>_thumb.jpg`。全盘 `*.silk`/`*.amr`/`*.mp4` 计数为 0。
+  要做等于实现微信 CDN 下载协议 + AES 解密 + silk 转码，是独立工程；短期继续按 `[语音]`/`[视频]`
+  占位文本上报。证据与字段见 `docs/wip.md` 第二节。
 - 撤回（`delete_msg`）：气泡能定位（聊天区里是 `ListItemControl`，Name 就是正文；会话列表里也有同名条目，靠 x 坐标区分），
   但聊天区是自绘渲染子窗 `MMUIRenderSubWindowHW`，向主窗与它分别投 `WM_RBUTTONDOWN/UP`、`WM_CONTEXTMENU` 都不出菜单。
   对照：同样往主窗投右键点会话列表能弹出会话菜单，说明投递本身有效，是这块子窗不认合成消息；非活动桌面上

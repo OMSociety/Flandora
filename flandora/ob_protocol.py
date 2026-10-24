@@ -14,7 +14,7 @@ import os
 import tempfile
 import time
 
-from . import config, state
+from . import __version__, action_catalog, config, state
 from .ws_pool import broadcast as push_event_broadcast
 
 try:
@@ -23,6 +23,18 @@ except Exception:
     monitor = None
 
 log = logging.getLogger("ob11-bridge")
+
+
+def _failure(message: str, retcode: int, echo=None) -> dict:
+    """构造失败响应。
+
+    失败必须对客户端可见：status=failed、非零 retcode、一句人话原因。
+    回 ``{"status": "ok"}`` 搪塞会让客户端把没发生的事记进上下文。
+    """
+    resp = {"status": "failed", "retcode": retcode, "data": {}, "message": message}
+    if echo not in (None, ""):
+        resp["echo"] = echo
+    return resp
 
 
 def _record_out(contact, is_group, text):
@@ -89,12 +101,36 @@ async def _handle_ob_api(data: dict):
     echo = data.get("echo", "")
     log.info(f"[OB11] API: {action} echo={echo}")
 
+    # 动作面统一入口：目录里没有的动作、登记了但没接入的、参数不合契约的，
+    # 都在这里被拦下并如实回失败，后面的 if/elif 只处理真正能执行的动作。
+    spec = action_catalog.lookup(action)
+    if spec is None:
+        log.warning(f"[OB11] 未知动作: {action!r}")
+        return _failure(f"不支持的 action: {action}", action_catalog.RETCODE_UNSUPPORTED, echo)
+    if not spec.implemented:
+        log.info(f"[OB11] 动作未实现: {action}（{spec.wip}）")
+        return _failure(
+            f"{spec.name} 暂不可用：{spec.wip}", action_catalog.RETCODE_NOT_IMPLEMENTED, echo
+        )
+    param_errors = action_catalog.validate_params(spec, params)
+    if param_errors:
+        log.warning(f"[OB11] 参数不合契约 {action}: {param_errors}")
+        return _failure("；".join(param_errors), action_catalog.RETCODE_BAD_PARAM, echo)
+    action = spec.name
+
     resp_data = {"status": "ok", "retcode": 0, "data": {}}
 
     if action in ("send_msg", "send_private_msg", "send_group_msg"):
         is_group = action == "send_group_msg" or params.get("message_type") == "group"
         target_id = params.get("group_id" if is_group else "user_id", 0)
         message = params.get("message", [])
+        if isinstance(message, str):
+            # CQ 码字符串还没接进来：明确拒绝，避免字符串被逐字符遍历后「零段发送却回 ok」
+            return _failure(
+                "message 暂只接受消息段数组（CQ 码字符串未接入）",
+                action_catalog.RETCODE_NOT_IMPLEMENTED,
+                echo,
+            )
         contact = state._ob_id_to_contact.get(target_id, str(target_id))
         # 群聊：优先用群名映射（微信搜索框搜不到 @chatroom ID）
         if is_group:
@@ -290,7 +326,7 @@ async def _handle_ob_api(data: dict):
         # 否则调用方会以为消息已送达并把它记进上下文。
         if failures and not sent_count:
             resp_data["status"] = "failed"
-            resp_data["retcode"] = 1400
+            resp_data["retcode"] = action_catalog.RETCODE_INTERNAL
             resp_data["message"] = "消息未发送：微信未登录或主窗口不可用"
             log.error(f"[OB11] {len(failures)} 个消息段全部发送失败 [{contact}]")
         elif failures:
@@ -303,11 +339,32 @@ async def _handle_ob_api(data: dict):
             "nickname": state._self_name or "wechat-bot",
         }
 
-    elif action == "get_friend_list":
-        resp_data["data"] = []
+    elif action == "get_version_info":
+        resp_data["data"] = {
+            "app_name": "flandora",
+            "app_version": __version__,
+            "protocol_version": "v11",
+        }
 
-    elif action == "get_group_list":
-        resp_data["data"] = []
+    elif action == "get_status":
+        source = getattr(state.bridge_instance, "_source", None)
+        resp_data["data"] = {
+            "online": bool(state.running),
+            "good": bool(state.running and state.sender_instance is not None),
+            "app_name": "flandora",
+            "app_version": __version__,
+            "protocol_version": "v11",
+            "receiver_ready": source is not None,
+            "sender_ready": state.sender_instance is not None,
+        }
+
+    elif action == "can_send_image":
+        resp_data["data"] = {"yes": True}
+
+    elif action == "can_send_record":
+        # 微信 PC 客户端只能按住麦克风录音，外部无法提交语音消息；
+        # voice 段目前以 mp3 文件形式投递，因此这里如实回 false。
+        resp_data["data"] = {"yes": False}
 
     elif action == "get_group_info":
         gid = params.get("group_id", "")
@@ -326,53 +383,6 @@ async def _handle_ob_api(data: dict):
             count = 20
         msgs = await asyncio.to_thread(_fetch_history_ob, talker, is_g, count)
         resp_data["data"] = {"messages": msgs}
-
-    elif action in (
-        "get_group_member_info",
-        "get_group_member_list",
-        "get_stranger_info",
-        "get_group_honor_info",
-        "get_group_at_all_remain",
-        "get_friend_info",
-        "get_msg",
-        "get_forward_msg",
-        "get_cookies",
-        "get_csrf_token",
-        "get_credentials",
-        "get_record",
-        "get_image",
-    ):
-        resp_data["data"] = {}
-
-    elif action in ("send_group_forward_msg", "send_private_forward_msg"):
-        log.warning(f"[OB11] 转发消息暂不支持: {action}")
-        resp_data["data"] = {}
-
-    elif action == "set_msg_emoji_like":
-        resp_data["data"] = {}
-
-    elif action in (
-        "set_group_kick",
-        "set_group_ban",
-        "set_group_anonymous_ban",
-        "set_group_whole_ban",
-        "set_group_admin",
-        "set_group_anonymous",
-        "set_group_card",
-        "set_group_name",
-        "set_group_leave",
-        "set_group_special_title",
-        "set_friend_add_request",
-        "set_group_add_request",
-        "set_essence_msg",
-        "delete_msg",
-        "send_like",
-        "set_friend_add_request",
-    ):
-        resp_data["data"] = {}
-
-    else:
-        log.debug(f"[OB11] 未处理 API: {action}")
 
     if echo:
         resp_data["echo"] = echo

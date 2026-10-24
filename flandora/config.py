@@ -147,6 +147,10 @@ OB_SERVER_HOST = config.get("ob_server_host", "127.0.0.1")
 OB_SERVER_PORT = config.get("ob_server_port", 7999)
 OB_SERVER_TOKEN = config.get("ob_server_token", "")
 SELF_NAME = config.get("self_name", "wechat-bot")
+# 事件里 message 字段的格式：array = 消息段数组（默认），string = CQ 码字符串。
+# raw_message 始终是 CQ 码字符串。填其它值时按 array 处理并在启动日志里告警。
+_OB_FORMAT_RAW = str(config.get("ob_message_format", "array") or "array").strip().lower()
+OB_MESSAGE_FORMAT = _OB_FORMAT_RAW if _OB_FORMAT_RAW in ("array", "string") else "array"
 
 # ====== 隔离桌面模式 ======
 # 默认开启：微信由 bridge 启动在一个独立的 Windows 桌面上，向它投递输入时切换的
@@ -182,3 +186,8 @@ logging.basicConfig(
     ],
 )
 log = logging.getLogger("ob11-bridge")
+
+if _OB_FORMAT_RAW != OB_MESSAGE_FORMAT:
+    log.warning(
+        "ob_message_format=%r 不认识，已按 array 处理（可选：array / string）", _OB_FORMAT_RAW
+    )

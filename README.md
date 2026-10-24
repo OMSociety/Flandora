@@ -168,6 +168,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | `ob_server_host` | 字符串 | `127.0.0.1` | 监听地址，都在本机就保持回环 |
 | `ob_server_port` | 整数 | `7999` | 正向 WebSocket 端口 |
 | `ob_server_token` | 字符串 | 空 | 握手鉴权 token，留空不校验 |
+| `ob_message_format` | 字符串 | `array` | 事件里 `message` 的形态：`array` 为消息段数组，`string` 为 CQ 码字符串。`raw_message` 始终是 CQ 码字符串，发送方向两种都收 |
 | `astrbot_attachments` | 字符串 | 空 | 客户端附件目录的绝对路径。填了之后图片与文件的本地路径按该目录（及其 `wechat_images` 子目录）拼出来 |
 
 ### 收件

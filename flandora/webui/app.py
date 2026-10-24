@@ -184,6 +184,15 @@ def api_get_config():
 def api_put_config(payload: dict):
     if not isinstance(payload, dict):
         return JSONResponse({"ok": False, "error": "请求体必须是 JSON 对象"}, 400)
+    # 枚举字段先校验再落盘：写进去再静默回退，用户改错了也看不出来
+    if "ob_message_format" in payload:
+        fmt = str(payload.get("ob_message_format") or "").strip().lower()
+        if fmt not in ("array", "string"):
+            return JSONResponse(
+                {"ok": False, "error": "ob_message_format 只能是 array 或 string"}, 400
+            )
+        payload = dict(payload, ob_message_format=fmt)
+        config.OB_MESSAGE_FORMAT = fmt
     try:
         current = _read_config_file()
         current.update(payload)

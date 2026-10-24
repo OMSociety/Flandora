@@ -62,14 +62,11 @@ def test_bool_is_not_accepted_as_int():
     assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
 
 
-def test_cq_string_message_is_refused_instead_of_silently_sent_empty():
-    """字符串消息此前会被逐字符遍历，结果零段发送却回 ok。"""
-    resp = _call(
-        {"action": "send_group_msg", "params": {"group_id": 1, "message": "[CQ:face,id=1]"}}
-    )
+def test_empty_message_is_refused():
+    """空消息没有可发送的内容，必须报错而不是回一个空成功的 message_id。"""
+    resp = _call({"action": "send_private_msg", "params": {"user_id": 1, "message": []}})
     assert resp["status"] == "failed"
-    assert resp["retcode"] == action_catalog.RETCODE_NOT_IMPLEMENTED
-    assert "CQ" in resp["message"]
+    assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
 
 
 def test_extra_unknown_params_are_tolerated():

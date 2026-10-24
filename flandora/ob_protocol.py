@@ -14,7 +14,7 @@ import os
 import tempfile
 import time
 
-from . import __version__, action_catalog, config, ob_ids, state
+from . import __version__, action_catalog, config, ob_ids, ob_segments, state
 from .ws_pool import broadcast as push_event_broadcast
 
 try:
@@ -124,12 +124,15 @@ async def _handle_ob_api(data: dict):
         is_group = action == "send_group_msg" or params.get("message_type") == "group"
         target_id = params.get("group_id" if is_group else "user_id", 0)
         message = params.get("message", [])
-        if isinstance(message, str):
-            # CQ 码字符串还没接进来：明确拒绝，避免字符串被逐字符遍历后「零段发送却回 ok」
+        try:
+            message = ob_segments.normalize_message(
+                message, auto_escape=bool(params.get("auto_escape", False))
+            )
+        except ob_segments.SegmentError as e:
+            return _failure(str(e), action_catalog.RETCODE_BAD_PARAM, echo)
+        if not message:
             return _failure(
-                "message 暂只接受消息段数组（CQ 码字符串未接入）",
-                action_catalog.RETCODE_NOT_IMPLEMENTED,
-                echo,
+                "message 为空，没有可发送的内容", action_catalog.RETCODE_BAD_PARAM, echo
             )
         contact_handle = ob_ids.handle_of(target_id) or ""
         contact = state._ob_id_to_contact.get(target_id) or ""
@@ -156,6 +159,7 @@ async def _handle_ob_api(data: dict):
 
         sent_count = 0
         failures: list[str] = []
+        skipped: list[str] = []
 
         async def _send(kind: str, fn, *args) -> bool:
             """执行一次发送并计数。
@@ -169,7 +173,7 @@ async def _handle_ob_api(data: dict):
                 sent_count += 1
                 log.info(f"[OB11] {kind}已发送至 {contact}")
             else:
-                failures.append(kind)
+                failures.append(f"{kind}发送失败")
                 log.error(f"[OB11] {kind}发送失败（消息未真正发出）: {contact}")
             return ok
 
@@ -182,6 +186,7 @@ async def _handle_ob_api(data: dict):
             if seg_type == "reply":
                 # 引用回复段：微信 UIA 无法直接构造引用，跳过（后续 text 段正常发送）
                 log.info("[OB11] 跳过 reply 段")
+                skipped.append("引用回复段")
                 continue
 
             if seg_type == "text":
@@ -331,21 +336,41 @@ async def _handle_ob_api(data: dict):
                         except Exception:
                             pass
 
+            else:
+                # 未接线的段类型（file / video / at / forward 等）绝不静默跳过：
+                # 跳过会让「零段发送」看起来像成功，客户端随即把内容记进上下文。
+                log.warning(f"[OB11] 不支持的消息段类型: {seg_type!r}")
+                failures.append(f"不支持的消息段 {seg_type or '（空类型）'}")
+
         # message_id 必须是真实发出去的号：客户端拿它做回复引用与撤回，
         # 顺手给的假号会让「撤回自己刚发的消息」永远找不到目标。
         if sent_count:
             resp_data["data"] = {"message_id": ob_ids.allocate_message_id(contact_handle)}
 
-        # 一段都没发出去（典型：微信未登录 / 主窗口不可用）时必须回报失败，
-        # 否则调用方会以为消息已送达并把它记进上下文。
-        if failures and not sent_count:
-            resp_data["status"] = "failed"
-            resp_data["retcode"] = action_catalog.RETCODE_INTERNAL
-            resp_data["message"] = "消息未发送：微信未登录或主窗口不可用"
-            log.error(f"[OB11] {len(failures)} 个消息段全部发送失败 [{contact}]")
-        elif failures:
-            resp_data["data"]["failed_segments"] = len(failures)
-            log.warning(f"[OB11] 部分消息段发送失败 [{contact}]：{len(failures)} 段")
+        # 一段都没发出去时必须回报失败，否则调用方会以为消息已送达并把它记进上下文。
+        if not sent_count:
+            if failures:
+                resp_data["status"] = "failed"
+                resp_data["retcode"] = action_catalog.RETCODE_INTERNAL
+                resp_data["message"] = "消息未发送：" + "；".join(failures)
+                log.error(f"[OB11] 消息未发出 [{contact}]：{failures}")
+            elif skipped:
+                resp_data["status"] = "failed"
+                resp_data["retcode"] = action_catalog.RETCODE_NOT_IMPLEMENTED
+                resp_data["message"] = (
+                    "消息未发送：只有" + "、".join(skipped) + "，微信不支持单独发送这种段"
+                )
+                log.warning(f"[OB11] 消息只有被跳过的段 [{contact}]：{skipped}")
+            else:
+                resp_data["status"] = "failed"
+                resp_data["retcode"] = action_catalog.RETCODE_BAD_PARAM
+                resp_data["message"] = "消息未发送：message 里没有可发送的内容"
+                log.warning(f"[OB11] message 里没有可发送的内容 [{contact}]")
+        elif failures or skipped:
+            resp_data["data"]["failed_segments"] = len(failures) + len(skipped)
+            log.warning(
+                f"[OB11] 部分消息段未发出 [{contact}]：失败 {len(failures)} 段、跳过 {len(skipped)} 段"
+            )
 
     elif action == "get_login_info":
         resp_data["data"] = {
@@ -503,29 +528,32 @@ def make_message_event(
     nickname: str = "",
     message_id: int = 0,
 ) -> dict:
-    """构造 OneBot v11 消息事件。"""
+    """构造 OneBot v11 消息事件。
+
+    ``message`` 的形态由 ``ob_message_format`` 决定（消息段数组或 CQ 码字符串），
+    ``raw_message`` 始终是 CQ 码字符串——客户端按字符串处理时两边都能用。
+    """
     event = {
         "time": int(time.time()),
         "self_id": state._self_id_int,
         "post_type": "message",
         "message_id": message_id,
     }
-    raw_text = "".join(
-        seg.get("data", {}).get("text", "") for seg in message if seg.get("type") == "text"
-    )
+    raw_cq = ob_segments.segments_to_cq(message)
+    message_field = message if config.OB_MESSAGE_FORMAT == "array" else raw_cq
     if message_type == "group":
         event["message_type"] = "group"
         event["group_id"] = group_id
         event["user_id"] = user_id
-        event["message"] = message
-        event["raw_message"] = raw_text
+        event["message"] = message_field
+        event["raw_message"] = raw_cq
         event["sender"] = {"user_id": user_id, "nickname": nickname or str(user_id)}
         event["group_name"] = group_name or str(group_id)
     else:
         event["message_type"] = "private"
         event["user_id"] = user_id
-        event["message"] = message
-        event["raw_message"] = raw_text
+        event["message"] = message_field
+        event["raw_message"] = raw_cq
         event["sender"] = {"user_id": user_id, "nickname": nickname or str(user_id)}
     return event
 

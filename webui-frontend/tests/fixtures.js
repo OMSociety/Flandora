@@ -23,6 +23,7 @@ export const configFixture = {
   ob_server_host: '127.0.0.1',
   ob_server_port: 7999,
   ob_server_token: '',
+  ob_message_format: 'array',
   astrbot_ob_url: '',
   astrbot_attachments: '',
   group_name_map: { 'example@chatroom': '测试群聊' },

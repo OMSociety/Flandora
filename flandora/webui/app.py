@@ -512,17 +512,46 @@ def api_stats():
 
 @app.get("/api/contacts")
 def api_contacts():
+    """测试发送的候选联系人：配置里的群名映射 + 微信库名册 + 已见过的会话。
+
+    名册来自本地库（好友与群），所以新装的环境在还没收到任何消息时也能选到人；
+    文件传输助手不在名册里（它不算好友），单独补一条，它是最安全的发送自测对象。
+    """
     contacts = []
-    seen = set()
+    seen_ids = set()
+    seen_names = set()
+
+    def add(cid, name, kind):
+        name = str(name or "").strip()
+        cid = str(cid or "").strip()
+        if not name or name in seen_names:
+            return
+        if cid and cid in seen_ids:
+            return
+        contacts.append({"id": cid, "name": name, "kind": kind})
+        seen_names.add(name)
+        if cid:
+            seen_ids.add(cid)
+
     for gid, name in (config.GROUP_NAME_MAP or {}).items():
-        contacts.append({"id": str(gid), "name": name, "kind": "group"})
-        seen.add(str(gid))
+        add(str(gid), name, "group")
+
+    store = getattr(getattr(state.bridge_instance, "_source", None), "store", None)
+    if store is not None:
+        try:
+            for group in store.groups():
+                add(group.get("username"), group.get("name"), "group")
+        except Exception as e:  # noqa: BLE001 - 名册读不到不影响配置里的条目
+            log.warning(f"[WebUI] 读取群名册失败: {e}")
+        try:
+            for person in store.contacts():
+                add(person.get("username"), person.get("name"), "private")
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[WebUI] 读取好友名册失败: {e}")
+    add("filehelper", "文件传输助手", "private")
+
     for oid, name in state._ob_id_to_contact.items():
-        sid = str(oid)
-        if sid in seen:
-            continue
-        kind = "group" if sid.endswith("@chatroom") else "private"
-        contacts.append({"id": sid, "name": name, "kind": kind})
+        add(str(oid), name, "group" if str(oid).endswith("@chatroom") else "private")
     return {"contacts": contacts}
 
 

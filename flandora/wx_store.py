@@ -36,6 +36,29 @@ log = logging.getLogger("ob11-bridge")
 
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
+# 微信通讯录里的伪联系人：不是真人，也不是群，作为好友上报只会让客户端
+# 把消息推给「服务通知」「微信团队」这类系统号。
+SYSTEM_USERNAMES = frozenset(
+    {
+        "filehelper",
+        "notifymessage",
+        "weixin",
+        "fmessage",
+        "medianote",
+        "mphelper",
+        "qmessage",
+        "qqmail",
+        "newsapp",
+        "brandsessionholder",
+        "officialaccounts",
+        "floatbottle",
+        "shakeapp",
+        "lbsapp",
+        "voipnotify",
+        "qqsync",
+    }
+)
+
 # 解密哪些库。顺序无关，只是把「要用的库」集中在一处便于核对。
 DBS = (
     ("session", "session.db"),
@@ -378,8 +401,9 @@ class WxStore:
     def contacts(self):
         """通讯录里的个人联系人。
 
-        不含群会话（`@chatroom`）、公众号（`gh_` 开头）、文件传输助手：
-        它们在微信里各自是独立入口，混进好友列表会让客户端给它们推消息。
+        不含群会话（`@chatroom`）、公众号（`gh_` 开头）与微信内部的伪联系人
+        （`SYSTEM_USERNAMES`：文件传输助手、服务通知、微信团队等）：它们在微信里
+        各自是独立入口，混进好友列表会让客户端给它们推消息。
         """
         con = self._con("contact.db")
         try:
@@ -398,7 +422,7 @@ class WxStore:
                 username = (d.get("username") or "").strip()
                 if not username or "@" in username or username.startswith("gh_"):
                     continue
-                if username == "filehelper":
+                if username in SYSTEM_USERNAMES:
                     continue
                 if self.my_wxid and username == self.my_wxid:
                     # 通讯录里可能含自己，好友列表不该把自己算成一个好友

@@ -3,7 +3,7 @@
 </p>
 
 <p align="center">
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/Python-3.13-3776AB" alt="Python"></a>
+  <a href="https://github.com/OMSociety/Flandora/tags"><img src="https://img.shields.io/github/v/tag/OMSociety/Flandora?color=07C160" alt="最新版本"></a>
   <a href="https://github.com/OMSociety/Flandora"><img src="https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4" alt="Windows"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/OMSociety/Flandora?color=07C160" alt="License"></a>
   <a href="https://github.com/OMSociety/Flandora/stargazers"><img src="https://img.shields.io/github/stars/OMSociety/Flandora?color=07C160" alt="Stars"></a>
@@ -236,7 +236,9 @@ npm run build   # 产物写入 flandora\webui\dist
 
 ## 鸣谢与致谢
 
-- [jessiongod/wechat-onebot-bridge](https://github.com/jessiongod/wechat-onebot-bridge)：本仓库的前身与上游，收件、发送与 OneBot 协议层的早期设计来自这个项目
+- [WeChat-Onebot-Bridge](https://github.com/jessiongod/wechat-onebot-bridge)：本仓库的前身与上游，收件、发送与 OneBot 协议层的早期设计来自这个项目
+- [WeFlow](https://github.com/hicccc77/WeFlow)：上游的收件链路基于它的本地微信数据接口；本仓库改为只读解密本地库，不再依赖它运行
+- [OneBot v11](https://github.com/botuniverse/onebot-11)：对外提供的事件与动作遵循这份协议规范
 - 顾海蔚蓝：早期结构与文档
 
 <p align="center">

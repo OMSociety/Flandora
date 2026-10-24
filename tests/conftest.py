@@ -18,6 +18,11 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+# SDK 在 sdk/python/ 下自成一体（它要能被单独装走），测试直接按源码路径导入
+SDK_ROOT = os.path.join(REPO_ROOT, "sdk", "python")
+if SDK_ROOT not in sys.path:
+    sys.path.insert(0, SDK_ROOT)
+
 if not os.environ.get("PYTEST_DEBUG_TEMPROOT"):
     _root = os.environ.get("FLANDORA_TEST_TMP", os.path.join(REPO_ROOT, ".pytest-tmp"))
     # pytest 只会在根目录里开编号子目录，不会自己造根目录

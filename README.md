@@ -162,6 +162,32 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 </tr>
 </table>
 
+## Python SDK
+
+`flandora-sdk` 把桥接当成 OneBot v11 协议端来用：同步 HTTP、同步 WebSocket、异步 WebSocket 三种客户端，
+消息段构造器与 CQ 码编解码，错误按「桥接说动作失败」和「连不上」分成两类。源码在 `sdk/python/`：
+
+```powershell
+.venv\Scripts\python.exe -m pip install -e sdk\python
+```
+
+```python
+from flandora_sdk import FlandoraWS, MessageChain
+
+client = FlandoraWS("ws://127.0.0.1:7999", token="")
+
+
+@client.on("message")
+def handle(event):
+    if event["message_type"] == "group" and event.get("is_mentioned"):
+        client.send_group_msg(event["group_id"], MessageChain().at(event["user_id"]).text(" 收到"))
+
+
+client.run_forever()
+```
+
+用法、错误分类与已知边界见 [sdk/python/README.md](sdk/python/README.md)。
+
 ## 配置项
 
 配置文件是程序目录下的 `data/config.json`（源码模式即仓库根 `data/config.json`），首次启动自动生成。缺的键按默认值处理，改完重启 bridge 生效。
@@ -314,11 +340,14 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 .venv\Scripts\python.exe -m ruff format --check .
 .venv\Scripts\python.exe -m pytest tests -q
 
+# SDK（可选：在自己的项目里用它当客户端）
+.venv\Scripts\python.exe -m pip install -e sdk\python
+
 # 从源码起桥接
 .venv\Scripts\python.exe run_bridge.py
 ```
 
-这三步与 CI（`.github/workflows/ci.yml`）跑的是同一组命令，提交前本地跑绿即可。
+这些命令与 CI（`.github/workflows/ci.yml`）同源，提交前本地跑绿即可。CI 另外会重新生成一次 `sdk/python/flandora_sdk/_catalog.json` 并核对无差异（动作目录改了没同步快照会红）。
 
 前端在 `webui-frontend/`（Vue 3 + Vite）：
 

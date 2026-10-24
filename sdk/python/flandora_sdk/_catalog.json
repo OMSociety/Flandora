@@ -1,0 +1,1177 @@
+{
+  "version": 1,
+  "note": "由 tools/gen_sdk_catalog.py 从 flandora/action_catalog.py 生成，不要手改",
+  "categories": [
+    "信息",
+    "消息",
+    "好友",
+    "群信息",
+    "群管理",
+    "请求",
+    "扩展"
+  ],
+  "actions": [
+    {
+      "name": "get_login_info",
+      "aliases": [],
+      "category": "信息",
+      "summary": "获取当前登录的微信号与本程序使用的机器人昵称",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": []
+    },
+    {
+      "name": "get_status",
+      "aliases": [],
+      "category": "信息",
+      "summary": "获取运行状态（在线、收件源与发送器是否就绪）",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": []
+    },
+    {
+      "name": "get_version_info",
+      "aliases": [],
+      "category": "信息",
+      "summary": "获取版本信息（应用名、版本号、OneBot 协议版本）",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": []
+    },
+    {
+      "name": "can_send_image",
+      "aliases": [],
+      "category": "信息",
+      "summary": "是否支持发送图片",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": []
+    },
+    {
+      "name": "can_send_record",
+      "aliases": [],
+      "category": "信息",
+      "summary": "是否支持发送语音",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": []
+    },
+    {
+      "name": "send_msg",
+      "aliases": [],
+      "category": "消息",
+      "summary": "发送消息，按 message_type 自动选择私聊或群聊",
+      "readOnly": false,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "message_type",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": "private 或 group"
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": false,
+          "default": null,
+          "desc": "私聊对象"
+        },
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": false,
+          "default": null,
+          "desc": "群聊对象"
+        },
+        {
+          "name": "message",
+          "type": "message",
+          "required": true,
+          "default": null,
+          "desc": "消息段数组或 CQ 码字符串"
+        },
+        {
+          "name": "auto_escape",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": "为真时按纯文本发送，不解析 CQ 码"
+        }
+      ]
+    },
+    {
+      "name": "send_private_msg",
+      "aliases": [],
+      "category": "消息",
+      "summary": "发送私聊消息",
+      "readOnly": false,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "message",
+          "type": "message",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "auto_escape",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "send_group_msg",
+      "aliases": [],
+      "category": "消息",
+      "summary": "发送群消息",
+      "readOnly": false,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "message",
+          "type": "message",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "auto_escape",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "delete_msg",
+      "aliases": [],
+      "category": "消息",
+      "summary": "撤回已发送的消息",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "撤回要右键会话里的消息气泡，UIA 无法按 message_id 定位到某一条；见 docs/needs-user.md",
+      "params": [
+        {
+          "name": "message_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_msg",
+      "aliases": [],
+      "category": "消息",
+      "summary": "按 message_id 取回消息原文（存档只保留 Flandora 推送过的消息）",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "message_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_group_msg_history",
+      "aliases": [],
+      "category": "消息",
+      "summary": "拉取群聊历史消息",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "count",
+          "type": "int",
+          "required": false,
+          "default": 20,
+          "desc": "最多 100 条"
+        }
+      ]
+    },
+    {
+      "name": "get_friend_msg_history",
+      "aliases": [],
+      "category": "消息",
+      "summary": "拉取私聊历史消息",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "count",
+          "type": "int",
+          "required": false,
+          "default": 20,
+          "desc": "最多 100 条"
+        }
+      ]
+    },
+    {
+      "name": "send_group_forward_msg",
+      "aliases": [],
+      "category": "消息",
+      "summary": "发送群聊合并转发",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "尚未接入，见 docs/wip.md（微信没有可由外部构造的合并转发入口）",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "messages",
+          "type": "list",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "send_private_forward_msg",
+      "aliases": [],
+      "category": "消息",
+      "summary": "发送私聊合并转发",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "尚未接入，见 docs/wip.md（微信没有可由外部构造的合并转发入口）",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "messages",
+          "type": "list",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_forward_msg",
+      "aliases": [],
+      "category": "消息",
+      "summary": "展开合并转发内容",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "尚未接入，见 docs/wip.md",
+      "params": [
+        {
+          "name": "message_id",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_msg_emoji_like",
+      "aliases": [],
+      "category": "消息",
+      "summary": "给消息贴表情回应",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "message_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "emoji_id",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_friend_list",
+      "aliases": [],
+      "category": "好友",
+      "summary": "获取好友列表（读通讯录；不含公众号与文件传输助手）",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": []
+    },
+    {
+      "name": "get_stranger_info",
+      "aliases": [],
+      "category": "好友",
+      "summary": "获取任意联系人资料",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_friend_info",
+      "aliases": [],
+      "category": "好友",
+      "summary": "获取好友资料（get_stranger_info 的别名）",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "send_like",
+      "aliases": [],
+      "category": "好友",
+      "summary": "给好友资料页点赞",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "times",
+          "type": "int",
+          "required": false,
+          "default": 1,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "delete_friend",
+      "aliases": [],
+      "category": "好友",
+      "summary": "删除好友",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_friend_remark",
+      "aliases": [],
+      "category": "好友",
+      "summary": "设置好友备注",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "remark",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_group_list",
+      "aliases": [],
+      "category": "群信息",
+      "summary": "获取群列表（读通讯录里的群会话）",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "no_cache",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_group_info",
+      "aliases": [],
+      "category": "群信息",
+      "summary": "获取群资料（群名与成员数来自本地库）",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_group_member_list",
+      "aliases": [],
+      "category": "群信息",
+      "summary": "获取群成员列表（含群主标记）",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_group_member_info",
+      "aliases": [],
+      "category": "群信息",
+      "summary": "获取单个群成员资料",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "no_cache",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_group_at_all_remain",
+      "aliases": [],
+      "category": "群信息",
+      "summary": "查询剩余 @全体成员 次数",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_group_honor_info",
+      "aliases": [],
+      "category": "群信息",
+      "summary": "获取群荣誉（龙王、群聊之火等）",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "type",
+          "type": "string",
+          "required": false,
+          "default": "all",
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_group_system_msg",
+      "aliases": [],
+      "category": "群信息",
+      "summary": "获取群系统消息（待处理入群邀请）",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": []
+    },
+    {
+      "name": "set_group_kick",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "踢出群成员",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "reject_add_request",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_group_ban",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "禁言群成员",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "duration",
+          "type": "int",
+          "required": false,
+          "default": 1800,
+          "desc": "秒，0 表示解除"
+        }
+      ]
+    },
+    {
+      "name": "set_group_whole_ban",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "全员禁言",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "enable",
+          "type": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_group_admin",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "设置或取消群管理员",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "enable",
+          "type": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_group_card",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "设置群名片",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "card",
+          "type": "string",
+          "required": false,
+          "default": "",
+          "desc": "空字符串表示清除"
+        }
+      ]
+    },
+    {
+      "name": "set_group_name",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "修改群名",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "group_name",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_group_leave",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "退出群聊或解散群",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "is_dismiss",
+          "type": "bool",
+          "required": false,
+          "default": false,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_group_special_title",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "设置群头衔",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "special_title",
+          "type": "string",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_group_anonymous",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "开启或关闭匿名聊天",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "enable",
+          "type": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_group_anonymous_ban",
+      "aliases": [],
+      "category": "群管理",
+      "summary": "禁言匿名成员",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "flag",
+          "type": "string",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_friend_add_request",
+      "aliases": [],
+      "category": "请求",
+      "summary": "处理好友添加请求",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "flag",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "approve",
+          "type": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        },
+        {
+          "name": "remark",
+          "type": "string",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_group_add_request",
+      "aliases": [],
+      "category": "请求",
+      "summary": "处理入群请求或邀请",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "flag",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "sub_type",
+          "type": "string",
+          "required": false,
+          "default": "add",
+          "desc": ""
+        },
+        {
+          "name": "approve",
+          "type": "bool",
+          "required": false,
+          "default": true,
+          "desc": ""
+        },
+        {
+          "name": "reason",
+          "type": "string",
+          "required": false,
+          "default": "",
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "send_poke",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "拍一拍",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "拍一拍要双击成员头像，UIA 无法稳定定位头像；见 docs/needs-user.md",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": false,
+          "default": 0,
+          "desc": "0 表示私聊窗口"
+        }
+      ]
+    },
+    {
+      "name": "friend_poke",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "拍一拍好友（send_poke 的别名）",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "拍一拍要双击成员头像，UIA 无法稳定定位头像；见 docs/needs-user.md",
+      "params": [
+        {
+          "name": "user_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_essence_msg",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "设为群精华消息",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "message_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "delete_essence_msg",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "移除群精华消息",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "message_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_essence_msg_list",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "获取群精华消息列表",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "group_id",
+          "type": "int",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_recent_contact",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "获取最近会话列表",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "尚未接入，见 docs/wip.md",
+      "params": [
+        {
+          "name": "count",
+          "type": "int",
+          "required": false,
+          "default": 10,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "set_online_status",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "设置在线状态",
+      "readOnly": false,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "status",
+          "type": "int",
+          "required": false,
+          "default": 11,
+          "desc": ""
+        },
+        {
+          "name": "ext_status",
+          "type": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_online_clients",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "获取当前在线终端",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": []
+    },
+    {
+      "name": "ocr_image",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "图片文字识别",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "image",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "translate_en2zh",
+      "aliases": [],
+      "category": "扩展",
+      "summary": "英译中",
+      "readOnly": true,
+      "implemented": false,
+      "wip": "微信 PC 客户端不提供对应接口",
+      "params": [
+        {
+          "name": "words",
+          "type": "list",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "message_id",
+          "type": "int",
+          "required": false,
+          "default": 0,
+          "desc": ""
+        }
+      ]
+    }
+  ]
+}

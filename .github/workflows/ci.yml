@@ -29,6 +29,14 @@ jobs:
         run: python -m ruff check .
       - name: 格式检查
         run: python -m ruff format --check .
+      - name: SDK 动作快照与目录一致
+        run: |
+          python tools/gen_sdk_catalog.py
+          git diff --exit-code -- sdk/python/flandora_sdk/_catalog.json
+      - name: 安装 SDK 并做导入冒烟
+        run: |
+          python -m pip install -e sdk/python
+          python -c "import flandora_sdk; print(flandora_sdk.__version__, len(flandora_sdk.list_actions()))"
       - name: 单元测试
         run: python -m pytest tests -q
 

@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flandora-sdk"
+version = "1.0.0"
+description = "Flandora 的 OneBot v11 客户端：同步与异步两种调用方式、消息段构造器、CQ 码编解码"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = ["requests>=2.31", "websockets>=16"]
+
+[project.urls]
+Homepage = "https://github.com/OMSociety/Flandora"
+
+[tool.setuptools]
+packages = ["flandora_sdk"]
+
+[tool.setuptools.package-data]
+flandora_sdk = ["_catalog.json"]

@@ -634,6 +634,7 @@ def make_message_event(
     group_name: str = "",
     nickname: str = "",
     message_id: int = 0,
+    timestamp: int = 0,
 ) -> dict:
     """构造 OneBot v11 消息事件。
 
@@ -641,7 +642,7 @@ def make_message_event(
     ``raw_message`` 始终是 CQ 码字符串——客户端按字符串处理时两边都能用。
     """
     event = {
-        "time": int(time.time()),
+        "time": int(timestamp or time.time()),
         "self_id": state._self_id_int,
         "post_type": "message",
         "message_id": message_id,

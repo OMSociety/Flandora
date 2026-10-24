@@ -105,6 +105,32 @@ def _xml_value(text, tag):
     return m.group(1) if m else ""
 
 
+_REFMSG_RE = re.compile(r"<refermsg>(.*?)</refermsg>", re.S)
+
+
+def quote_ref(body):
+    """解出引用消息里被引的那一条。
+
+    返回 `{"server_id", "sender", "name"}`；不是引用消息返回 None。
+    `server_id` 就是被引消息的服务端号，能拿它回查 message_id 还原 `reply` 段。
+    """
+    if not body:
+        return None
+    text = body.decode("utf-8", "ignore") if isinstance(body, (bytes, bytearray)) else str(body)
+    m = _REFMSG_RE.search(text)
+    if not m:
+        return None
+    inner = m.group(1)
+    server_id = _xml_value(inner, "svrid").strip()
+    if not server_id:
+        return None
+    return {
+        "server_id": server_id,
+        "sender": _xml_value(inner, "chatusr").strip(),
+        "name": _xml_value(inner, "displayname").strip(),
+    }
+
+
 def classify(local_type, body):
     """按 local_type 给出 (类别, 送给上游的文本)。
 
@@ -439,22 +465,26 @@ class WxStore:
                 return []
             names = {r[0]: r[1] for r in con.execute("SELECT rowid, user_name FROM Name2Id")}
             rows = con.execute(
-                f"SELECT local_id, local_type, real_sender_id, create_time, message_content "
+                f"SELECT local_id, server_id, local_type, real_sender_id, create_time, message_content "
                 f'FROM "{table}" WHERE local_id > ? ORDER BY local_id ASC LIMIT ?',
                 (after_local_id, limit),
             ).fetchall()
             out = []
-            for local_id, local_type, sender_id, create_time, content in rows:
+            for local_id, server_id, local_type, sender_id, create_time, content in rows:
                 sender = names.get(sender_id, "")
-                kind, text = classify(local_type, _text_of(content))
+                body = _text_of(content)
+                kind, text = classify(local_type, body)
+                quote = quote_ref(body) if kind == "quote" else None
                 out.append(
                     {
                         "local_id": local_id,
+                        "server_id": str(server_id or ""),
                         "local_type": local_type,
                         "create_time": create_time,
                         "sender": sender,
                         "kind": kind,
                         "text": text,
+                        "quote": quote or {},
                         "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
                     }
                 )
@@ -478,22 +508,26 @@ class WxStore:
                 return []
             names = {r[0]: r[1] for r in con.execute("SELECT rowid, user_name FROM Name2Id")}
             rows = con.execute(
-                f"SELECT local_id, local_type, real_sender_id, create_time, message_content "
+                f"SELECT local_id, server_id, local_type, real_sender_id, create_time, message_content "
                 f'FROM "{table}" ORDER BY local_id DESC LIMIT ?',
                 (limit,),
             ).fetchall()
             out = []
-            for local_id, local_type, sender_id, create_time, content in reversed(rows):
+            for local_id, server_id, local_type, sender_id, create_time, content in reversed(rows):
                 sender = names.get(sender_id, "")
-                kind, text = classify(local_type, _text_of(content))
+                body = _text_of(content)
+                kind, text = classify(local_type, body)
+                quote = quote_ref(body) if kind == "quote" else None
                 out.append(
                     {
                         "local_id": local_id,
+                        "server_id": str(server_id or ""),
                         "local_type": local_type,
                         "create_time": create_time,
                         "sender": sender,
                         "kind": kind,
                         "text": text,
+                        "quote": quote or {},
                         "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
                     }
                 )

@@ -17,7 +17,7 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from . import config, ob_ids, state, wx_crypto, wx_source
+from . import config, ob_ids, ob_inbound, state, wx_crypto, wx_source
 from .ob_protocol import make_message_event, push_event
 
 try:
@@ -199,6 +199,9 @@ class Flandora:
                     "sender_in_group": sender_in_group if is_group else "",
                     "sender_wxid": sender_wxid,
                     "local_id": int(data.get("localId") or 0),
+                    "server_id": str(data.get("serverId") or ""),
+                    "quote": data.get("quote") or {},
+                    "timestamp": int(data.get("timestamp") or 0),
                     "session_id_data": session_id_data,
                     "raw_data": data,  # 原始 SSE 数据，供 @ 检测等使用
                 }
@@ -241,8 +244,26 @@ class Flandora:
         self._member_cache[session_id] = (now, names)
         return names
 
+    def _inbound_segments(self, entry, text: str, session_handle: str) -> list[dict]:
+        """把一条收到的消息还原成 OneBot 段。
+
+        引用在前（客户端据此拿到被引消息的 message_id），正文里的真 @ 拆成 at 段，
+        其余保持文本。还原不出来的一律留在原文里，不改写内容。
+        """
+        segments: list[dict] = []
+        reply = ob_inbound.reply_segment(
+            entry.get("quote") or {}, ob_ids.message_ids().message_by_server
+        )
+        if reply:
+            segments.append(reply)
+        names = self._resolve_names(session_handle)
+        segments.extend(
+            ob_inbound.split_mentions(text, lambda name: ob_inbound.resolve_from_names(names, name))
+        )
+        return segments
+
     @staticmethod
-    def _message_id_for(session_handle: str, local_id) -> int:
+    def _message_id_for(session_handle: str, local_id, server_id: str = "") -> int:
         """取这条消息的 OneBot message_id。
 
         有本地库行号就按 (会话, 行号) 幂等分配——同一条消息任何时候取都是同一个号；
@@ -253,7 +274,7 @@ class Flandora:
         except (TypeError, ValueError):
             lid = 0
         if lid > 0:
-            return ob_ids.ensure_message_id(session_handle, lid)
+            return ob_ids.ensure_message_id(session_handle, lid, server_id=server_id or "")
         return ob_ids.allocate_message_id(session_handle)
 
     def process_sender(self, sender_id, version=None):
@@ -287,7 +308,9 @@ class Flandora:
             sender_handle = entry.get("sender_wxid") or session_handle
             user_id = ob_ids.contact_id(sender_handle)
             group_id = ob_ids.contact_id(session_handle) if is_group else 0
-            message_id = self._message_id_for(session_handle, entry.get("local_id"))
+            message_id = self._message_id_for(
+                session_handle, entry.get("local_id"), entry.get("server_id", "")
+            )
 
             if is_group:
                 sender_name = entry.get("sender_in_group", "") or entry.get("source_name", "未知")
@@ -299,7 +322,7 @@ class Flandora:
                     formatted = formatted.replace(f"@{nick}\u2005", f"@{nick}")
                     formatted = formatted.replace(f"@{nick}\u200b", f"@{nick}")
 
-                msg_segments = [{"type": "text", "data": {"text": formatted}}]
+                msg_segments = self._inbound_segments(entry, formatted, session_handle)
                 msg_segments.extend(image_segments)
                 event = make_message_event(
                     "group",
@@ -309,6 +332,7 @@ class Flandora:
                     group_name=entry.get("group_name", contact),
                     nickname=sender_name,
                     message_id=message_id,
+                    timestamp=entry.get("timestamp", 0),
                 )
                 # 标记该群消息是否真实 @ 了机器人，由客户端决定是否响应
                 event["is_mentioned"] = bool(self._is_mentioned(entry.get("raw_data", {})))
@@ -316,7 +340,7 @@ class Flandora:
                 state._ob_id_to_contact[user_id] = sender_name
             else:
                 sender_name = entry.get("source_name", contact)
-                private_segments = [{"type": "text", "data": {"text": combined}}]
+                private_segments = self._inbound_segments(entry, combined, session_handle)
                 private_segments.extend(image_segments)
                 event = make_message_event(
                     "private",
@@ -324,6 +348,7 @@ class Flandora:
                     private_segments,
                     nickname=sender_name,
                     message_id=message_id,
+                    timestamp=entry.get("timestamp", 0),
                 )
                 state._ob_id_to_contact[user_id] = contact
 

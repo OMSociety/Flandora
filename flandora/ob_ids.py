@@ -146,6 +146,8 @@ CREATE TABLE IF NOT EXISTS msg_ids (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_msg_ids_talker_local
     ON msg_ids(talker, local_id) WHERE local_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_msg_ids_server
+    ON msg_ids(server_id) WHERE server_id != '';
 """
 
 
@@ -205,6 +207,22 @@ class MessageIds:
             )
             self._conn.commit()
             return int(cur.lastrowid)
+
+    def message_by_server(self, server_id: str) -> int | None:
+        """按微信服务端消息号回查 message_id。
+
+        引用消息的 `<refermsg><svrid>` 就是被引消息的服务端号，收到引用时
+        靠它把 `reply` 段还原成真正见过的 message_id；没见过就返回 None。
+        """
+        if not server_id:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT message_id FROM msg_ids WHERE server_id = ?"
+                " ORDER BY message_id DESC LIMIT 1",
+                (str(server_id),),
+            ).fetchone()
+        return int(row["message_id"]) if row is not None else None
 
     def lookup(self, message_id: int) -> dict | None:
         """按 message_id 回查归属（会话、本地行号、方向）。"""

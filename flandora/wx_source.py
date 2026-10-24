@@ -161,6 +161,9 @@ class WxLocalSource:
             "senderName": who,
             "msgType": msg["kind"],
             "localId": msg["local_id"],
+            # 服务端号是引用消息唯一的回查键（<refermsg><svrid> 就是它）
+            "serverId": msg.get("server_id", ""),
+            "quote": msg.get("quote") or {},
         }
 
         # 图片与表情：能解出文件就把路径带上，下游据此读图；解不出就保留占位符文本。

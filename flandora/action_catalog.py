@@ -600,20 +600,6 @@ def lookup(name: str) -> Action | None:
     return _INDEX.get(name.strip())
 
 
-def by_category() -> dict[str, list[Action]]:
-    """按分类分组，顺序与 CATEGORIES 一致。"""
-    grouped: dict[str, list[Action]] = {cat: [] for cat in CATEGORIES}
-    for action in ACTIONS:
-        grouped[action.category].append(action)
-    return grouped
-
-
-def is_implemented(name: str) -> bool:
-    """动作是否已接入真实执行（未登记的动作视为未实现）。"""
-    action = lookup(name)
-    return bool(action and action.implemented)
-
-
 _TYPE_CHECKS = {
     "int": lambda v: isinstance(v, int) and not isinstance(v, bool),
     "string": lambda v: isinstance(v, str),

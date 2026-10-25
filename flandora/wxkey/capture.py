@@ -366,10 +366,6 @@ def _account_db_paths(root: Optional[str]) -> list[tuple[str, str]]:
     return targets
 
 
-def _account_db_path(root: Optional[str]) -> tuple[str, str]:
-    return _account_db_paths(root)[0]
-
-
 def _finish(
     blobs: Sequence[tuple[str, bytes]],
     calls: int,

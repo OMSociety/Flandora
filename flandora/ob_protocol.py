@@ -9,7 +9,6 @@ OneBot v11 协议处理模块（对接 OneBot v11 客户端）。
 
 import asyncio
 import base64
-import json
 import logging
 import os
 import tempfile
@@ -132,15 +131,6 @@ def push_event(event: dict) -> int:
     except Exception as e:
         log.error(f"[OB11] 推送事件未能存档（message_id={event.get('message_id')}）：{e}")
     return push_event_broadcast(event)
-
-
-async def _send_resp_to(ws, resp_data: dict):
-    """向指定 WS 连接发送响应（服务端 loop 内直接 send，无跨线程）。"""
-    try:
-        await ws.send(json.dumps(resp_data, ensure_ascii=False))
-        log.info(f"[OB11] 已回响应: {resp_data.get('echo', '')}")
-    except Exception as e:
-        log.warning(f"[OB11] 回响应失败: {e}")
 
 
 async def _handle_ob_api(data: dict):

@@ -656,15 +656,6 @@ def _authorize(node: dict, request):
     return Response(401, "Unauthorized", Headers({"Connection": "close"}), b"Unauthorized")
 
 
-def _http_authorized(node: dict, request) -> bool:
-    token = node["access_token"]
-    if not token:
-        return True
-    if request.headers.get("authorization", "") == f"Bearer {token}":
-        return True
-    return request.query_params.get("access_token") == token
-
-
 def _query_param(request, key: str) -> str:
     """取握手请求的 query 参数（请求对象只给出 path，查询串从 path 里解析）。"""
     path = getattr(request, "path", "") or ""

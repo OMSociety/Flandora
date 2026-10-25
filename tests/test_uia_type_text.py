@@ -1,19 +1,52 @@
-"""验证：字符投递会把 U+FFFF 以上的字符按 UTF-16 代理项拆开。
+"""验证：正文按内容挑投递通路——BMP 走 WM_CHAR，emoji 走剪贴板粘贴。
 
-背景：WM_CHAR 的 wParam 只装得下一个 16 位码元，emoji 这类字符整码点投过去会被
-窗口截断丢掉，输入框回读永远不符，最终整条消息判失败（真机表现为「文字发送失败」）。
-这里用假 user32 覆盖拆分规则、两条投递路径，以及回读校验对 emoji 仍然成立。
+背景：WM_CHAR 的 wParam 只装得下一个 16 位码元，emoji 这类 U+FFFF 以上的字符
+投过去会被微信输入框丢掉（实测连代理项拆开投递也一样），真机表现是「文字发送
+失败」。这里用假 user32 与假剪贴板覆盖拆分规则、通路选择、粘贴回读与句柄释放。
 """
 
+import ctypes
 import os
 import sys
+from types import SimpleNamespace
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from flandora import uia_sender  # noqa: E402
-from flandora.uia_sender import WM_CHAR, UiaSender, utf16_units  # noqa: E402
+from flandora.uia_sender import WM_CHAR, UiaSender, has_non_bmp, utf16_units  # noqa: E402
+
+CF_UNICODETEXT = 13
+
+
+class _Func:
+    """像 ctypes 的函数对象：调用方可以往上设 restype / argtypes。"""
+
+    def __init__(self, func):
+        self._func = func
+        self.restype = None
+        self.argtypes = None
+
+    def __call__(self, *args):
+        return self._func(*args)
+
+
+class _Dll:
+    """把有状态的对象包成「像 ctypes 的 DLL」，供被测代码设函数签名。"""
+
+    def __init__(self, target):
+        object.__setattr__(self, "_target", target)
+        object.__setattr__(self, "_funcs", {})
+
+    def __getattr__(self, name):
+        funcs = object.__getattribute__(self, "_funcs")
+        if name not in funcs:
+            attr = getattr(object.__getattribute__(self, "_target"), name)
+            if not callable(attr):
+                return attr
+            funcs[name] = _Func(attr)
+        return funcs[name]
 
 
 class _User32:
@@ -45,12 +78,77 @@ class _TypingUser32(_User32):
         return 1
 
 
+class _FakeKernel32:
+    def __init__(self):
+        self.blocks = {}
+        self.freed = []
+        self._next = 0
+
+    def GlobalAlloc(self, flags, size):
+        self._next += 1
+        self.blocks[self._next] = ctypes.create_string_buffer(size)
+        return self._next
+
+    def GlobalLock(self, handle):
+        return ctypes.addressof(self.blocks[handle])
+
+    def GlobalUnlock(self, handle):
+        return 1
+
+    def GlobalFree(self, handle):
+        self.freed.append(handle)
+        return 0
+
+
+class _FakeClipboardUser32:
+    def __init__(self, open_ok=True, accept=True):
+        self.data = {}
+        self.open_ok = open_ok
+        self.accept = accept
+        self.closed = 0
+
+    def OpenClipboard(self, hwnd):
+        return 1 if self.open_ok else 0
+
+    def EmptyClipboard(self):
+        self.data.clear()
+        return 1
+
+    def SetClipboardData(self, fmt, handle):
+        if not self.accept:
+            return 0
+        self.data[fmt] = handle
+        return handle
+
+    def CloseClipboard(self):
+        self.closed += 1
+        return 1
+
+
 def _sender(user32=None):
     sender = UiaSender.__new__(UiaSender)
     sender._hwnd = 7
     sender._last_error = ""
-    sender._user32_inst = lambda: user32 if user32 is not None else _User32()
+    target = user32 if user32 is not None else _User32()
+    sender._user32_inst = lambda: _Dll(target)
     return sender
+
+
+def _install_clipboard(monkeypatch, user32, kernel32):
+    monkeypatch.setattr(
+        uia_sender.ctypes,
+        "windll",
+        SimpleNamespace(user32=_Dll(user32), kernel32=_Dll(kernel32)),
+    )
+
+
+def _clipboard_text(user32, kernel32):
+    return (
+        kernel32.blocks[user32.data[CF_UNICODETEXT]].raw.split(b"\x00\x00")[0].decode("utf-16-le")
+    )
+
+
+# ---------------------------------------------------------------- 拆分规则
 
 
 def test_bmp_chars_are_single_units():
@@ -68,6 +166,12 @@ def test_split_units_rebuild_the_character():
     units = utf16_units("🥺")
     raw = b"".join(unit.to_bytes(2, "little") for unit in units)
     assert raw.decode("utf-16-le") == "🥺"
+
+
+def test_has_non_bmp_flags_only_astral_chars():
+    assert has_non_bmp("晚安🥺") is True
+    assert has_non_bmp("晚安，好梦～") is False
+    assert has_non_bmp("") is False
 
 
 def test_post_char_posts_one_message_per_unit():
@@ -91,29 +195,112 @@ def test_post_char_without_a_window_posts_nothing():
     assert user32.posted == []
 
 
-def test_type_text_succeeds_for_a_message_with_an_emoji(monkeypatch):
+# ---------------------------------------------------------------- 通路选择
+
+
+def test_type_text_handles_bmp_text(monkeypatch):
     monkeypatch.setattr(uia_sender.time, "sleep", lambda *_: None)
     state = {"text": ""}
     sender = _sender(_TypingUser32(state))
     sender._input_text = lambda: state["text"]
     sender._clear_input = lambda: state.update(text="") or True
-    assert sender._type_text("这么晚还不睡，是要偷偷修仙嘛🥺") is True
-    assert state["text"] == "这么晚还不睡，是要偷偷修仙嘛🥺"
+    assert sender._type_text("这么晚还不睡，是要偷偷修仙嘛") is True
+    assert state["text"] == "这么晚还不睡，是要偷偷修仙嘛"
 
 
-def test_whole_codepoint_never_reaches_the_input_box(monkeypatch):
-    """回归护栏：整码点投递时回读必然不符，三次重打后判失败。"""
-    monkeypatch.setattr(uia_sender.time, "sleep", lambda *_: None)
-    monkeypatch.setattr(uia_sender, "utf16_units", lambda ch: (ord(ch),))
-    state = {"text": ""}
-    sender = _sender(_TypingUser32(state))
-    sender._input_text = lambda: state["text"]
-    sender._clear_input = lambda: state.update(text="") or True
-    assert sender._type_text("🥺") is False
+def test_enter_text_types_when_everything_is_bmp(monkeypatch):
+    typed = []
+    sender = _sender()
+    sender._type_text = lambda text: typed.append(text) or True
+    sender._paste_text = lambda *a, **k: pytest_fail("BMP 文本不该走粘贴")
+    assert sender._enter_text("晚安🥺"[:2]) is True  # 「晚安」两个 BMP 字符
+    assert typed == ["晚安"]
 
 
-def test_search_typing_uses_the_same_split(monkeypatch):
-    """搜索框输联系人名走同一个投递函数，emoji 群名同样能打进去。"""
+def test_enter_text_pastes_when_the_text_has_an_emoji():
+    pasted = []
+    sender = _sender()
+    sender._type_text = lambda text: pytest_fail("含 emoji 的正文不该逐字符投递")
+    sender._paste_text = lambda text, *a, **k: pasted.append(text) or True
+    assert sender._enter_text("晚安🥺") is True
+    assert pasted == ["晚安🥺"]
+
+
+def test_enter_text_clears_the_input_when_pasting_fails():
+    cleared = []
+    sender = _sender()
+    sender._paste_text = lambda *a, **k: False
+    sender._clear_input = lambda: cleared.append(True) or True
+    assert sender._enter_text("晚安🥺") is False
+    assert cleared == [True]
+
+
+def pytest_fail(message):
+    raise AssertionError(message)
+
+
+# ---------------------------------------------------------------- 粘贴
+
+
+def test_paste_text_copies_and_verifies():
+    copied = []
+    sender = _sender()
+    sender._copy_text_to_clipboard = lambda text: copied.append(text) or True
+    sender._paste_clipboard = lambda expect_image: True
+    sender._input_text = lambda: "晚安🥺"
+    assert sender._paste_text("晚安🥺") is True
+    assert copied == ["晚安🥺"]
+
+
+def test_paste_text_rejects_a_mismatch():
+    sender = _sender()
+    sender._copy_text_to_clipboard = lambda text: True
+    sender._paste_clipboard = lambda expect_image: True
+    sender._input_text = lambda: "晚安"
+    assert sender._paste_text("晚安🥺") is False
+
+
+def test_paste_text_gives_up_when_the_clipboard_copy_fails():
+    sender = _sender()
+    sender._copy_text_to_clipboard = lambda text: False
+    sender._paste_clipboard = lambda expect_image: pytest_fail("没写进剪贴板就不该粘贴")
+    assert sender._paste_text("晚安🥺") is False
+
+
+# ---------------------------------------------------------------- 剪贴板
+
+
+def test_copy_text_to_clipboard_writes_utf16(monkeypatch):
+    user32 = _FakeClipboardUser32()
+    kernel32 = _FakeKernel32()
+    _install_clipboard(monkeypatch, user32, kernel32)
+    assert _sender(user32)._copy_text_to_clipboard("晚安🥺") is True
+    assert _clipboard_text(user32, kernel32) == "晚安🥺"
+    assert kernel32.freed == [], "交给系统的句柄不能再释放"
+    assert user32.closed == 1
+
+
+def test_copy_text_to_clipboard_frees_memory_when_rejected(monkeypatch):
+    user32 = _FakeClipboardUser32(accept=False)
+    kernel32 = _FakeKernel32()
+    _install_clipboard(monkeypatch, user32, kernel32)
+    assert _sender(user32)._copy_text_to_clipboard("晚安🥺") is False
+    assert kernel32.freed == [1]
+
+
+def test_copy_text_to_clipboard_reports_a_busy_clipboard(monkeypatch):
+    user32 = _FakeClipboardUser32(open_ok=False)
+    kernel32 = _FakeKernel32()
+    _install_clipboard(monkeypatch, user32, kernel32)
+    assert _sender(user32)._copy_text_to_clipboard("晚安🥺") is False
+    assert kernel32.freed == [1]
+
+
+# ---------------------------------------------------------------- 搜索框
+
+
+def test_search_typing_reuses_the_same_posting(monkeypatch):
+    """搜索框输联系人名走同一个投递函数（非 BMP 字符微信收不下，未走粘贴）。"""
     monkeypatch.setattr(uia_sender.time, "sleep", lambda *_: None)
     state = {"text": ""}
     sender = _sender(_TypingUser32(state))
@@ -121,5 +308,5 @@ def test_search_typing_uses_the_same_split(monkeypatch):
     sender._post_click = lambda *a, **k: True
     sender._open_first_search_hit = lambda contact: False
     sender._leave_search = lambda: None
-    assert sender._search_and_select("群🥺") is False  # 没打开成功，但字符已按码元投递
-    assert state["text"] == "群🥺"
+    assert sender._search_and_select("群聊测试") is False  # 没打开成功，但字符已投递
+    assert state["text"] == "群聊测试"

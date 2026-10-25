@@ -12,9 +12,10 @@ uia_sender.py — 微信消息发送器
 - 开启后每条消息发完立刻把前台还给发送前的前台窗口（实测 3-11 毫秒），
   用户看到的是一次短暂切换，而不是前台被微信占住
 - 联系人切换优先点会话列表项，列表里没有时才退回顶部搜索框
-- 文本用 WM_CHAR 逐字符输入（中文与 emoji 都走这条路，emoji 按 UTF-16
-  代理项拆开投递；避免剪贴板与输入法带来的问题）
-- 图片/文件用剪贴板 + 伪造 Ctrl 键态的 Ctrl+V
+- 文本用 WM_CHAR 逐字符输入（中文走这条路最快，也不碰剪贴板）；正文里出现
+  U+FFFF 以上的字符（emoji）时改走剪贴板粘贴——WM_CHAR 的 wParam 只有一个
+  16 位码元，这种字符投进去会被微信输入框丢掉（代理项拆开投递也一样）
+- 图片/文件/含 emoji 的文本用剪贴板 + 伪造 Ctrl 键态的 Ctrl+V
 - 发送前回读输入框校验，发送后按会话摘要行确认；任一步不符即报失败
 - 不移动窗口、不改动窗口尺寸与位置、不改动置顶状态
 
@@ -63,15 +64,20 @@ KEYUP_LPARAM = 0xC0000001
 def utf16_units(ch: str) -> tuple[int, ...]:
     """把一个字符拆成 WM_CHAR 的 wParam 序列（UTF-16 码元）。
 
-    WM_CHAR 的 wParam 是一个 16 位码元，放不下 U+FFFF 以上的字符（emoji、
-    生僻字）。这类字符必须按 UTF-16 拆成高低代理项分两条消息投递：整码点发过去
-    微信收不下，字符会静默消失，回读校验一直不符，最终整条消息发送失败。
+    WM_CHAR 的 wParam 是一个 16 位码元，U+FFFF 以上的字符（emoji、生僻字）
+    得按 UTF-16 拆成高低代理项分两条消息投递。微信输入框连代理项也收不下
+    （实测），所以这类字符改走剪贴板粘贴：见 ``UiaSender._enter_text``。
     """
     code = ord(ch)
     if code <= 0xFFFF:
         return (code,)
     code -= 0x10000
     return (0xD800 + (code >> 10), 0xDC00 + (code & 0x3FF))
+
+
+def has_non_bmp(text: str) -> bool:
+    """文本里是否含 U+FFFF 以上的字符（emoji 这类字符 WM_CHAR 送不进去）。"""
+    return any(ord(ch) > 0xFFFF for ch in text)
 
 
 class BaseSender:
@@ -1233,6 +1239,8 @@ class UiaSender(BaseSender):
 
         输入法会扰动字符（实测输入 `t` 落到输入框里变成 `上`），所以打完必须
         回读比对；不符就清空重打，三次仍不符判定失败。
+
+        只适用于 BMP 字符：含 emoji 的正文由 :meth:`_enter_text` 改走粘贴。
         """
         for _ in range(3):
             for ch in text:
@@ -1244,6 +1252,20 @@ class UiaSender(BaseSender):
                 return True
             log.warning(f"输入框回读不符（期望 {text[:40]!r}，实得 {got[:40]!r}），清空重打")
             self._clear_input()
+        return False
+
+    def _enter_text(self, text: str) -> bool:
+        """把正文送进输入框，按内容挑通路（输入框此刻应为空）。
+
+        全 BMP 字符逐字符投 WM_CHAR；出现 emoji 这类 U+FFFF 以上的字符就改走
+        剪贴板粘贴——那种字符 WM_CHAR 根本传不进去（见 :func:`utf16_units`）。
+        """
+        if not has_non_bmp(text):
+            return self._type_text(text)
+        log.info("正文含 emoji，改用剪贴板粘贴投递")
+        if self._paste_text(text):
+            return True
+        self._clear_input()
         return False
 
     def _confirm_sent(self, contact: str, text: str, summary_before: str) -> bool:
@@ -1293,6 +1315,23 @@ class UiaSender(BaseSender):
         staged = self._input_text()
         return self.IMAGE_MARK in staged if expect_image else bool(staged)
 
+    def _paste_text(self, text: str, read=None) -> bool:
+        """把整段文本写进剪贴板再粘贴，并按原样回读校验。
+
+        `read` 指定从哪里回读（默认聊天输入框；搜索框传它自己的读取函数）。
+        调用前输入框应当是空的，失败时由调用方决定怎么收场。
+        """
+        read = read or self._input_text
+        if not self._copy_text_to_clipboard(text):
+            return False
+        if not self._paste_clipboard(expect_image=False):
+            return False
+        got = read()
+        if got == text:
+            return True
+        log.warning(f"粘贴后回读不符（期望 {text[:40]!r}，实得 {got[:40]!r}）")
+        return False
+
     def _send_text_impl(self, contact: str, text: str) -> bool:
         """发送文本消息。"""
         with self._lock:
@@ -1315,7 +1354,7 @@ class UiaSender(BaseSender):
                     log.error(f"[UIA失败] {contact}: {self._last_error or '输入框未能清空'}")
                     return False
                 self._release_foreground()
-                if not self._type_text(text):
+                if not self._enter_text(text):
                     self._clear_input()
                     self._last_error = "文字未能完整进到输入框，本次发送已取消"
                     log.error(f"[UIA失败] {contact}: {self._last_error}")
@@ -1749,6 +1788,48 @@ class UiaSender(BaseSender):
             log.error(f"PowerShell 退出码 {proc.returncode}: {err[:200]}")
             return False
         return True
+
+    def _copy_text_to_clipboard(self, text: str) -> bool:
+        """把文本放进系统剪贴板的 CF_UNICODETEXT。
+
+        含 emoji 的正文只能靠粘贴送出，代价是占用系统剪贴板——与发图片、发文件
+        相同。句柄一旦交给系统就不能再释放，失败路径上才由本函数自己释放。
+        """
+        GMEM_MOVEABLE = 0x0002
+        CF_UNICODETEXT = 13
+        user32 = self._user32_inst()
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GlobalAlloc.restype = ctypes.c_void_p
+        kernel32.GlobalLock.restype = ctypes.c_void_p
+        user32.SetClipboardData.argtypes = [wintypes.UINT, ctypes.c_void_p]
+
+        data = text.encode("utf-16-le") + b"\x00\x00"
+        handle = kernel32.GlobalAlloc(GMEM_MOVEABLE, len(data))
+        if not handle:
+            log.error("写剪贴板失败：GlobalAlloc 没有拿到内存")
+            return False
+        moved = False
+        try:
+            ptr = kernel32.GlobalLock(handle)
+            if not ptr:
+                log.error("写剪贴板失败：GlobalLock 失败")
+                return False
+            ctypes.memmove(ptr, data, len(data))
+            kernel32.GlobalUnlock(handle)
+            if not user32.OpenClipboard(None):
+                log.error("写剪贴板失败：剪贴板被别的程序占着")
+                return False
+            try:
+                user32.EmptyClipboard()
+                moved = bool(user32.SetClipboardData(CF_UNICODETEXT, handle))
+            finally:
+                user32.CloseClipboard()
+            if not moved:
+                log.error("写剪贴板失败：SetClipboardData 被拒绝")
+            return moved
+        finally:
+            if not moved:
+                kernel32.GlobalFree(handle)
 
     def _copy_file_to_clipboard(self, path: str) -> bool:
         """把文件放进剪贴板的 CF_HDROP 格式（即「拖入文件」语义）。

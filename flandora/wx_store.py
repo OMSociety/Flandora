@@ -671,6 +671,9 @@ class WxStore:
 
     # ---------- 图片 ----------
 
+    #: 能直接交给客户端看图的格式。``wxgf`` 是微信私有的 HEVC 容器，不在其列。
+    _PLAIN_IMAGE_EXTS = frozenset({"jpg", "png", "gif", "webp"})
+
     def image_ready(self) -> bool:
         """图片能否解码。
 
@@ -678,6 +681,52 @@ class WxStore:
         真正必需的是 AES 密钥——那个只能从进程内存取，取不到就解不了。
         """
         return bool(self.image_key)
+
+    def _plain_image(self, main: str):
+        """主文件取不到像素时，去旁边找一份能直接看的明文副本。
+
+        微信把同一张图存了好几份：``<md5>_h.dat`` 是高清原图（明文 JPEG/PNG），
+        ``<md5>_t.dat`` 是缩略图，预览还可能落在 cache 树的
+        ``Message/<会话目录>/Bubble/<md5>_b.dat``。这些副本用同一把密钥就能解，
+        主文件（``wxgf`` 这类容器）反而需要专门的解码器。
+
+        返回 ``(路径, 解码结果)``；一份都解不出来时返回 None。
+        """
+        for cand in self._image_variants(main):
+            try:
+                img = wx_image.decode_file(cand, self.image_key, self._ensure_xor_key())
+            except (wx_image.ImageDecodeError, WxStoreError) as e:
+                log.debug("副本 %s 解不开：%s", os.path.basename(cand), e)
+                continue
+            if img.ext in self._PLAIN_IMAGE_EXTS:
+                return cand, img
+        return None
+
+    def _image_variants(self, main: str) -> list[str]:
+        """主文件旁边可能存在的明文副本，按画质从高到低排。"""
+        stem = main[: -len(".dat")] if main.lower().endswith(".dat") else main
+        out: list[str] = []
+        high = f"{stem}_h.dat"
+        if os.path.isfile(high):
+            out.append(high)
+        out.extend(self._cache_previews(stem))
+        thumb = f"{stem}_t.dat"
+        if os.path.isfile(thumb):
+            out.append(thumb)
+        return out
+
+    def _cache_previews(self, stem: str) -> list[str]:
+        """cache 树里的预览图。
+
+        主文件在 ``msg/attach/<会话目录>/<月>/Img/`` 下，预览在
+        ``cache/<月>/Message/<会话目录>/Bubble/`` 下：会话目录同名，月份两边都用
+        通配，免得跟着微信改目录写法。
+        """
+        img_dir = os.path.dirname(stem)
+        talker = os.path.basename(os.path.dirname(os.path.dirname(img_dir)))
+        name = os.path.basename(stem) + "_b.dat"
+        pattern = os.path.join(self.data_dir, "cache", "*", "Message", talker, "Bubble", name)
+        return sorted(p for p in glob.glob(pattern) if os.path.isfile(p))
 
     def _resolve_image(self, msg_md5: str, local_id: int = 0) -> str:
         """按 md5 找到对应的 .dat 文件路径。
@@ -763,6 +812,9 @@ class WxStore:
         解出来的图片放在工作目录的 `images/` 下，按 md5 命名并缓存：同一张图
         只解一次。密钥缺失时返回 None 而不是抛错——图片解不出来不该让整条消息
         处理失败，上层会退回占位符。
+
+        主文件是 ``wxgf``（微信私有的 HEVC 容器）时像素取不到，改用旁边的明文
+        副本，见 :meth:`_plain_image`。
         """
         if not self.image_ready():
             return None
@@ -777,6 +829,14 @@ class WxStore:
         except (wx_image.ImageDecodeError, WxStoreError) as e:
             log.warning("图片解码失败（md5=%s）：%s", msg_md5, e)
             return None
+        if img.ext not in self._PLAIN_IMAGE_EXTS:
+            container = img.ext
+            found = self._plain_image(src)
+            if found is None:
+                log.warning("图片主文件是 %s、旁边没有可读副本（md5=%s）", container, msg_md5)
+                return None
+            src, img = found
+            log.info("图片主文件是 %s，改用旁边的明文副本 %s", container, os.path.basename(src))
         os.makedirs(self._image_dir, exist_ok=True)
         out = os.path.join(self._image_dir, f"{os.path.basename(src)}.{img.ext}")
         if not os.path.isfile(out):

@@ -931,11 +931,25 @@ def _members_roster(group_handle: str) -> list:
 
 
 def _contact_info(handle: str) -> dict | None:
-    """在线程池中执行：按 wxid 在通讯录里找一个人，找不到返回 None。"""
+    """在线程池中执行：按 wxid 在通讯录里找一个人，找不到返回 None。
+
+    ``contacts()`` 会把自己过滤掉（自己不是自己的好友），但客户端会按 ``self_id``
+    查机器人自己的资料：群里 @ 机器人时它就要用这个昵称补 ``at`` 段，答不上来就
+    把整段丢掉。所以这里对自己单独认一次。
+    """
     for c in _contacts_roster():
         if c["username"] == handle:
             return c
+    if handle and handle == ob_ids.SELF.wxid():
+        return {"username": handle, "nick_name": _self_nickname(), "remark": ""}
     return None
+
+
+def _self_nickname() -> str:
+    """机器人自己的昵称：本地库里那一行优先，其次是登录信息里学到的。"""
+    store = _store()
+    nick = store.self_nickname() if store is not None else ""
+    return nick or ob_ids.SELF.nickname()
 
 
 def _group_object(g: dict) -> dict:

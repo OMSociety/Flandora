@@ -205,6 +205,23 @@ def test_stranger_info_reads_contact(tmp_path, monkeypatch, isolated_ids):
     assert resp["data"]["sex"] == "unknown"
 
 
+def test_stranger_info_answers_for_the_bot_itself(tmp_path, monkeypatch, isolated_ids):
+    """自己不算好友，但按 self_id 查自己必须答得上（群里 @ 机器人时要补昵称）。"""
+    _wire(monkeypatch, _make_store(tmp_path))
+    ob_ids.SELF.set_wxid("wxid_self")
+    uid = ob_ids.contact_id("wxid_self")
+
+    resp = _call({"action": "get_stranger_info", "params": {"user_id": uid}, "echo": "s2"})
+    assert resp["status"] == "ok"
+    assert resp["data"]["user_id"] == uid
+    assert resp["data"]["nickname"] == "我"
+
+    # 用原始标识问也一样
+    by_handle = _call({"action": "get_stranger_info", "params": {"user_id": "wxid_self"}})
+    assert by_handle["status"] == "ok"
+    assert by_handle["data"]["nickname"] == "我"
+
+
 def test_unknown_ids_report_not_found(tmp_path, monkeypatch, isolated_ids):
     _wire(monkeypatch, _make_store(tmp_path))
     # 没经过 ID 层分配过的整数：映射表里查不到

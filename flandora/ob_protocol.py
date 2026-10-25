@@ -31,7 +31,7 @@ try:
 except Exception:
     monitor = None
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 
 def _failure(message: str, retcode: int, echo=None) -> dict:
@@ -44,6 +44,28 @@ def _failure(message: str, retcode: int, echo=None) -> dict:
     if echo not in (None, ""):
         resp["echo"] = echo
     return resp
+
+
+def _resolve_self_name() -> str:
+    """机器人显示名：优先本地通讯录里自己那行的微信昵称，读不到退回 wechat-bot。
+
+    识别成功就缓存进 state._self_name（账号切换时已被清空，会按新账号重识别）；
+    失败不缓存，下次调用再试。昵称的读库与缓存由 bridge 实例统一负责，
+    与 @ 识别、防自回环用的是同一个来源。
+    """
+    if state._self_name:
+        return state._self_name
+    bridge = state.bridge_instance
+    resolver = getattr(bridge, "self_nickname", None)
+    if callable(resolver):
+        try:
+            nick = resolver() or ""
+        except Exception:  # noqa: BLE001
+            nick = ""
+        if nick:
+            state._self_name = nick
+            return nick
+    return "wechat-bot"
 
 
 def _record_out(contact, is_group, text):
@@ -261,10 +283,10 @@ async def _handle_ob_api(data: dict):
                     except Exception as e:
                         log.warning(f"[OB11] base64 图片解码失败: {e}")
                 else:
-                    if config.ASTRBOT_ATTACHMENTS:
+                    if config.CLIENT_ATTACHMENTS:
                         candidates = [
-                            os.path.join(config.ASTRBOT_ATTACHMENTS, file_val),
-                            os.path.join(config.ASTRBOT_ATTACHMENTS, "wechat_images", file_val),
+                            os.path.join(config.CLIENT_ATTACHMENTS, file_val),
+                            os.path.join(config.CLIENT_ATTACHMENTS, "wechat_images", file_val),
                         ]
                         for p in candidates:
                             if os.path.exists(p):
@@ -309,10 +331,10 @@ async def _handle_ob_api(data: dict):
                     except Exception as e:
                         log.warning(f"[OB11] base64 表情解码失败: {e}")
                 else:
-                    if config.ASTRBOT_ATTACHMENTS:
+                    if config.CLIENT_ATTACHMENTS:
                         candidates = [
-                            os.path.join(config.ASTRBOT_ATTACHMENTS, file_val),
-                            os.path.join(config.ASTRBOT_ATTACHMENTS, "wechat_images", file_val),
+                            os.path.join(config.CLIENT_ATTACHMENTS, file_val),
+                            os.path.join(config.CLIENT_ATTACHMENTS, "wechat_images", file_val),
                         ]
                         for p in candidates:
                             if os.path.exists(p):
@@ -468,7 +490,7 @@ async def _handle_ob_api(data: dict):
     elif action == "get_login_info":
         resp_data["data"] = {
             "user_id": state._self_id_int,
-            "nickname": state._self_name or "wechat-bot",
+            "nickname": _resolve_self_name(),
         }
 
     elif action == "get_version_info":
@@ -792,7 +814,7 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
                 continue
             if m.get("outgoing"):
                 uid = state._self_id_int
-                nick = config.SELF_NAME or "bot"
+                nick = _resolve_self_name()
             else:
                 sender_wxid = m.get("sender") or ""
                 uid = ob_ids.contact_id(sender_wxid) if sender_wxid else 0

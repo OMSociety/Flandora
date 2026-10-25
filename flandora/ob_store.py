@@ -35,7 +35,7 @@ import time
 
 from . import config
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS messages (
@@ -198,6 +198,48 @@ class MessageStore:
         with self._lock:
             row = self._con.execute("SELECT COUNT(*) AS n FROM messages").fetchone()
         return int(row["n"])
+
+    def stats(self) -> dict:
+        """行数与时间跨度（秒）。老库可能为空，这时两端都是 0。"""
+        with self._lock:
+            row = self._con.execute(
+                "SELECT COUNT(*) AS n, MIN(time) AS oldest, MAX(time) AS newest FROM messages"
+            ).fetchone()
+        return {
+            "rows": int(row["n"] or 0),
+            "oldest": int(row["oldest"] or 0),
+            "newest": int(row["newest"] or 0),
+        }
+
+    # ---------- 清理（只由使用者显式触发，见模块说明） ----------
+
+    def prune_before(self, cutoff: float) -> int:
+        """删掉 ``time`` 早于 ``cutoff``（秒）的存档，返回删掉的条数。
+
+        删掉的 ``message_id`` 就再也答不出原文了——客户端的撤回与引用会拿到空，
+        所以这个动作必须由人明确按下来，不放进任何后台任务。
+        注意删完文件不会自己变小，要回收空间得再调用 ``vacuum()``。
+        """
+        with self._lock:
+            cur = self._con.execute("DELETE FROM messages WHERE time < ?", (int(cutoff),))
+            self._con.commit()
+            return int(cur.rowcount or 0)
+
+    def clear(self) -> int:
+        """清空整个存档，返回删掉的条数。"""
+        with self._lock:
+            cur = self._con.execute("DELETE FROM messages")
+            self._con.commit()
+            return int(cur.rowcount or 0)
+
+    def vacuum(self) -> None:
+        """重写库文件，把删掉的行腾出来的页还给系统。
+
+        VACUUM 要拿排他锁并整库重写，大库上会卡一下，所以单独一个动作。
+        """
+        with self._lock:
+            self._con.commit()
+            self._con.execute("VACUUM")
 
     def close(self):
         with self._lock:

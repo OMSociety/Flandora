@@ -14,7 +14,7 @@ import logging
 import threading
 import time
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 
 class EventBus:
@@ -76,7 +76,7 @@ bus = EventBus()
 
 
 class LogRelay(logging.Handler):
-    """把 ob11-bridge 日志记录转发到事件总线。"""
+    """把 flandora 日志记录转发到事件总线。"""
 
     def __init__(self):
         super().__init__()
@@ -104,12 +104,12 @@ _relay_attached = False
 def attach_log_relay():
     """给桥接相关 logger 挂上实时转发（幂等）。
 
-    ob11-bridge：桥接主逻辑；flandora-uia：UIA 发送器（uia_sender）。
+    flandora：桥接主逻辑；flandora-uia：UIA 发送器（uia_sender）。
     """
     global _relay_attached
     if _relay_attached:
         return
-    for name in ("ob11-bridge", "flandora-uia"):
+    for name in ("flandora", "flandora-uia"):
         target = logging.getLogger(name)
         if not any(isinstance(h, LogRelay) for h in target.handlers):
             target.addHandler(LogRelay())

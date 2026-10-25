@@ -12,7 +12,9 @@
 一段时间里。向导就是那个掐表的角色。
 
 状态存在模块级单例上（与 ``wx_desktop.manager()`` 同一个风格）：WebUI 的接口是
-无状态的 HTTP 请求，谁都可以随时来问进度，因此状态不能挂在请求上。
+无状态的 HTTP 请求，谁都可以随时来问进度，因此状态不能挂在请求上。步骤的完成态
+只在内存里；进程重启时按盘上的口令/密钥文件把已完成的两步标回来（见
+``Wizard._restore_key_steps``），这样钥匙还在就不会退回「重新取钥」。
 """
 
 from __future__ import annotations
@@ -32,7 +34,7 @@ from typing import Optional
 from . import config, wechat_account, wx_crypto, wx_image, wx_image_key, wx_source
 from .wxkey.store import KeyStore, KeyStoreError
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 STEP_DISCLAIMER = "disclaimer"
 STEP_DBKEY = "dbkey"
@@ -107,6 +109,7 @@ class Wizard:
             # 进程重启后要接着上次的进度走，所以确认过就得把这一步标成已完成，
             # 否则 current 会一直停回第一步。
             self._steps[STEP_DISCLAIMER] = StepState(state="ok", message="已确认免责声明")
+        self._restore_key_steps()
 
         self._proc: Optional[subprocess.Popen] = None
         self._proc_thread: Optional[threading.Thread] = None
@@ -116,6 +119,28 @@ class Wizard:
         self._img_thread: Optional[threading.Thread] = None
 
         self._verify_thread: Optional[threading.Thread] = None
+
+    def _restore_key_steps(self) -> None:
+        """按盘上密钥把已完成的两步标回来。
+
+        步骤状态是内存态，口令与图片密钥才是落盘事实。进程重启后如果不做这层
+        推导，current 会退回「取数据库口令」，页面看上去就像钥匙丢了要重取一遍。
+        密钥属于别的登录账号时不标——向导停回对应那一步，由页面上「账号不一致」
+        的警告解释原因。
+        """
+        db_info = self.dbkey_status()
+        if db_info["present"] and (db_info["matches_current"] or not db_info["current_wxid"]):
+            self._steps[STEP_DBKEY] = StepState(
+                state="ok",
+                message="已取到口令（账号 {}，微信 {}）".format(
+                    db_info["wxid"] or "未知", db_info["dll_version"] or "未知版本"
+                ),
+            )
+        img_info = self.imagekey_status()
+        if img_info["present"] and (img_info["matches_current"] or not img_info["current_wxid"]):
+            xor = img_info.get("xor_key")
+            suffix = f"（XOR 0x{int(xor):02x}）" if xor is not None else ""
+            self._steps[STEP_IMAGEKEY] = StepState(state="ok", message=f"已取到图片密钥{suffix}")
 
     # ================================================================
     # 路径

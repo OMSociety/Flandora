@@ -22,7 +22,7 @@ import logging
 import sys
 from ctypes import wintypes
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 # 带 Global\ 前缀 → 作用域是整个机器而不是当前登录会话，多用户切换也拦得住。
 # 名字与项目对外名一致，改名时要一起改。

@@ -27,7 +27,7 @@ from urllib.parse import parse_qs, urlparse
 import websockets
 from websockets.asyncio.server import serve
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 KIND_WS_SERVER = "ws_server"
 KIND_HTTP_SERVER = "http_server"
@@ -135,8 +135,8 @@ def normalize_nodes(raw) -> list[dict]:
     return nodes
 
 
-def legacy_node(host: str, port: int, token: str) -> dict:
-    """没有 ``ob_networks`` 时，按旧的单入口配置造一个 WS 服务端。"""
+def default_node(host: str, port: int, token: str) -> dict:
+    """没有 ``ob_networks`` 时，按通用设置里的 host/port/token 造一个 WS 服务端。"""
     return normalize_node(
         {
             "type": KIND_WS_SERVER,
@@ -628,13 +628,7 @@ def _http_authorized(node: dict, request) -> bool:
 
 
 def _query_param(request, key: str) -> str:
-    """取握手请求的 query 参数：新版协议栈只有 path，旧版有 query 映射。"""
-    legacy = getattr(request, "query", None)
-    if legacy:
-        try:
-            return str(dict(legacy).get(key, ""))
-        except Exception:  # noqa: BLE001
-            return ""
+    """取握手请求的 query 参数（请求对象只给出 path，查询串从 path 里解析）。"""
     path = getattr(request, "path", "") or ""
     values = parse_qs(urlparse(path).query).get(key) or [""]
     return values[0]

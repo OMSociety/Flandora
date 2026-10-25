@@ -89,8 +89,8 @@ def test_normalize_nodes_rejects_duplicates_and_non_list():
     assert ob_network.normalize_nodes(None) == []
 
 
-def test_legacy_node_keeps_old_config_working():
-    node = ob_network.legacy_node("127.0.0.1", 7999, "t0ken")
+def test_default_node_carries_the_general_settings():
+    node = ob_network.default_node("127.0.0.1", 7999, "t0ken")
     assert node["type"] == "ws_server"
     assert node["port"] == 7999
     assert node["access_token"] == "t0ken"

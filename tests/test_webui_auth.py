@@ -252,10 +252,10 @@ def test_password_set_flag_from_browser_is_ignored(saved, monkeypatch):
     monkeypatch.setattr(config, "WEBUI_PASSWORD", hashed)
 
     webui_app.api_put_config(
-        {"webui_password_set": True, "buffer_seconds": 3}, webui_app.Response()
+        {"webui_password_set": True, "group_name_map": {"g@chatroom": "群名"}}, webui_app.Response()
     )
 
     # 面板只报「设没设」，不该把哈希当配置项写回去
     assert "webui_password" not in saved["cfg"]
     assert config.WEBUI_PASSWORD == hashed
-    assert saved["cfg"]["buffer_seconds"] == 3
+    assert saved["cfg"]["group_name_map"] == {"g@chatroom": "群名"}

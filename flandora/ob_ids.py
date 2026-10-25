@@ -26,7 +26,7 @@ import time
 
 from . import config
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 # OneBot 的 ID 是有符号 32 位整数，这里只用正数区间，0 留给「未设置」
 ID_MIN = 1

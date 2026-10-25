@@ -8,10 +8,10 @@ import Dashboard from './pages/Dashboard.vue'
 import Messages from './pages/Messages.vue'
 import Logs from './pages/Logs.vue'
 import Config from './pages/Config.vue'
+import Nodes from './pages/Nodes.vue'
 import Desktop from './pages/Desktop.vue'
 import Wizard from './pages/Wizard.vue'
-import TestSend from './pages/TestSend.vue'
-import Debug from './pages/Debug.vue'
+import DevPanel from './pages/DevPanel.vue'
 import Login from './pages/Login.vue'
 import { get } from './api'
 import { wsState, connectWS, on } from './ws'
@@ -25,7 +25,7 @@ const drawerOverlayId = Symbol('drawer')
 const tab = ref(pageFromHash(window.location.hash))
 const drawerOpen = ref(false)
 const SIDEBAR_KEY = 'flandora-sidebar'
-const sidebarCollapsed = ref((localStorage.getItem(SIDEBAR_KEY) || localStorage.getItem('webot-sidebar')) === 'collapsed')
+const sidebarCollapsed = ref(localStorage.getItem(SIDEBAR_KEY) === 'collapsed')
 const { theme, toggleTheme } = useTheme()
 const page = computed(() => PAGE_MAP[tab.value])
 const wsLabel = computed(() => ({ connected: '实时连接正常', reconnecting: '正在重新连接', closed: '实时连接已断开' }[wsState.state] || '正在连接服务'))
@@ -34,6 +34,10 @@ const wsClass = computed(() => ({ connected: 'connected', reconnecting: 'reconne
 function changePage(id) {
   tab.value = id
   window.location.hash = `/${id}`
+  drawerOpen.value = false
+}
+function openAbout() {
+  window.location.hash = '/config?section=about'
   drawerOpen.value = false
 }
 function onHashChange(event) {
@@ -130,12 +134,12 @@ onBeforeUnmount(() => {
   <Login v-if="auth.checked && !authed" @logged-in="onLoggedIn" />
   <div v-else-if="auth.checked" class="app-shell">
     <a href="#main-content" class="skip-link" @click="skipToMain">跳到主要内容</a>
-    <aside class="desktop-sidebar" :class="{ collapsed: sidebarCollapsed }"><Sidebar :active="tab" :collapsed="sidebarCollapsed" @change="changePage" /></aside>
+    <aside class="desktop-sidebar" :class="{ collapsed: sidebarCollapsed }"><Sidebar :active="tab" :collapsed="sidebarCollapsed" @change="changePage" @about="openAbout" /></aside>
     <Teleport to="body">
       <div v-if="drawerOpen" class="drawer-mask" @click.self="closeDrawer">
         <aside ref="drawerEl" class="mobile-nav" role="dialog" aria-modal="true" aria-label="控制台导航">
           <button class="icon-btn drawer-close" aria-label="关闭导航" @click="closeDrawer"><AppIcon name="X" /></button>
-          <Sidebar :active="tab" @change="changePage" />
+          <Sidebar :active="tab" @change="changePage" @about="openAbout" />
         </aside>
       </div>
     </Teleport>
@@ -156,12 +160,12 @@ onBeforeUnmount(() => {
       <main id="main-content" class="page" tabindex="-1">
         <Dashboard v-if="tab === 'dashboard'" />
         <Messages v-else-if="tab === 'messages'" />
+        <Nodes v-else-if="tab === 'nodes'" />
         <Logs v-else-if="tab === 'logs'" />
         <Config v-else-if="tab === 'config'" />
         <Desktop v-else-if="tab === 'desktop'" />
         <Wizard v-else-if="tab === 'wizard'" />
-        <TestSend v-else-if="tab === 'test'" />
-        <Debug v-else-if="tab === 'debug'" />
+        <DevPanel v-else-if="tab === 'dev'" />
       </main>
     </div>
     <ToastContainer />

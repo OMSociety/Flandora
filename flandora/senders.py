@@ -15,7 +15,7 @@ try:
 except Exception:
     config = None
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 
 def create_sender():
@@ -23,7 +23,7 @@ def create_sender():
     allow_steal = bool(getattr(config, "ALLOW_FOREGROUND_STEAL", False))
     desktop = ""
     if bool(getattr(config, "ISOLATED_DESKTOP", False)):
-        desktop = getattr(config, "ISOLATED_DESKTOP_NAME", "WeBotSandbox")
+        desktop = getattr(config, "ISOLATED_DESKTOP_NAME", "FlandoraSandbox")
         log.info(
             "使用 UIA 发送消息（隔离桌面 %s：微信在前台切换只发生在该桌面，不会打扰用户的桌面）",
             desktop,

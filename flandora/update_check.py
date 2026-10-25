@@ -16,7 +16,7 @@ import xml.etree.ElementTree as ET
 
 from . import __version__
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 # 仓库 slug 与项目名是两回事：这里必须指向真实存在的 slug，
 # 否则订阅会一直 404、检查更新形同静默失败。

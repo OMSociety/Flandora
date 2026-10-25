@@ -9,7 +9,7 @@
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='12' fill='%2307c160'/%3E%3Crect x='8.25' y='10.75' width='15.5' height='11.5' rx='5.2' fill='white'/%3E%3Cpath d='M13.45 22.25L10.25 25.35L10.25 21.15Z' fill='white'/%3E%3Cg opacity='.72'%3E%3Crect x='16.75' y='14.75' width='15' height='11.5' rx='5.2' fill='white'/%3E%3Cpath d='M26.55 26.25L28.75 29.25L28.75 25.75Z' fill='white'/%3E%3C/g%3E%3C/svg%3E" />
     <script>
       try {
-        const saved = localStorage.getItem('flandora-theme') || localStorage.getItem('webot-theme')
+        const saved = localStorage.getItem('flandora-theme')
         const theme = saved === 'dark' || saved === 'light' ? saved : (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
         document.documentElement.dataset.theme = theme
         document.documentElement.style.colorScheme = theme

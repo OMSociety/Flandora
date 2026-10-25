@@ -16,7 +16,7 @@ from .ob_server import _run_ob_server
 from .senders import create_sender
 from .single_instance import acquire_mutex
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 
 # ============ 启动 / 停止 ============
@@ -66,24 +66,8 @@ def _stop_bridge():
     with state.run_lock:
         state.running = False
 
-    # 关闭 WebSocket 服务端连接
-    _ws = state._ob_ws
-    _loop = state._ob_ws_loop
-    if _ws:
-        try:
-            if _loop and _loop.is_running():
-                import asyncio
-
-                asyncio.run_coroutine_threadsafe(_ws.close(), _loop)
-                log.info("[Web] WebSocket 连接已关闭")
-        except Exception as e:
-            log.warning(f"[Web] 关闭 WebSocket 异常: {e}")
-
-    state._ob_ws_ready.clear()
-
-    # 重置启动标记，让下次 start 能重新拉起 WebSocket 服务端线程
+    # 重置启动标记，让下次 start 能重新拉起网络入口线程
     state.ob_server_started = False
-    state._ob_ws_loop = None
 
     log.info("[Web] 已停止")
 
@@ -121,10 +105,28 @@ def _bridge_loop():
 
 
 def start_web():
+    """起面板。地址与 HTTPS 都在这里定，拦下来的两种情况也只在这里报。"""
+    from .webui import auth
     from .webui.app import run as run_webui
 
-    log.info(f"WebUI: http://127.0.0.1:{config.WEB_PORT}")
-    run_webui("127.0.0.1", config.WEB_PORT)
+    if config.WEB_BIND_HOST == "0.0.0.0" and not auth.enabled():
+        # 手里有 config.json 就能改回来，所以这里宁可不起也不能裸奔。
+        log.error("[WebUI] 面板绑在所有网卡上却没设登录密码，拒绝启动（局域网里等于把面板公开）")
+        log.error("[WebUI] 先在面板里设密码，或把 config.json 的 web_bind_host 改回 127.0.0.1")
+        return False
+    problem = config.webui_tls_problem()
+    if problem:
+        # 不静默降级成 HTTP：那样界面写着 HTTPS，实际明文。
+        log.error(f"[WebUI] 已启用 HTTPS 但证书不可用：{problem}")
+        log.error("[WebUI] 修正证书路径，或把 config.json 的 webui_tls 改成 false 后重启")
+        return False
+    if config.WEB_BIND_HOST_ERROR:
+        log.warning(f"[WebUI] {config.WEB_BIND_HOST_ERROR}")
+    scheme = "https" if config.WEBUI_TLS else "http"
+    scope = "监听所有网卡" if config.WEB_BIND_HOST == "0.0.0.0" else "仅本机"
+    log.info(f"WebUI: {scheme}://{config.WEB_BIND_HOST}:{config.WEB_PORT}（{scope}）")
+    run_webui(config.WEB_BIND_HOST, config.WEB_PORT)
+    return True
 
 
 def _auto_open_webui():
@@ -133,7 +135,8 @@ def _auto_open_webui():
     try:
         import webbrowser
 
-        webbrowser.open(f"http://127.0.0.1:{config.WEB_PORT}")
+        scheme = "https" if config.WEBUI_TLS else "http"
+        webbrowser.open(f"{scheme}://127.0.0.1:{config.WEB_PORT}")
         log.info("[WebUI] 已自动打开浏览器")
     except Exception as e:
         log.warning(f"[WebUI] 自动打开浏览器失败: {e}")
@@ -149,13 +152,13 @@ def _rebuild_for_account(old, new):
 
     密钥、联系人映射、机器人身份都绑定在登录账号上。切换账号后继续沿用旧值，
     消息会从错的身份发给错的会话，因此这里刻意清空映射——下游拿不到映射会
-    如实报发送失败（ob_protocol 已不再返回假成功），而不是退回上一个账号的
+    如实报发送失败（ob_protocol 返回真实结果），而不是退回上一个账号的
     联系人。
     """
     old_wxid = old.wxid if old else "（未识别）"
     state._ob_id_to_contact.clear()
     state._self_id_int = ob_ids.contact_id(new.wxid)
-    state._self_name = config.SELF_NAME or new.wxid
+    state._self_name = ""  # 昵称缓存作废：下次 get_login_info 时按新账号的本地库重新识别
     log.warning("=" * 64)
     log.warning(f"[账号] 微信登录账号已切换：{old_wxid} -> {new.wxid}")
     log.warning(f"[账号] 新账号数据目录：{new.data_dir or '（未找到）'}")
@@ -185,9 +188,15 @@ def start_account_watch():
 
 
 def main() -> int:
-    # 从 config 初始化 state 中需要计算的值
-    state._self_id_int = ob_ids.contact_id(config.BOT_WXID or "wechat_bot")
-    state._self_name = config.SELF_NAME
+    # 机器人身份全自动：取当前登录的微信账号，无需任何配置。
+    # 检测不到（微信没登录/没运行）时用 wechat_bot 占位，微信登录后重启桥接即自动识别。
+    acct = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
+    state._self_id_int = ob_ids.contact_id(acct.wxid if acct is not None else "wechat_bot")
+    state._self_name = ""
+    if acct is not None:
+        log.info(f"[身份] 机器人账号：{acct.wxid}")
+    else:
+        log.warning("[身份] 未检测到登录的微信账号，机器人身份暂用 wechat_bot 占位")
 
     PID_FILE = os.path.join(config.data_dir(), "flandora.pid")
 
@@ -225,7 +234,9 @@ def main() -> int:
         _start_bridge()
         if getattr(config, "WEBUI_AUTO_OPEN", True):
             threading.Thread(target=_auto_open_webui, daemon=True).start()
-        start_web()
+        if start_web() is False:
+            # 面板被安全闸拦下来了：原因已写进日志，但 OneBot 服务得继续跑。
+            threading.Event().wait()
     except (Exception, SystemExit) as e:
         # 主线程靠 uvicorn 常驻。WebUI 起不来（端口被占、发布包缺少 webui 模块等）时
         # 不能让进程退出：OneBot 服务端跑在后台线程里，主线程一退，桥梁就断了。

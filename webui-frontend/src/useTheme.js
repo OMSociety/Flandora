@@ -1,19 +1,11 @@
 import { ref, watch } from 'vue'
 
-// 键名带项目旧名后缀的是上一个版本的键：读一次迁移过来，保住用户已选的主题。
+// 用户手动选过主题就存下来，没存过则跟随系统。
 const THEME_KEY = 'flandora-theme'
-const LEGACY_THEME_KEY = 'webot-theme'
 
 function readStoredTheme() {
   const current = localStorage.getItem(THEME_KEY)
-  if (current === 'dark' || current === 'light') return current
-  const legacy = localStorage.getItem(LEGACY_THEME_KEY)
-  if (legacy === 'dark' || legacy === 'light') {
-    localStorage.setItem(THEME_KEY, legacy)
-    localStorage.removeItem(LEGACY_THEME_KEY)
-    return legacy
-  }
-  return ''
+  return current === 'dark' || current === 'light' ? current : ''
 }
 
 const media = window.matchMedia('(prefers-color-scheme: dark)')

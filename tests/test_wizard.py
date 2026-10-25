@@ -160,6 +160,57 @@ def main() -> int:
         print("  ok   未取到口令时，校验步骤明确判失败并说清原因")
         checks += 1
 
+        # ===== 重启推导：密钥在盘上，新实例直接把已完成的两步标回来 =====
+        import types
+
+        from flandora.wxkey.store import KeyStore
+
+        original_current = wizard_mod.wechat_account.current_account
+        KeyStore(wiz.key_path()).save(bytes(range(32)), wxid="wxid_restart", dll_version="9.9.9")
+        with open(wiz.image_key_path(), "w", encoding="utf-8") as fh:
+            json.dump({"wxid": "wxid_restart", "xor_key": 17, "aes_key": "00" * 32}, fh)
+        try:
+            # 密钥账号与当前登录的一致：前两步直接标回已完成，停在校验
+            wizard_mod.wechat_account.current_account = lambda root=None: types.SimpleNamespace(
+                wxid="wxid_restart", data_dir=""
+            )
+            st = wizard_mod.Wizard().status()
+            assert st["steps"][wizard_mod.STEP_DBKEY]["state"] == "ok", st["steps"]
+            assert st["steps"][wizard_mod.STEP_IMAGEKEY]["state"] == "ok", st["steps"]
+            assert st["current"] == wizard_mod.STEP_VERIFY, st["current"]
+            print("  ok   重启后：盘上密钥把前两步标回已完成，当前步骤停在校验")
+            checks += 1
+
+            # 微信未登录、判不了账号归属时同样标回，由页面账号行展示密钥属于谁
+            wizard_mod.wechat_account.current_account = lambda root=None: None
+            assert wizard_mod.Wizard().status()["current"] == wizard_mod.STEP_VERIFY
+            print("  ok   未登录微信时无法判归属，也按就绪处理")
+            checks += 1
+
+            # 只有口令时停在第三步
+            os.remove(wiz.image_key_path())
+            st = wizard_mod.Wizard().status()
+            assert st["steps"][wizard_mod.STEP_DBKEY]["state"] == "ok", st["steps"]
+            assert st["steps"][wizard_mod.STEP_IMAGEKEY]["state"] == "idle", st["steps"]
+            assert st["current"] == wizard_mod.STEP_IMAGEKEY, st["current"]
+            print("  ok   只有数据库口令时，当前步骤停在图片密钥")
+            checks += 1
+
+            # 密钥属于别的账号时不标完成，向导停回取口令那一步
+            wizard_mod.wechat_account.current_account = lambda root=None: types.SimpleNamespace(
+                wxid="wxid_other", data_dir=""
+            )
+            st = wizard_mod.Wizard().status()
+            assert st["db_key"]["present"] is True and st["db_key"]["matches_current"] is False, st[
+                "db_key"
+            ]
+            assert st["steps"][wizard_mod.STEP_DBKEY]["state"] == "idle", st["steps"]
+            assert st["current"] == wizard_mod.STEP_DBKEY, st["current"]
+            print("  ok   密钥与当前登录账号不一致时不标完成，停回取数据库口令")
+            checks += 1
+        finally:
+            wizard_mod.wechat_account.current_account = original_current
+
     print(f"\n{checks}/{checks} 通过")
     return 0
 

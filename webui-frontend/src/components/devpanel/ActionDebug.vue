@@ -1,9 +1,9 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { get, post } from '../api'
-import { toast } from '../store'
-import AppIcon from '../components/AppIcon.vue'
-import { segmentsToCq } from '../utils/cq'
+import { get, post } from '../../api'
+import { toast } from '../../store'
+import AppIcon from '../AppIcon.vue'
+import { segmentsToCq } from '../../utils/cq'
 
 const catalog = ref({ categories: [], actions: [] })
 const category = ref('')
@@ -134,15 +134,7 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="debug-page">
-    <div class="page-intro">
-      <div>
-        <h2>把整条动作链路摊开来看。</h2>
-        <p>动作目录、参数、真实响应与最近推送的事件都在这里，调不通时先在这儿复现一遍。</p>
-      </div>
-      <span class="badge badge-gray">本进程直调，不经过网络</span>
-    </div>
-
+  <div class="debug-panel">
     <div class="debug-layout">
       <section class="card invoke-card">
         <div class="section-head">
@@ -287,7 +279,7 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.debug-page { display:flex; flex-direction:column; gap:16px; }
+.debug-panel { display:flex; flex-direction:column; gap:16px; }
 .debug-layout { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); gap:16px; align-items:start; max-width:1180px; }
 .invoke-card, .builder-card, .events-card { padding:20px; }
 .section-head > .app-icon { color:var(--primary-deep); }

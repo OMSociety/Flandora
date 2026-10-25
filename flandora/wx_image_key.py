@@ -29,7 +29,7 @@ from typing import Callable, Optional
 
 from . import wechat_account, wx_image
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 PROCESS_VM_READ = 0x0010
 PROCESS_QUERY_INFORMATION = 0x0400

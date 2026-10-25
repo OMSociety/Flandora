@@ -133,7 +133,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); if (tickTimer) clearInt
 
 <template>
   <div class="wiz-page">
-    <div class="page-intro"><div><h2>四步，打通微信消息通道。</h2><p>获取数据库口令与图片密钥，让桥接安全读取你的本地消息。</p></div><span class="local-only"><AppIcon name="ShieldCheck" :size="15" />密钥仅保存在本机</span></div>
+    <div class="page-tools"><span class="local-only"><AppIcon name="ShieldCheck" :size="15" />密钥仅保存在本机</span></div>
     <ol class="wizard-steps" aria-label="取钥进度"><li v-for="(item, i) in steps" :key="item.name" :class="{ current: currentIndex === i, complete: item.state === 'ok' || currentIndex > i }"><span class="step-marker"><AppIcon v-if="item.state === 'ok' || currentIndex > i" name="Check" :size="13" /><template v-else>{{ i + 1 }}</template></span><div><strong>{{ item.name }}</strong><small>{{ item.detail }}</small></div></li></ol>
 
     <div class="wizard-layout">

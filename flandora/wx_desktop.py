@@ -174,7 +174,7 @@ def quit_default_desktop_wechat() -> int:
 class IsolatedDesktop:
     """一个独立的 Desktop，微信可在其上运行而不打扰默认桌面。"""
 
-    def __init__(self, name: str = "WeBotSandbox") -> None:
+    def __init__(self, name: str = "FlandoraSandbox") -> None:
         self.name = name
         self.handle = None
         self.pid = 0
@@ -549,9 +549,9 @@ class DesktopManager:
         try:
             from . import config
 
-            return getattr(config, "ISOLATED_DESKTOP_NAME", "WeBotSandbox")
+            return getattr(config, "ISOLATED_DESKTOP_NAME", "FlandoraSandbox")
         except Exception:
-            return "WeBotSandbox"
+            return "FlandoraSandbox"
 
     def start(self) -> bool:
         """按需启动隔离实例。已启动则直接返回 True（幂等）。

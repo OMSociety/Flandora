@@ -17,7 +17,7 @@ from . import config, wechat_account, wx_crypto, wx_store
 from .wx_store import WxStoreError
 from .wxkey.store import KeyStore, KeyStoreError
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 MAX_BATCH = 200  # 单次轮询每个会话最多取多少条
 PRIME_LIMIT = 500  # 计算回填起点时最多往前看多少条

@@ -1,7 +1,7 @@
 # AGENTS.md — Flandora Agent 宪法
 
 适用范围：本仓库全部目录；子目录另有 AGENTS.md 时，以更接近改动点的那份为准。
-最后更新：2026-10-24
+最后更新：2026-10-25
 
 ## 项目概览
 
@@ -11,7 +11,7 @@
 技术栈：
 
 - Python 3.13（仓库根 `.venv`，已 gitignore），运行期依赖见 `flandora/requirements.txt`
-- FastAPI + uvicorn：控制面板 `http://127.0.0.1:8766`
+- FastAPI + uvicorn：控制面板 `http://127.0.0.1:4950`
 - websockets 16–17：OneBot v11 服务端（默认 7999，以 `data/config.json` 为准）
 - Vue 3.5 + Vite 6（`webui-frontend/`），图标 `@lucide/vue`
 - pytest（后端）、Playwright（前端），PyInstaller + Inno Setup（打包）
@@ -59,7 +59,7 @@ run_bridge.py -> flandora.main
 
 - 允许：`webui/app.py` 调用任意后端模块；`bridge_core` 调用收件源与发送器。
 - 禁止：窗口与桌面操作散落到 `wx_desktop` / `uia_sender` 之外。原因：微信跑在独立桌面
-  `WeBotSandbox` 上，只有持有该桌面句柄的进程能绑定窗口，旁路实现会静默失败。
+  `FlandoraSandbox` 上，只有持有该桌面句柄的进程能绑定窗口，旁路实现会静默失败。
 - 禁止：前端直接接触微信或本地库。原因：浏览器侧只有 `/api/*` 一个入口，绕过它就拿不到密钥与桌面句柄。
 
 ## 关键目录
@@ -102,9 +102,10 @@ run_bridge.py -> flandora.main
 
 ## 禁止操作
 
-- 禁止改 `flandora/wxkey/store.py` 的 `ENTROPY`，也禁止改 `data/` 下密钥与口令的文件名。
-  原因：它们参与 DPAPI 派生，属于落盘格式，改动会让所有既有安装的数据库口令与图片密钥失效，
-  用户必须重新取钥。确要改格式先提升 `FORMAT_VERSION` 并写迁移。
+- 禁止改 `data/` 下密钥与口令的文件名。原因：用户按名字找它们，改名等于把已取的口令丢掉。
+- 改 `flandora/wxkey/store.py` 的 `ENTROPY`（当前 `b"Flandora/wxkey/v1"`，`FORMAT_VERSION` 为 2）
+  或口令文件的字段布局时，必须同时抬 `FORMAT_VERSION`。原因：熵参与 DPAPI 派生，属于落盘格式，
+  不抬版本只会让既有文件报 DPAPI 错误码，看不出要重新取钥。
 - 禁止在桥接里决定「要不要回」（@ 过滤、拼上下文、表情学习、图片描述都别做）。原因：那属于 OneBot 客户端职责，越界会让客户端收不到群里的消息。
   群消息一律全量上报，用 `is_mentioned` 如实标记是否被 @。
 - 禁止静默结束用户自己桌面上的微信。原因：那可能是用户正在用的账号。挡住隔离桌面时，
@@ -160,7 +161,7 @@ run_bridge.py -> flandora.main
 | `flandora/wx_desktop.py` | 曾在全系统扫 `Weixin.exe` 进程，把本程序留在沙箱里的实例误判成用户自己开的微信，导致重启后画面 404、发送绑不上窗口 | 跑 `tests/test_wx_desktop.py`；重启后确认日志出现「已接管隔离桌面上正在运行的微信」 |
 | `flandora/uia_sender.py` | 输入框有清不掉的残留时会取消发送，避免把旧草稿当新消息发出去 | 跑 `tests/test_clear_input.py`；失败原因在 `sender._last_error` |
 | `flandora/bridge_core.py` | 群消息语义（全量上报、`is_mentioned`、群内按发言人分 user_id）是设计约定 | 跑 `tests/test_group_passthrough.py` |
-| `flandora/wxkey/store.py` | DPAPI 额外熵参与派生，改动即作废已存口令 | 见「禁止操作」第一条 |
+| `flandora/wxkey/store.py` | DPAPI 额外熵参与派生，改动即作废已存口令 | 改熵值或字段布局须同时抬 `FORMAT_VERSION`；见「禁止操作」 |
 | `webui-frontend/src/pages/Wizard.vue` | 2 秒轮询曾把免责声明勾选冲回 false，第一步永远无法完成 | 跑 Playwright 用例 `wizard keeps the disclaimer tick across status polling` |
 | `flandora/webui/dist` 与 `build.py` | `ensure_webui_dist()` 见 `index.html` 已存在就跳过构建，容易把旧界面打进安装包 | 打包前手动 `npm run build` |
 

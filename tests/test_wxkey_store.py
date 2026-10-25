@@ -18,8 +18,8 @@ from flandora.wxkey.store import KeyStore, KeyStoreError
 
 
 def test_entropy_is_frozen_format_constant():
-    """熵值必须保持首发版本的值，改它等于让所有既有密文失效。"""
-    assert store_mod.ENTROPY == b"WeBot-Bridge/wxkey/v1", (
+    """熵值是落盘格式的一部分，改它等于让所有既有密文失效。"""
+    assert store_mod.ENTROPY == b"Flandora/wxkey/v1", (
         f"DPAPI 额外熵被改动，既有用户的口令文件将无法解密：当前为 {store_mod.ENTROPY!r}"
     )
 

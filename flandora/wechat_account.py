@@ -23,7 +23,7 @@ import time
 from dataclasses import dataclass
 from typing import Callable, List, Optional
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 # ============ 路径约定 ============
 

@@ -53,7 +53,7 @@ def test_bad_node_is_refused_before_writing(saved):
     assert config.OB_NETWORKS == []
 
 
-def test_empty_list_falls_back_to_legacy_entry(saved):
+def test_empty_list_falls_back_to_the_general_settings_entry(saved):
     rest = webui_app.api_put_config({"ob_networks": []}, webui_app.Response())
 
     assert rest["ok"] is True
@@ -64,7 +64,7 @@ def test_empty_list_falls_back_to_legacy_entry(saved):
 
 
 def test_bad_entry_keeps_previous_nodes(saved, monkeypatch):
-    monkeypatch.setattr(config, "OB_NETWORKS", [ob_network.legacy_node("127.0.0.1", 7999, "")])
+    monkeypatch.setattr(config, "OB_NETWORKS", [ob_network.default_node("127.0.0.1", 7999, "")])
 
     rest = webui_app.api_put_config(
         {"ob_networks": [dict(NODE, role="god-mode")]}, webui_app.Response()

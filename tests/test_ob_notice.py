@@ -101,16 +101,6 @@ def bridge(monkeypatch):
     return instance
 
 
-def _drain(bridge):
-    with bridge.buffer_lock:
-        entries = list(bridge.pending_buffers.values())
-        bridge.pending_buffers.clear()
-    for entry in entries:
-        timer = entry.get("timer")
-        if timer is not None:
-            timer.cancel()
-
-
 def _group_msg(**extra):
     data = {
         "sessionId": GROUP,
@@ -129,22 +119,22 @@ def test_revoke_is_pushed_as_notice_not_message(isolated_ids, bridge, monkeypatc
     pushed = []
     monkeypatch.setattr(bridge_core, "push_event", pushed.append)
 
-    bridge.add_to_buffer(
+    bridge.emit_message(
         _group_msg(content='"豹豹包" 撤回了一条消息', revoke={"nickname": "豹豹包"})
     )
 
     assert len(pushed) == 1, pushed
     assert pushed[0]["notice_type"] == "group_recall"
     assert pushed[0]["user_id"] > 0
-    # 撤回不进聊天缓冲：它不是一条要转发的消息
-    assert bridge.pending_buffers == {}
+    # 撤回不进消息流：它不是一条要转发的消息
+    assert [ev for ev in pushed if ev.get("post_type") == "message"] == []
 
 
 def test_poke_is_pushed_as_notice(isolated_ids, bridge, monkeypatch):
     pushed = []
     monkeypatch.setattr(bridge_core, "push_event", pushed.append)
 
-    bridge.add_to_buffer(
+    bridge.emit_message(
         _group_msg(
             content="豹豹包 拍了拍 芙兰朵露",
             pat={"from": "wxid_baobao", "to": "wxid_flandore", "group": GROUP, "suffix": ""},
@@ -158,14 +148,12 @@ def test_poke_is_pushed_as_notice(isolated_ids, bridge, monkeypatch):
     assert pushed[0]["user_id"] != pushed[0]["target_id"]
 
 
-def test_unknown_system_message_still_goes_to_buffer(isolated_ids, bridge, monkeypatch):
+def test_unknown_system_message_is_still_reported(isolated_ids, bridge, monkeypatch):
     pushed = []
     monkeypatch.setattr(bridge_core, "push_event", pushed.append)
 
-    try:
-        bridge.add_to_buffer(_group_msg(content="有人加入了群聊"))
+    bridge.emit_message(_group_msg(content="有人加入了群聊"))
 
-        assert pushed == []
-        assert len(bridge.pending_buffers) == 1
-    finally:
-        _drain(bridge)
+    assert len(pushed) == 1, pushed
+    assert pushed[0]["post_type"] == "message"
+    assert pushed[0]["raw_message"] == "有人加入了群聊"

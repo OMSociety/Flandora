@@ -22,12 +22,13 @@ from typing import Optional
 
 log = logging.getLogger("wxkey.store")
 
-FORMAT_VERSION = 1
+#: 口令文件的落盘格式版本。DPAPI 额外熵与字段布局都属于格式的一部分：动过就要抬版本，
+#: 既有文件会以「版本不符，请重新取钥」退出，而不是丢出一个读不懂的 DPAPI 错误码。
+FORMAT_VERSION = 2
 #: DPAPI 的「额外熵」：与密文一起参与派生，文件被换到别的用途会解不开。
 #:
-#: 这个值属于落盘格式的一部分，不是品牌文案：改动它会让所有已保存的密文失效，
-#: 用户必须重新取钥。项目改名时刻意保持原值，就是为了不让既有安装丢口令。
-ENTROPY = b"WeBot-Bridge/wxkey/v1"
+#: 这个值属于落盘格式的一部分：改动它会让本机已保存的密文解不开，必须重新取钥。
+ENTROPY = b"Flandora/wxkey/v1"
 
 
 class KeyStoreError(Exception):

@@ -32,7 +32,7 @@ import time
 
 from . import wechat_account, wx_crypto, wx_image
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
@@ -388,6 +388,31 @@ class WxStore:
         except sqlite3.Error as e:
             log.debug("读取联系人失败：%s", e)
             return {}
+        finally:
+            con.close()
+
+    def self_nickname(self) -> str:
+        """当前登录账号自己的微信昵称（contact 表里 username == my_wxid 那一行）。
+
+        读不到（表结构变化、行不存在等）返回空串，由调用方决定兜底。
+        """
+        if not self.my_wxid:
+            return ""
+        con = self._con("contact.db")
+        try:
+            cols = [r[1] for r in con.execute("PRAGMA table_info(contact)")]
+            pick = [c for c in ("nick_name", "username") if c in cols]
+            if not pick:
+                return ""
+            row = con.execute(
+                f"SELECT {', '.join(pick)} FROM contact WHERE username = ?", (self.my_wxid,)
+            ).fetchone()
+            if not row:
+                return ""
+            return ((dict(zip(pick, row))).get("nick_name") or "").strip()
+        except sqlite3.Error as e:
+            log.debug("读取自己的昵称失败：%s", e)
+            return ""
         finally:
             con.close()
 

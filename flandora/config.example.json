@@ -1,13 +1,10 @@
 {
     "_comment": "Flandora 配置。首次启动会把这份示例复制成 config.json，把下面的示例值改成你的真实值即可，之后也可以在 WebUI 里改。",
-    "bot_nicknames": [
-        "机器人微信昵称"
-    ],
-    "bot_wxid": "机器人自己的wxid_xxx",
-    "self_name": "wechat-bot",
-    "_comment_buffer_seconds": "同一个人连续发消息时，等多少秒把几条合并成一次事件再推给客户端。默认 5 秒。",
-    "buffer_seconds": 5,
-    "web_port": 8766,
+    "web_port": 4950,
+    "web_bind_host": "127.0.0.1",
+    "_comment_web_bind_host": "面板监听地址。127.0.0.1 = 只有本机能打开（默认）；0.0.0.0 = 局域网里其它机器也能打开，此时必须先设面板密码，否则谁都能改这份配置。改这里需要重启桥接。",
+    "webui_tls": false,
+    "_comment_webui_tls": "面板是否走 HTTPS。开启前要先把证书与私钥装好（在 WebUI 的「安全与服务」里粘贴 PEM），或在这里填 webui_tls_cert_file / webui_tls_key_file 指定已有的 PEM 文件。开启后证书加载不了时面板不会启动，也不会偷偷退回 HTTP。改这里需要重启桥接。",
     "webui_auto_open": true,
     "webui_password": "",
     "_comment_webui_password": "面板登录密码的 PBKDF2 哈希，由 WebUI 保存时写入；留空 = 不校验（本机任何进程都能打开面板）。不要在这里手填明文，面板认不出明文会当成没设密码。",
@@ -34,8 +31,8 @@
     "_comment_ob_message_format": "事件里 message 字段的格式：array = 消息段数组（多数客户端用这个），string = CQ 码字符串。raw_message 始终是 CQ 码字符串。发送方向两种都收，另外可以用 auto_escape 把字符串按纯文本发。",
     "ob_heartbeat_seconds": 30,
     "_comment_ob_heartbeat_seconds": "心跳间隔（秒），0 = 不发心跳，可用 5–3600。连上时会先推一条 lifecycle(connect)，之后按这个间隔推 meta_event/heartbeat，桥接停止时推 lifecycle(disable)。改这里需要重启桥接。",
-    "astrbot_attachments": "",
-    "_comment_astrbot_attachments": "发送方向的附件目录：客户端发来的图片、文件如果只给了文件名，就到这个目录下找（也找它的 wechat_images 子目录）。留空 = 只接受绝对路径或 base64。",
+    "client_attachments": "",
+    "_comment_client_attachments": "发送方向的附件目录：客户端发来的图片、文件如果只给了文件名，就到这个目录下找（也找它的 wechat_images 子目录）。留空 = 只接受绝对路径或 base64。",
     "wechat_hwnd": 0,
     "_comment_wechat_hwnd": "多开微信时指定机器人所在窗口的句柄，0 = 自动取第一个微信窗口。微信重启后句柄会变，需要在 WebUI 里重新绑定。",
     "wechat_files_root": "",
@@ -44,7 +41,7 @@
     "_comment_allow_foreground_steal": "是否允许发送消息时把微信窗口提到前台。默认 false：此时发送功能整体不可用（带失败的日志说明），微信不会被任何窗口消息打扰。设为 true 后发送可用，代价是每条消息发出时前台会短暂切到微信，发完立刻切回原来的窗口（实测切回耗时 3-11 毫秒）。微信只要收到投递进来的鼠标或键盘消息就会升到前台，发送文本、图片、文件都一样，所以这个开关管的是整个发送通道，不是只影响图片。开了 isolated_desktop 之后这个开关不再需要——那种模式下前台切换只发生在另一个桌面上。",
     "isolated_desktop": true,
     "_comment_isolated_desktop": "让微信跑在一张独立的 Windows 桌面上，这样向它投递输入时切换的前台是那张桌面的，用户自己的桌面完全不受打扰——发送通道因此可以长期开着。这是默认值。前提是微信必须由本程序启动（Windows 上微信单实例互斥，用户自己先开了微信时隔离实例只会停在登录页）；隔离桌面用户看不见，首次登录要在 WebUI 里看实况截图、用手机扫码或确认完成；发送期间微信不再显示在用户屏幕上（这正是目的）。设为 false 则变成另一种形态：微信由用户自己启动，发送时它会短暂到前台、发完归还。",
-    "isolated_desktop_name": "WeBotSandbox",
+    "isolated_desktop_name": "FlandoraSandbox",
     "_comment_isolated_desktop_name": "隔离桌面的名字，一般不用改。改它的唯一理由是要同时跑多份互不干扰的实例。",
     "wechat_exe": "",
     "_comment_wechat_exe": "微信主程序路径（Weixin.exe）。留空 = 自动探测常见安装位置。装到不常见的位置时手填完整路径，例如 D:\\\\Program Files\\\\Tencent\\\\Weixin\\\\Weixin.exe。",
@@ -59,5 +56,9 @@
     "wx_backfill_seconds": 0,
     "_comment_wx_backfill_seconds": "首次启动时把多少秒内的历史消息也收进来。0 = 只收启动之后的新消息（不会把旧聊天记录灌给机器人）。",
     "wx_poll_seconds": 1.0,
-    "_comment_wx_poll_seconds": "轮询本地库的间隔（秒）。默认 1 秒，新消息通常在这个延迟内被发现。"
+    "_comment_wx_poll_seconds": "轮询本地库的间隔（秒）。默认 1 秒，新消息通常在这个延迟内被发现。",
+    "log_max_mb": 8,
+    "_comment_log_max_mb": "单份日志的上限（1–1024 MB）。写满就轮转成 flandora.log.1，旧的依次后退。留空或删掉按 8 MB 处理。在 WebUI 的「存储」里改即时生效，不必重启。",
+    "log_backup_count": 5,
+    "_comment_log_backup_count": "轮转后保留几份历史日志（1–20）。总占用上限约为「单份上限 ×（保留份数 + 1）」。在 WebUI 的「存储」里改即时生效。"
 }

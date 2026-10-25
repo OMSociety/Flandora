@@ -75,7 +75,7 @@ def main() -> int:
     checks += 1
 
     # ---------- 2. 没有实例时的安全边界 ----------
-    desk = wx_desktop.IsolatedDesktop("WeBotTestNoOpen")
+    desk = wx_desktop.IsolatedDesktop("FlandoraTestNoOpen")
     assert desk.windows() == [], "未 open 时不应有窗口，也不应报错"
     print("  ok   未打开的桌面 windows() 返回空")
     checks += 1
@@ -102,11 +102,11 @@ def main() -> int:
     checks += 1
 
     # ---------- 3. 配置接通 ----------
-    d, config = with_cfg(isolated_desktop=True, isolated_desktop_name="WeBotTestDesk")
+    d, config = with_cfg(isolated_desktop=True, isolated_desktop_name="FlandoraTestDesk")
     try:
         mgr = wx_desktop.DesktopManager()
         assert mgr.enabled() is True, "config 里开了隔离桌面，enabled() 应为 True"
-        assert mgr.desktop_name() == "WeBotTestDesk", mgr.desktop_name()
+        assert mgr.desktop_name() == "FlandoraTestDesk", mgr.desktop_name()
         print("  ok   配置开关与桌面名接通")
         checks += 1
 
@@ -116,7 +116,7 @@ def main() -> int:
         assert st["logged_in"] is False, st
         assert st["state"] == "absent", st
         assert st["width"] == 0 and st["height"] == 0, st
-        assert st["desktop"] == "WeBotTestDesk", st
+        assert st["desktop"] == "FlandoraTestDesk", st
         print("  ok   未启动时 status() 语义正确（absent / 不报已登录）")
         checks += 1
 

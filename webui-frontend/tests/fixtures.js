@@ -4,13 +4,21 @@ export const statusFixture = {
   uptime_sec: 7384,
   pid: 4280,
   version: '1.0.0',
-  web_port: 8766,
+  web_port: 4950,
   send_method: 'uia',
-  ob: { host: '127.0.0.1', port: 7999, connected: true, clients: 1 },
+  ob: {
+    host: '127.0.0.1',
+    port: 7999,
+    connected: true,
+    clients: 1,
+    nodes: [{ type: 'ws_server', name: 'default', state: 'listening', connections: 1, error: '', role: 'universal' }],
+  },
   inbound: { source: 'local', ready: true },
   counters: { recv: 128, pushed: 116, sent: 42, dropped: 0 },
   window: { title: '微信', pid: 6132, hwnd: 123456 },
   window_locked: false,
+  self: { wxid: 'wxid_demouser10001', nickname: '芙兰朵露' },
+  webui: { host: '127.0.0.1', port: 4950, tls: false, tls_cert_set: false, tls_key_set: false, password_set: false },
 }
 
 export const updateFixture = {
@@ -24,13 +32,13 @@ export const updateFixture = {
 }
 
 export const configFixture = {
-  bot_nicknames: ['芙兰朵露', '兰兰露'],
-  bot_wxid: '',
-  self_name: '芙兰朵露',
   send_method: 'uia',
-  buffer_seconds: 5,
-  web_port: 8766,
+  web_port: 4950,
+  web_bind_host: '127.0.0.1',
+  webui_tls: false,
   webui_password_set: false,
+  log_max_mb: 8,
+  log_backup_count: 5,
   ob_server_host: '127.0.0.1',
   ob_server_port: 7999,
   ob_server_token: '',
@@ -49,9 +57,40 @@ export const configFixture = {
       message_format: '',
     },
   ],
-  astrbot_ob_url: '',
-  astrbot_attachments: '',
+  client_attachments: 'D:/wechat/attachments',
   group_name_map: { 'example@chatroom': '测试群聊' },
+}
+
+export const storageFixture = {
+  ok: true,
+  data_dir: 'D:/WorkSpace/Github/Flandora/data',
+  total_bytes: 4773947,
+  total_files: 44,
+  other_bytes: 9659,
+  logs: {
+    path: 'D:/WorkSpace/Github/Flandora/data/flandora.log',
+    bytes: 128426,
+    rotated_bytes: 20480,
+    rotated_files: 2,
+    files: [
+      { name: 'flandora.log.1', bytes: 10240 },
+      { name: 'flandora.log.2', bytes: 10240 },
+    ],
+    max_mb: 8,
+    backup_count: 5,
+  },
+  messages: {
+    path: 'D:/WorkSpace/Github/Flandora/data/messages.db',
+    bytes: 2691072,
+    rows: 32,
+    oldest: 1792832171,
+    newest: 1792837968,
+  },
+  msg_ids: { path: 'D:/WorkSpace/Github/Flandora/data/msg_ids.db', bytes: 20480, rows: 35 },
+  images: { bytes: 490710, files: 20 },
+  wx_cache: { bytes: 1433600, files: 15, root: 'D:/WorkSpace/Github/Flandora/data/wx_cache' },
+  updates: { path: 'D:/WorkSpace/Github/Flandora/data/updates', bytes: 0, files: 0 },
+  generated_at: '2026-10-24 22:43:45',
 }
 
 export const wizardFixture = {
@@ -75,7 +114,7 @@ export async function mockApi(page, options = {}) {
   const requests = []
   const desktopStatus = {
     ok: true, enabled: true, running: false, logged_in: false,
-    state: 'absent', desktop: 'WeBotSandbox', exe_found: true, error: '',
+    state: 'absent', desktop: 'FlandoraSandbox', exe_found: true, error: '',
     ...(options.desktopStatus || {}),
   }
   // options.auth = { password } 时模拟「面板设了密码」：登录前所有接口都回 401。
@@ -101,7 +140,49 @@ export async function mockApi(page, options = {}) {
     if (url.pathname === '/api/update/status') return json(updateFixture)
     if (url.pathname === '/api/update/check') return json({ ok: true, current: '1.0.0', newer: false, latest: { version: '1.0.0', tag: 'v1.0.0', url: 'https://github.com/OMSociety/Flandora/releases', asset: '' } })
     if (url.pathname === '/api/config' && request.method() === 'GET') return json(configFixture)
-    if (url.pathname === '/api/config' && request.method() === 'PUT') return json({ ok: true, restart_required: ['ob_server_port'] })
+    if (url.pathname === '/api/config' && request.method() === 'PUT') return json({ ok: true, restart_required: ['ob_server_port', 'ob_networks'] })
+    if (url.pathname === '/api/config/backup') {
+      return json({
+        version: '1.0.0',
+        created_at: '2026-10-24T22:40:00',
+        include_sensitive: url.searchParams.get('include_sensitive') === '1',
+        excluded_sensitive: url.searchParams.get('include_sensitive') === '1' ? [] : ['webui_password', 'ob_server_token'],
+        config: { web_port: 4950, group_name_map: { 'example@chatroom': '测试群聊' } },
+      })
+    }
+    if (url.pathname === '/api/config/restore') {
+      return json({
+        ok: true,
+        restored: ['web_port'],
+        restart_required: ['web_port'],
+        password_restored: false,
+        backup_path: 'D:/WorkSpace/Github/Flandora/data/config.json.bak-20261024-224000',
+      })
+    }
+    if (url.pathname === '/api/storage') return json(storageFixture)
+    if (url.pathname === '/api/storage/clean') {
+      const target = (request.postDataJSON() || {}).target
+      const results = {
+        images: { removed_files: 20, freed_bytes: 490710 },
+        wx_cache: {
+          removed_files: 15, freed_bytes: 1433600,
+          note: '桥接当前没有运行中的收件源，下次启动时会重新解密',
+        },
+        old_logs: { removed_files: 1, freed_bytes: 10240 },
+        updates: { removed_files: 0, freed_bytes: 0 },
+        rotate_log: { removed_files: 0, freed_bytes: 0, note: '已换成新的一份，历史份按保留份数留存' },
+      }
+      return json({ ok: true, target, ...(results[target] || {}) })
+    }
+    if (url.pathname === '/api/storage/messages') {
+      const body = request.postDataJSON() || {}
+      const answers = {
+        prune: { removed_rows: 4, rows: 28, days: body.days },
+        clear: { removed_rows: 32, rows: 0 },
+        vacuum: { bytes_before: 2691072, bytes_after: 12288, freed_bytes: 2678784 },
+      }
+      return json({ ok: true, action: body.action, ...(answers[body.action] || {}) })
+    }
     if (url.pathname === '/api/stats') return json({
       counters: { recv: 128, pushed: 116, sent: 42 },
       hourly: Array.from({ length: 24 }, (_, i) => ({ hour: String(i), in: (i * 7) % 21, out: (i * 3) % 12 })),

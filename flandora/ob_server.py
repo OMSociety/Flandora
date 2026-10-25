@@ -8,9 +8,9 @@
 import asyncio
 import logging
 
-from . import config, ob_network, state
+from . import config, ob_network
 
-log = logging.getLogger("ob11-bridge")
+log = logging.getLogger("flandora")
 
 
 def _run_ob_server():
@@ -30,7 +30,6 @@ def _run_ob_server():
             loop.close()
         except Exception:  # noqa: BLE001
             pass
-        state._ob_ws_ready.clear()
 
 
 async def _ob_server_main():
@@ -38,7 +37,6 @@ async def _ob_server_main():
     mgr = ob_network.manager()
     mgr.configure(config.OB_NETWORKS)
     mgr.start(asyncio.get_running_loop())
-    state._ob_ws_ready.set()
     for node in mgr.nodes():
         log.info(
             f"[OB11] 入口 {node['name']}（{node['type']}，role={node['role']}，"

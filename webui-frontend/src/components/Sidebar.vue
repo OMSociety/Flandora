@@ -1,10 +1,17 @@
 <script setup>
+import { ref, onMounted } from 'vue'
 import AppIcon from './AppIcon.vue'
 import BrandMark from './BrandMark.vue'
 import { NAV_GROUPS } from '../navigation'
+import { get } from '../api'
 
 defineProps({ active: { type: String, required: true }, collapsed: { type: Boolean, default: false } })
-const emit = defineEmits(['change'])
+const emit = defineEmits(['change', 'about'])
+const version = ref('')
+onMounted(async () => {
+  const res = await get('/api/status')
+  if (res.ok && res.data && res.data.version) version.value = res.data.version
+})
 </script>
 
 <template>
@@ -13,13 +20,13 @@ const emit = defineEmits(['change'])
       <BrandMark :size="36" />
       <div class="brand-copy">
         <strong>Flandora</strong>
-        <span>OneBot v11 适配器</span>
+        <span>OneBot v11 微信适配器</span>
       </div>
     </div>
 
     <nav class="nav" aria-label="控制台导航">
-      <section v-for="group in NAV_GROUPS" :key="group.label" class="nav-group">
-        <h2>{{ group.label }}</h2>
+      <section v-for="group in NAV_GROUPS" :key="group.label || 'standalone'" class="nav-group">
+        <h2 v-if="group.label">{{ group.label }}</h2>
         <button
           v-for="item in group.items" :key="item.id" type="button"
           class="nav-item" :class="{ active: active === item.id }"
@@ -36,7 +43,8 @@ const emit = defineEmits(['change'])
 
     <div class="sidebar-foot">
       <span class="local-dot"></span>
-      <div class="foot-copy"><strong>本地服务</strong><span>OneBot v11 · v1.0</span></div>
+      <div class="foot-copy"><strong>本地服务</strong><span>Flandora<template v-if="version"> · v{{ version }}</template></span></div>
+      <button type="button" class="foot-about" aria-label="查看版本与更新" title="查看版本与更新" @click="emit('about')"><AppIcon name="Info" :size="15" /></button>
     </div>
   </div>
 </template>
@@ -69,6 +77,8 @@ const emit = defineEmits(['change'])
 .foot-copy { display:flex; flex-direction:column; gap:2px; white-space:nowrap; }
 .foot-copy strong { font-size:12px; font-weight:500; }
 .foot-copy span { font-size:10px; color:var(--muted); }
+.foot-about { display:grid; place-items:center; width:26px; height:26px; margin-left:auto; margin-right:4px; padding:0; border:0; border-radius:7px; background:transparent; color:var(--muted); cursor:pointer; transition:background .18s ease,color .18s ease; }
+.foot-about:hover { background:var(--sidebar-hover); color:var(--primary-deep); }
 .collapsed .nav-item { height:46px; justify-content:center; padding:0; transition:background .18s ease,color .18s ease; }
 .collapsed .nav-copy, .collapsed .foot-copy, .collapsed .brand-copy { display:none; }
 .collapsed .nav-icon { width:auto; }
@@ -79,5 +89,6 @@ const emit = defineEmits(['change'])
 .collapsed .nav-item.active::before { display:none; }
 .collapsed .sidebar-foot { min-height:56px; padding:10px 0; margin-inline:12px; justify-content:center; }
 .collapsed .local-dot { margin-left:0; }
+.collapsed .foot-about { margin:0; }
 @media(max-width:767px) { .sidebar-inner { width:260px; } .brand { height:76px; } .nav { padding-inline:14px; } }
 </style>

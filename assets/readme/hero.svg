@@ -66,6 +66,6 @@
 
   <g class="mono" fill="#3f5a4c" font-size="11" letter-spacing="1.4">
     <text x="202" y="300">ONE EVENT IN · ONE EVENT OUT</text>
-    <text x="1128" y="300" text-anchor="end">127.0.0.1:7999 · 127.0.0.1:8766</text>
+    <text x="1128" y="300" text-anchor="end">127.0.0.1:7999 · 127.0.0.1:4950</text>
   </g>
 </svg>

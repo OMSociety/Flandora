@@ -6,7 +6,7 @@
 功能：
 - 启动 / 停止 / 重启 bridge（运行 main.py）
 - 实时显示：进程状态、端口 7999 连接数、最近日志
-- 打开 WebUI（http://127.0.0.1:8766）
+- 打开 WebUI（http://127.0.0.1:4950）
 - 打开日志目录
 - 开机自启动（写 Startup 快捷方式）
 """
@@ -92,12 +92,6 @@ if IS_WINDOWS:
     STARTUP_DIR = Path(os.environ["APPDATA"]) / r"Microsoft\Windows\Start Menu\Programs\Startup"
     AUTOSTART_LNK = STARTUP_DIR / f"{AUTOSTART_NAME}.lnk"
     APPDATA_AUTOSTART_BAT = STARTUP_DIR / f"{AUTOSTART_NAME}.bat"
-    # 项目旧名留下的自启项：改名后它们指向已不存在的程序，开机时会静默失败。
-    # 启动时顺手清掉，避免用户在启动项里看到一个没有用的条目。
-    LEGACY_AUTOSTART = (
-        STARTUP_DIR / "WeBotBridge-Manager.lnk",
-        STARTUP_DIR / "WeBotBridge-Manager.bat",
-    )
 
 # 防止子进程弹出终端窗口（打包成 GUI exe 后没有控制台可继承）
 CREATE_NO_WINDOW_FLAG = 0x08000000 if IS_WINDOWS else 0
@@ -399,7 +393,6 @@ class BridgeManagerApp:
         self._last_log_flush_ms: int = 0  # 日志节流刷新时间戳
 
         self._build_ui()
-        self._cleanup_legacy_autostart()
         self._poll_status()
         # 窗口关闭 = 最小化到托盘（由 _on_close 处理）
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -504,7 +497,7 @@ class BridgeManagerApp:
 
     def _open_webui(self) -> None:
         if IS_WINDOWS:
-            os.startfile("http://127.0.0.1:8766")  # noqa: S606
+            os.startfile("http://127.0.0.1:4950")  # noqa: S606
         return None
 
     def _open_log_dir(self) -> None:
@@ -581,18 +574,6 @@ class BridgeManagerApp:
         self.root.after(50, self.root.destroy)
 
     # ---------- 自启动 ----------
-    def _cleanup_legacy_autostart(self) -> None:
-        """删除旧项目名残留的自启项。只动这两个已知文件名，不扫描整个目录。"""
-        if not IS_WINDOWS:
-            return
-        for path in LEGACY_AUTOSTART:
-            try:
-                if path.exists():
-                    path.unlink()
-            except OSError:
-                # 删不掉不影响使用，下次启动再试；不让它拦住管理器启动
-                pass
-
     def _is_autostart_enabled(self) -> bool:
         if not IS_WINDOWS:
             return False

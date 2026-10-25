@@ -106,12 +106,10 @@ def test_heartbeat_status_reflects_runtime(monkeypatch):
 
 
 @pytest.fixture()
-def saved_config(monkeypatch):
-    box = {"cfg": {}}
-    monkeypatch.setattr(webui_app, "_read_config_file", lambda: dict(box["cfg"]))
-    monkeypatch.setattr(webui_app, "_write_config_file", lambda cfg: box.update(cfg=dict(cfg)))
+def saved_config(monkeypatch, tmp_path):
     monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
-    return box
+    with config.temporary(tmp_path / "config.json") as store:
+        yield store
 
 
 @pytest.mark.parametrize("bad", [3, 5000, "abc", None])
@@ -120,15 +118,13 @@ def test_save_refuses_bad_heartbeat(saved_config, bad):
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
-    assert saved_config["cfg"] == {}
+    assert saved_config.read_raw() == {}
 
 
-def test_save_accepts_zero_and_live_updates(saved_config, monkeypatch):
-    monkeypatch.setattr(config, "OB_HEARTBEAT_SECONDS", 30)
-
+def test_save_accepts_zero_and_live_updates(saved_config):
     rest = webui_app.api_put_config({"ob_heartbeat_seconds": 0}, webui_app.Response())
 
     assert rest["ok"] is True
     assert "ob_heartbeat_seconds" in rest["restart_required"]
-    assert saved_config["cfg"]["ob_heartbeat_seconds"] == 0
+    assert saved_config.read_raw()["ob_heartbeat_seconds"] == 0
     assert config.OB_HEARTBEAT_SECONDS == 0

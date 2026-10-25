@@ -71,11 +71,6 @@ ROUTES = {
 @pytest.fixture()
 def client(monkeypatch, tmp_path):
     """把面板钉在临时目录上，不碰真实 data/、配置与微信目录。"""
-    monkeypatch.setattr(config, "WEBUI_PASSWORD", "")
-    monkeypatch.setattr(config, "CONFIG_FILE", str(tmp_path / "config.json"))
-    monkeypatch.setattr(config, "data_dir", lambda: str(tmp_path))
-    monkeypatch.setattr(config, "WEBUI_TLS_CERT_FILE", str(tmp_path / "cert.pem"))
-    monkeypatch.setattr(config, "WEBUI_TLS_KEY_FILE", str(tmp_path / "key.pem"))
     monkeypatch.setattr(webui_app.wechat_account, "current_account", lambda root=None: None)
     monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
     monkeypatch.setattr(webui_app.monitor, "attach_log_relay", lambda: None)
@@ -84,8 +79,9 @@ def client(monkeypatch, tmp_path):
         "flandora.updater.latest_release", lambda: {"version": "1.0.0", "asset": "x.zip"}
     )
     auth.sessions.clear()
-    with TestClient(webui_app.app) as c:
-        yield c
+    with config.temporary(tmp_path / "config.json", overrides={"webui_password": ""}):
+        with TestClient(webui_app.app) as c:
+            yield c
     auth.sessions.clear()
 
 

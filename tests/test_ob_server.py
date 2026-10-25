@@ -87,22 +87,13 @@ def server():
     d = os.environ.get("FLANDORA_TEST_TMP") or os.path.join(REPO_ROOT, ".pytest-tmp")
     os.makedirs(d, exist_ok=True)
     cfg_dir = tempfile.mkdtemp(prefix="wwb-ob-", dir=d)
-    shutil.copy(
-        os.path.join(REPO_ROOT, "flandora", "config.example.json"),
-        os.path.join(cfg_dir, "config.json"),
-    )
+    cfg_path = os.path.join(cfg_dir, "config.json")
 
     from flandora import config
 
-    old = {
-        "CONFIG_FILE": config.CONFIG_FILE,
-        "OB_NETWORKS": getattr(config, "OB_NETWORKS", None),
-        "OB_HEARTBEAT_SECONDS": getattr(config, "OB_HEARTBEAT_SECONDS", None),
-    }
     port = _free_port()
-    config.CONFIG_FILE = os.path.join(cfg_dir, "config.json")
     # 关键：服务端真正读的是 OB_NETWORKS。role=api 避开 lifecycle(connect)。
-    config.OB_NETWORKS = [
+    nodes = [
         ob_network.normalize_node(
             {
                 "type": "ws_server",
@@ -116,7 +107,13 @@ def server():
             0,
         )
     ]
-    config.OB_HEARTBEAT_SECONDS = 0  # 心跳会往会话里塞 meta_event，这里关掉
+    # 以示例配置为底，只改端口与心跳：心跳会往会话里塞 meta_event，这里关掉
+    with open(os.path.join(REPO_ROOT, "flandora", "config.example.json"), encoding="utf-8") as f:
+        cfg = json.load(f)
+    cfg["ob_networks"] = nodes
+    cfg["ob_heartbeat_seconds"] = 0
+    with open(cfg_path, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, ensure_ascii=False, indent=4)
 
     import threading
 
@@ -140,19 +137,17 @@ def server():
         finally:
             loop.close()
 
-    t = threading.Thread(target=_run, daemon=True, name="ob-server-test")
-    t.start()
-    if not started.wait(timeout=15):
-        raise RuntimeError("服务端未能在 15s 内启动")
-
-    try:
-        yield port, f"ws://127.0.0.1:{port}/"
-    finally:
-        stop_flag.set()
-        t.join(timeout=15)
-        for key, value in old.items():
-            setattr(config, key, value)
-        shutil.rmtree(cfg_dir, ignore_errors=True)
+    with config.temporary(cfg_path):
+        t = threading.Thread(target=_run, daemon=True, name="ob-server-test")
+        t.start()
+        if not started.wait(timeout=15):
+            raise RuntimeError("服务端未能在 15s 内启动")
+        try:
+            yield port, f"ws://127.0.0.1:{port}/"
+        finally:
+            stop_flag.set()
+            t.join(timeout=15)
+    shutil.rmtree(cfg_dir, ignore_errors=True)
 
 
 # ===== 1. 握手鉴权 =====

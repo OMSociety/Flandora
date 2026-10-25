@@ -205,12 +205,10 @@ def test_auth_endpoint_reports_state(monkeypatch):
 
 
 @pytest.fixture()
-def saved(monkeypatch):
-    box = {"cfg": {}}
-    monkeypatch.setattr(webui_app, "_read_config_file", lambda: dict(box["cfg"]))
-    monkeypatch.setattr(webui_app, "_write_config_file", lambda cfg: box.update(cfg=dict(cfg)))
+def saved(monkeypatch, tmp_path):
     monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
-    return box
+    with config.temporary(tmp_path / "config.json") as store:
+        yield store
 
 
 def test_setting_password_stores_only_a_hash(saved):
@@ -219,7 +217,7 @@ def test_setting_password_stores_only_a_hash(saved):
     rest = webui_app.api_put_config({"webui_password": "secret123"}, response)
 
     assert rest["ok"] is True
-    stored = saved["cfg"]["webui_password"]
+    stored = saved.read_raw()["webui_password"]
     assert auth.is_hashed(stored)
     assert "secret123" not in stored
     assert config.WEBUI_PASSWORD == stored
@@ -233,7 +231,7 @@ def test_clearing_password_disables_login(saved):
 
     webui_app.api_put_config({"webui_password_clear": True}, webui_app.Response())
 
-    assert saved["cfg"]["webui_password"] == ""
+    assert saved.read_raw()["webui_password"] == ""
     assert config.WEBUI_PASSWORD == ""
     assert auth.enabled() is False
     assert auth.sessions.valid(token) is False
@@ -244,7 +242,7 @@ def test_bad_password_length_is_refused(saved):
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
-    assert saved["cfg"] == {}
+    assert saved.read_raw() == {}
 
 
 def test_password_set_flag_from_browser_is_ignored(saved, monkeypatch):
@@ -256,6 +254,6 @@ def test_password_set_flag_from_browser_is_ignored(saved, monkeypatch):
     )
 
     # 面板只报「设没设」，不该把哈希当配置项写回去
-    assert "webui_password" not in saved["cfg"]
+    assert "webui_password" not in saved.read_raw()
     assert config.WEBUI_PASSWORD == hashed
-    assert saved["cfg"]["group_name_map"] == {"g@chatroom": "群名"}
+    assert saved.read_raw()["group_name_map"] == {"g@chatroom": "群名"}

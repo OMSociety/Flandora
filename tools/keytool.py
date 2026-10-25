@@ -47,17 +47,10 @@ EXIT_CANNOT_SAVE = 3
 
 
 def _default_out_path(filename: str) -> str:
-    """默认落盘位置：打包后取 exe 同级的 data/，源码运行时取仓库根下的 data/。
+    """默认落盘位置：数据目录下的 ``filename``，规则与配置模块一致。"""
+    from flandora.config.paths import default_data_dir
 
-    与 flandora/config.py 的 data_dir() 规则一致。这里不直接复用它是为了避开
-    导入期副作用：config 在 import 时就会查找 config.json，找不到直接抛异常，而取钥
-    恰恰发生在用户还没生成配置的时候。
-    """
-    if getattr(sys, "frozen", False):
-        base = os.path.dirname(sys.executable)
-    else:
-        base = _REPO_ROOT
-    return os.path.join(base, "data", filename)
+    return os.path.join(default_data_dir(), filename)
 
 
 def _parse_rva(text: str) -> int:

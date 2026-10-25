@@ -87,12 +87,14 @@ run_bridge.py -> flandora.main
 
 ## 修改契约
 
-- 增删配置项：依次改 `flandora/config.py`（读取与默认值）→ `flandora/config.example.json`
-  （示例与 `_comment_` 说明）→ `README.md`「配置详解」→ `webui-frontend/src/pages/Config.vue`
-  的 `DEFAULTS`（仅少数需兜底的键）→ `webui-frontend/tests/fixtures.js`。
+- 增删配置项：依次改 `flandora/config/fields.py`（字段声明：键名、默认值、kind 与校验）
+  → `flandora/config.example.json`（示例与 `_comment_` 说明）→ `README.md`「配置详解」→
+  `webui-frontend/src/pages/Config.vue` 的 `DEFAULTS`（仅少数需兜底的键）→
+  `webui-frontend/tests/fixtures.js`。
   界面没有逐字段表单，多数配置项在「系统设置 → 高级」里直接编辑 JSON，所以界面侧不需要逐项加控件；
   但 `DEFAULTS` 与 README 漏了就会出现「后端认、文档或界面不认」的静默不一致。
-  配置项的取值校验目前写在 `flandora/webui/app.py` 的 `api_put_config`，加项时在那里补校验。
+  取值校验统一写在 `flandora/config/fields.py` 的 `clean_field()`（文件加载与面板保存共用；
+  `strict=True` 拒绝、否则按规则回退），面板侧只留请求编排（密码换哈希、PEM 落文件、绑全网卡前要有密码）。
 - 改 `/api/status`、`/api/desktop/status` 等响应字段：同步 `webui-frontend/tests/fixtures.js` 的夹具，
   否则前端断言与后端字段脱节，测试仍会绿。
 - 改 OneBot 事件字段或协议行为：改 `flandora/ob_protocol.py`，并跑 `tests/test_ob_server.py`；动通知事件或心跳时另跑 `tests/test_ob_notice.py`、`tests/test_ob_heartbeat.py`、`tests/test_ob_network.py`（后两者起真端口，meta_event 会混进会话，等事件要跳过它）。

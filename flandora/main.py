@@ -188,6 +188,9 @@ def start_account_watch():
 
 
 def main() -> int:
+    # 进主流程先加载配置并装配日志：从这里往后读到的 config.* 都是校验过的值，
+    # 回退告警也在这里打出来（导入期不再碰磁盘）
+    config.bootstrap()
     # 机器人身份全自动：取当前登录的微信账号，无需任何配置。
     # 检测不到（微信没登录/没运行）时用 wechat_bot 占位，微信登录后重启桥接即自动识别。
     acct = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)

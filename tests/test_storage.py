@@ -7,7 +7,6 @@
 * 消息存档的清理只由人显式触发，而且删完文件不会自己变小（要再 VACUUM）。
 """
 
-import logging.handlers
 import os
 import time
 from types import SimpleNamespace
@@ -24,33 +23,28 @@ def workspace(monkeypatch, tmp_path):
     """数据目录、日志、缓存根全部钉进临时目录。"""
     data = tmp_path / "data"
     data.mkdir()
-    monkeypatch.setattr(config, "CONFIG_FILE", str(data / "config.json"))
-    monkeypatch.setattr(config, "LOG_FILE", str(data / "flandora.log"))
-    monkeypatch.setattr(config, "LOG_MAX_MB", 1)
-    monkeypatch.setattr(config, "LOG_BACKUP_COUNT", 2)
-    monkeypatch.setattr(config, "WX_WORK_DIR", str(data / "wx_cache"))
-    handler = logging.handlers.RotatingFileHandler(
-        config.LOG_FILE, maxBytes=1024 * 1024, backupCount=2, encoding="utf-8"
-    )
-    monkeypatch.setattr(config, "LOG_HANDLER", handler)
     monkeypatch.setattr(state, "bridge_instance", None, raising=False)
     ob_store.reset_singletons()
     monkeypatch.setattr(ob_store, "_store", ob_store.MessageStore(str(data / "messages.db")))
-    try:
-        yield data
-    finally:
-        handler.close()
-        ob_store.reset_singletons()
+    with config.temporary(
+        str(data / "config.json"),
+        overrides={
+            "log_max_mb": 1,
+            "log_backup_count": 2,
+            "wx_work_dir": str(data / "wx_cache"),
+        },
+    ):
+        try:
+            yield data
+        finally:
+            ob_store.reset_singletons()
 
 
 @pytest.fixture()
 def put_ready(monkeypatch, workspace):
-    """拦住配置文件的磁盘读写，PUT 只落在内存那一份上。"""
-    box = {"cfg": {}}
-    monkeypatch.setattr(webui_app, "_read_config_file", lambda: dict(box["cfg"]))
-    monkeypatch.setattr(webui_app, "_write_config_file", lambda cfg: box.update(cfg=dict(cfg)))
+    """PUT 只动临时目录里的那一份配置。"""
     monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
-    return box
+    return config.get_store()
 
 
 def _write(path, text: str = "x" * 32) -> str:
@@ -374,7 +368,7 @@ def test_log_policy_applies_without_a_restart(put_ready):
 
     assert got["ok"] is True
     assert got["restart_required"] == []
-    assert put_ready["cfg"]["log_max_mb"] == 4
+    assert put_ready.read_raw()["log_max_mb"] == 4
     assert config.LOG_MAX_MB == 4 and config.LOG_BACKUP_COUNT == 3
     assert config.LOG_HANDLER.maxBytes == 4 * 1024 * 1024
     assert config.LOG_HANDLER.backupCount == 3
@@ -390,7 +384,7 @@ def test_log_policy_range_is_enforced(put_ready):
         rest = webui_app.api_put_config(dict(bad), webui_app.Response())
         assert isinstance(rest, JSONResponse) and rest.status_code == 400
 
-    assert put_ready["cfg"] == {}
+    assert put_ready.read_raw() == {}
     assert config.LOG_MAX_MB == 1  # 还是夹具里那个值，没被越界的请求改掉
 
 
@@ -401,9 +395,7 @@ def test_log_policy_rejects_non_numbers(put_ready):
     assert rest.status_code == 400
 
 
-def test_config_endpoint_reports_effective_log_policy(monkeypatch, workspace):
-    monkeypatch.setattr(webui_app, "_read_config_file", lambda: {})
-
+def test_config_endpoint_reports_effective_log_policy(workspace):
     got = webui_app.api_get_config()
 
     assert got["log_max_mb"] == 1

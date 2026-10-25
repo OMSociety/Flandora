@@ -32,7 +32,6 @@ FastAPI WebUI 应用。
 """
 
 import asyncio
-import json
 import logging
 import os
 import threading
@@ -44,6 +43,7 @@ from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from .. import __version__, config, ob_network, state, storage, wechat_account
+from ..config import fields as config_fields
 from ..ob_network import manager as ob_networks
 from . import auth, monitor
 from .monitor import bus
@@ -54,31 +54,10 @@ VERSION = __version__
 WEBUI_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(WEBUI_DIR, "dist")
 
-# 保存后即时生效：写入 config 模块属性（bridge_core 等运行时实时读取）
-HOT_CONFIG_ATTRS = {
-    "group_name_map": "GROUP_NAME_MAP",
-}
-# 需要重启桥接才生效的字段
-RESTART_KEYS = (
-    "ob_server_host",
-    "ob_server_port",
-    "ob_server_token",
-    "ob_networks",
-    "ob_heartbeat_seconds",
-    "web_port",
-    "web_bind_host",
-    "webui_tls",
-    "client_attachments",
-    # 隔离桌面相关的三个改动都要重启才成立：桌面要重建、微信要重开、窗口要重绑
-    "isolated_desktop",
-    "isolated_desktop_name",
-    "wechat_exe",
-)
-# 备份文件里算凭据的键：默认不导出，恢复时也不覆盖本地现值
-SENSITIVE_KEYS = ("webui_password", "ob_server_token")
-# 面板提交的 PEM 内容：落成文件，不进 config.json
+# 面板提交的 PEM 内容：落成文件，不进 config.json。
+# 「哪些键写进文件后立刻生效」「哪些算凭据不能进备份」都由字段表派生，
+# 见 flandora/config/fields.py 的 kind。
 PEM_FIELDS = ("webui_tls_cert", "webui_tls_key")
-ALLOWED_BIND_HOSTS = ("127.0.0.1", "0.0.0.0")
 
 
 @asynccontextmanager
@@ -165,20 +144,44 @@ def get_status() -> dict:
     }
 
 
-def _read_config_file() -> dict:
-    """读盘上的 config.json；文件不在了（被删 / 还没生成）就当作空配置。"""
+def _config_store():
+    """当前的配置仓库。每次现取：测试会用 config.temporary() 整份换掉。"""
+    return config.get_store()
+
+
+def _clean_context() -> dict:
+    """严格校验要参照的取值（ob_networks 兜底入口与证书默认落点都靠它）。"""
+    settings = _config_store().settings
+    return {
+        "data_dir": config.data_dir(),
+        "ob_server_host": settings.OB_SERVER_HOST,
+        "ob_server_port": settings.OB_SERVER_PORT,
+        "ob_server_token": settings.OB_SERVER_TOKEN,
+    }
+
+
+def _strict(key: str, value, context: dict):
+    """按字段表严格校验一项；非法值抛 ConfigError（消息直接回给浏览器）。"""
+    return config_fields.clean_field(key, value, True, context=context).value
+
+
+def _on_config_changed(settings, changed: frozenset) -> None:
+    """HOT 字段写完要动进程状态的那部分：微信窗口换绑。"""
+    if "wechat_hwnd" not in changed:
+        return
+    sender = state.sender_instance
+    if sender is None or not hasattr(sender, "rebind_window"):
+        return
+    hwnd = int(settings.WECHAT_HWND or 0)
+    if getattr(sender, "_hwnd", None) == hwnd:
+        return
     try:
-        with open(config.CONFIG_FILE, "r", encoding="utf-8-sig") as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        return {}
-    return data if isinstance(data, dict) else {}
+        sender.rebind_window(hwnd)
+    except Exception as exc:  # 窗口没了不该让保存失败，绑没绑上看下次发送
+        log.error(f"[WebUI] 重绑微信窗口失败: {exc}")
 
 
-def _write_config_file(cfg: dict):
-    with open(config.CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, ensure_ascii=False, indent=4)
-        f.write("\n")
+config.subscribe(_on_config_changed)
 
 
 def _read_text(path: str) -> str:
@@ -446,12 +449,12 @@ def api_update_cancel():
 @app.get("/api/config")
 def api_get_config():
     try:
-        cfg = _read_config_file()
+        cfg = dict(_config_store().read_raw())
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, 500)
     # 哈希本身不算凭据，但也没必要发给浏览器；面板只需要知道「设没设」
     cfg["webui_password_set"] = bool(str(cfg.pop("webui_password", "") or ""))
-    # 这两个键可能是新加的、还没写进 config.json（按默认值在跑），面板要按生效值显示
+    # 这几个键可能是新加的、还没写进 config.json（按默认值在跑），面板要按生效值显示
     cfg.setdefault("web_bind_host", config.WEB_BIND_HOST)
     cfg.setdefault("webui_tls", bool(config.WEBUI_TLS))
     cfg.setdefault("log_max_mb", config.LOG_MAX_MB)
@@ -479,7 +482,6 @@ def api_put_config(payload: dict, response: Response):
             hashed = None  # 两者都没给实质内容：不动现有密码
         if hashed is not None:
             payload["webui_password"] = hashed
-            config.WEBUI_PASSWORD = hashed
             # 密码变了，之前发出去的会话一律作废；当前这个浏览器立刻换一张新的
             auth.sessions.clear()
             if hashed:
@@ -491,112 +493,56 @@ def api_put_config(payload: dict, response: Response):
                     samesite="lax",
                     path="/",
                 )
-    # 监听地址：只认回环与全网卡两种；对外之前必须有密码，否则等于把面板公开
-    if "web_bind_host" in payload:
-        bind = str(payload.get("web_bind_host") or "").strip()
-        if bind not in ALLOWED_BIND_HOSTS:
-            return JSONResponse(
-                {"ok": False, "error": "web_bind_host 只能是 127.0.0.1 或 0.0.0.0"}, 400
-            )
-        if bind == "0.0.0.0" and not auth.enabled():
-            return JSONResponse(
-                {"ok": False, "error": "绑所有网卡之前先设面板密码：没密码时局域网里谁都能改配置"},
-                400,
-            )
-        payload = dict(payload, web_bind_host=bind)
-    # 证书/私钥：校验成对可解析后再落文件，内容不进 config.json
-    if any(field in payload for field in PEM_FIELDS):
-        problem = _install_tls_pem(payload)
-        if problem:
-            return JSONResponse({"ok": False, "error": problem}, 400)
-        payload = {k: v for k, v in payload.items() if k not in PEM_FIELDS}
-    if "webui_tls" in payload:
-        tls_on = bool(payload["webui_tls"])
-        if tls_on and not (
-            os.path.isfile(config.WEBUI_TLS_CERT_FILE) and os.path.isfile(config.WEBUI_TLS_KEY_FILE)
-        ):
-            return JSONResponse({"ok": False, "error": "要先装好证书与私钥才能启用 HTTPS"}, 400)
-        payload = dict(payload, webui_tls=tls_on)
-    # 枚举字段先校验再落盘：写进去再静默回退，用户改错了也看不出来
-    if "ob_message_format" in payload:
-        fmt = str(payload.get("ob_message_format") or "").strip().lower()
-        if fmt not in ("array", "string"):
-            return JSONResponse(
-                {"ok": False, "error": "ob_message_format 只能是 array 或 string"}, 400
-            )
-        payload = dict(payload, ob_message_format=fmt)
-        config.OB_MESSAGE_FORMAT = fmt
-    if "ob_networks" in payload:
-        try:
-            nodes = ob_network.normalize_nodes(payload.get("ob_networks"))
-        except ob_network.NetworkConfigError as e:
-            return JSONResponse({"ok": False, "error": f"网络入口配置不合法：{e}"}, 400)
-        payload = dict(payload, ob_networks=nodes)
-        # 入口清空等于「什么都不监听」，退回通用设置那一个入口，避免面板上配空了就连不上
-        config.OB_NETWORKS = nodes or [
-            ob_network.default_node(
-                config.OB_SERVER_HOST, config.OB_SERVER_PORT, config.OB_SERVER_TOKEN
-            )
-        ]
-    if "ob_heartbeat_seconds" in payload:
-        try:
-            seconds = int(payload.get("ob_heartbeat_seconds"))
-        except (TypeError, ValueError):
-            return JSONResponse({"ok": False, "error": "ob_heartbeat_seconds 必须是整数"}, 400)
-        if seconds != 0 and not 5 <= seconds <= 3600:
-            return JSONResponse(
-                {"ok": False, "error": "ob_heartbeat_seconds 取 0（不发心跳）或 5–3600 秒"}, 400
-            )
-        payload = dict(payload, ob_heartbeat_seconds=seconds)
-        config.OB_HEARTBEAT_SECONDS = seconds
-    # 日志策略：范围先校验，落盘之后再改运行中的 handler（见下方即时生效段）
-    log_policy = None
-    if "log_max_mb" in payload or "log_backup_count" in payload:
-        try:
-            max_mb = int(payload.get("log_max_mb", config.LOG_MAX_MB))
-            backups = int(payload.get("log_backup_count", config.LOG_BACKUP_COUNT))
-        except (TypeError, ValueError):
-            return JSONResponse({"ok": False, "error": "日志上限与保留份数必须是整数"}, 400)
-        if not 1 <= max_mb <= 1024:
-            return JSONResponse({"ok": False, "error": "日志单份上限取 1–1024（MB）"}, 400)
-        if not 1 <= backups <= 20:
-            return JSONResponse({"ok": False, "error": "日志保留份数取 1–20"}, 400)
-        payload = dict(payload, log_max_mb=max_mb, log_backup_count=backups)
-        log_policy = (max_mb, backups)
+    context = _clean_context()
     try:
-        current = _read_config_file()
-        current.update(payload)
-        _write_config_file(current)
-
-        # 即时生效：config 模块属性
-        for key, attr in HOT_CONFIG_ATTRS.items():
-            if key in payload:
-                setattr(config, attr, payload[key])
-
-        # 面板如实反映刚保存的意图：真正换绑与换协议仍要重启
+        # 监听地址：只认回环与全网卡两种；对外之前必须有密码，否则等于把面板公开
         if "web_bind_host" in payload:
-            config.WEB_BIND_HOST = payload["web_bind_host"]
+            bind = _strict("web_bind_host", payload.get("web_bind_host"), context)
+            pending = payload.get("webui_password", config.WEBUI_PASSWORD)
+            if bind == "0.0.0.0" and not auth.is_hashed(pending):
+                raise config.ConfigError("绑所有网卡之前先设面板密码：没密码时局域网里谁都能改配置")
+            payload = dict(payload, web_bind_host=bind)
+        # 证书/私钥：校验成对可解析后再落文件，内容不进 config.json
+        if any(field in payload for field in PEM_FIELDS):
+            problem = _install_tls_pem(payload)
+            if problem:
+                return JSONResponse({"ok": False, "error": problem}, 400)
+            payload = {k: v for k, v in payload.items() if k not in PEM_FIELDS}
         if "webui_tls" in payload:
-            config.WEBUI_TLS = bool(payload["webui_tls"])
-        # 日志策略即时生效：上限与保留份数直接改到运行中的 handler 上
-        if log_policy is not None:
-            config.apply_log_policy(*log_policy)
-
-        # 即时生效：微信窗口绑定
-        if "wechat_hwnd" in payload:
-            try:
-                hwnd = int(payload["wechat_hwnd"] or 0)
-                config.WECHAT_HWND = hwnd
-                sender = state.sender_instance
-                if sender is not None and hasattr(sender, "rebind_window"):
-                    sender.rebind_window(hwnd)
-            except (TypeError, ValueError):
-                pass
-
-        restart_required = [k for k in payload if k in RESTART_KEYS]
+            tls_on = bool(payload["webui_tls"])
+            if tls_on and not (
+                os.path.isfile(config.WEBUI_TLS_CERT_FILE)
+                and os.path.isfile(config.WEBUI_TLS_KEY_FILE)
+            ):
+                raise config.ConfigError("要先装好证书与私钥才能启用 HTTPS")
+            payload = dict(payload, webui_tls=tls_on)
+        # 枚举、网络入口、心跳、日志策略：与文件加载共用同一份校验规则
+        for key in ("ob_message_format", "ob_heartbeat_seconds"):
+            if key in payload:
+                payload = dict(payload, **{key: _strict(key, payload[key], context)})
+        if "ob_networks" in payload:
+            # 只校验；落盘保留用户写的内容（空数组就是空数组），兜底入口由配置层算
+            _strict("ob_networks", payload["ob_networks"], context)
+            payload = dict(payload, ob_networks=ob_network.normalize_nodes(payload["ob_networks"]))
+        if "log_max_mb" in payload or "log_backup_count" in payload:
+            payload = dict(
+                payload,
+                log_max_mb=_strict(
+                    "log_max_mb", payload.get("log_max_mb", config.LOG_MAX_MB), context
+                ),
+                log_backup_count=_strict(
+                    "log_backup_count",
+                    payload.get("log_backup_count", config.LOG_BACKUP_COUNT),
+                    context,
+                ),
+            )
+    except config.ConfigError as e:
+        return JSONResponse({"ok": False, "error": str(e)}, 400)
+    try:
+        result = _config_store().update(payload)
         log.info(f"[WebUI] 配置已保存 (字段: {', '.join(payload.keys())})")
         monitor.notify_status()
-        return {"ok": True, "restart_required": restart_required}
+        return {"ok": True, "restart_required": list(result.restart_required)}
     except Exception as e:
         log.error(f"[WebUI] 保存配置异常: {e}")
         return JSONResponse({"ok": False, "error": str(e)}, 500)
@@ -609,12 +555,12 @@ def api_put_config(payload: dict, response: Response):
 def api_config_backup(include_sensitive: int = 0):
     """导出 config.json，交给面板存成文件。默认不带凭据。"""
     try:
-        cfg = _read_config_file()
+        cfg = dict(_config_store().read_raw())
     except Exception as e:
         return JSONResponse({"ok": False, "error": str(e)}, 500)
     excluded = []
     if not include_sensitive:
-        for key in SENSITIVE_KEYS:
+        for key in config_fields.secret_keys():
             if key in cfg:
                 cfg.pop(key)
                 excluded.append(key)
@@ -643,39 +589,24 @@ def api_config_restore(payload: dict):
         return JSONResponse({"ok": False, "error": "备份里没有可恢复的配置项"}, 400)
     if not payload.get("include_sensitive", False):
         # 不带敏感项的备份本来就没有这些键；万一有也不覆盖本地现值
-        for key in SENSITIVE_KEYS:
+        for key in config_fields.secret_keys():
             incoming.pop(key, None)
+    store = _config_store()
     try:
-        current = _read_config_file()
-        backup_path = f"{config.CONFIG_FILE}.bak-{time.strftime('%Y%m%d-%H%M%S')}"
-        with open(backup_path, "w", encoding="utf-8") as f:
-            json.dump(current, f, ensure_ascii=False, indent=4)
-            f.write("\n")
-        current.update(incoming)
-        _write_config_file(current)
+        backup_path = f"{store.path}.bak-{time.strftime('%Y%m%d-%H%M%S')}"
+        config.write_json(backup_path, store.read_raw())
+        store.replace(incoming)
+    except config.ConfigError as e:
+        # 备份里的值过不了校验：当成请求数据的问题，别写进文件
+        log.error(f"[WebUI] 恢复配置被拒绝: {e}")
+        return JSONResponse({"ok": False, "error": str(e)}, 400)
     except Exception as e:
         log.error(f"[WebUI] 恢复配置失败: {e}")
         return JSONResponse({"ok": False, "error": str(e)}, 500)
-    # 能即时生效的立刻生效，其余等重启；密码哈希换了要连会话一起作废
-    password_restored = False
-    applied_now = set()
-    for key, attr in HOT_CONFIG_ATTRS.items():
-        if key in incoming:
-            setattr(config, attr, incoming[key])
-            applied_now.add(key)
-    if "webui_password" in incoming:
-        config.WEBUI_PASSWORD = incoming["webui_password"]
+    # 能即时生效的（HOT）已经由订阅者套上；密码哈希换了要连会话一起作废
+    password_restored = "webui_password" in incoming
+    if password_restored:
         auth.sessions.clear()
-        password_restored = True
-    if "log_max_mb" in incoming or "log_backup_count" in incoming:
-        try:
-            max_mb = int(incoming.get("log_max_mb", config.LOG_MAX_MB))
-            backups = int(incoming.get("log_backup_count", config.LOG_BACKUP_COUNT))
-        except (TypeError, ValueError):
-            max_mb = backups = 0
-        if 1 <= max_mb <= 1024 and 1 <= backups <= 20:
-            config.apply_log_policy(max_mb, backups)
-            applied_now.update({"log_max_mb", "log_backup_count"})
     log.info(
         f"[WebUI] 已从备份恢复配置 (字段: {', '.join(sorted(incoming))})，"
         f"原文件已备份为 {os.path.basename(backup_path)}"
@@ -686,9 +617,7 @@ def api_config_restore(payload: dict):
         "restored": sorted(incoming),
         "backup_path": backup_path,
         "password_restored": password_restored,
-        "restart_required": sorted(
-            k for k in incoming if k not in applied_now and k != "webui_password"
-        ),
+        "restart_required": sorted(key for key in incoming if config_fields.is_restart(key)),
     }
 
 
@@ -996,12 +925,9 @@ def api_select_window(payload: dict):
     if not sender.rebind_window(hwnd):
         return JSONResponse({"ok": False, "error": f"绑定失败，窗口句柄无效: {hwnd}"}, 400)
 
-    # 持久化到 config.json
-    config.WECHAT_HWND = hwnd
+    # 持久化到 config.json（HOT 字段，订阅者会同步重绑窗口）
     try:
-        cfg = _read_config_file()
-        cfg["wechat_hwnd"] = hwnd
-        _write_config_file(cfg)
+        _config_store().update({"wechat_hwnd": hwnd})
     except Exception as e:
         log.error(f"[WebUI] 保存窗口绑定失败: {e}")
 

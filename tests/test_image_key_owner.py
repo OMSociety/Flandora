@@ -28,23 +28,22 @@ _KEY_PAYLOAD = {"wxid": "wxid_someone_else", "aes_key": "0123456789abcdef", "xor
 
 @contextlib.contextmanager
 def key_file(payload=None):
-    """把 ``config.WX_IMAGE_KEY_FILE`` 指到临时目录里的一份密钥，出块即还原。
+    """把配置临时指到临时目录里的一份密钥，出块即还原。
 
-    直接改这个配置项而不是靠 ``FLANDORA_DATA_DIR``：后者只在 import config 之前
-    生效，而 pytest 全量跑时 config 早已被别的用例导入并缓存，再设环境变量不会
-    改变 ``config.data_dir()`` 的返回值。
+    走 ``config.temporary()`` 而不是直接改 ``config.WX_IMAGE_KEY_FILE``：惰性门面
+    下改模块属性只是盖住真实 store 的值，下一次换 store 就失效。
     """
     payload = _KEY_PAYLOAD if payload is None else payload
     d = tempfile.mkdtemp(prefix="wwb-idx-")
     path = os.path.join(d, "wx_image_key.json")
     with open(path, "w", encoding="utf-8") as fh:
         json.dump(payload, fh)
-    old = config.WX_IMAGE_KEY_FILE
-    config.WX_IMAGE_KEY_FILE = path
     try:
-        yield path
+        with config.temporary(
+            os.path.join(d, "config.json"), overrides={"wx_image_key_file": path}
+        ):
+            yield path
     finally:
-        config.WX_IMAGE_KEY_FILE = old
         shutil.rmtree(d, ignore_errors=True)
 
 
@@ -75,12 +74,13 @@ def test_unspecified_account_does_not_block():
 def test_missing_key_file_returns_empty():
     """密钥文件不存在 → 返回 (b"", -1)，图片退回占位符而不抛错。"""
     d = tempfile.mkdtemp(prefix="wwb-idx-")
-    old = config.WX_IMAGE_KEY_FILE
-    config.WX_IMAGE_KEY_FILE = os.path.join(d, "absent.json")
     try:
-        key, xor = wx_source.load_image_key("wxid_anyone")
+        with config.temporary(
+            os.path.join(d, "config.json"),
+            overrides={"wx_image_key_file": os.path.join(d, "absent.json")},
+        ):
+            key, xor = wx_source.load_image_key("wxid_anyone")
     finally:
-        config.WX_IMAGE_KEY_FILE = old
         shutil.rmtree(d, ignore_errors=True)
     assert (key, xor) == (b"", -1)
 

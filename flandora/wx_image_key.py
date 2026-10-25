@@ -8,8 +8,8 @@ AES 密钥只在微信**实际解码图片**的那几秒内驻留内存。图片
 XOR 密钥不用扫：它可以从本账号已有图片的尾部反推（末字节 XOR 0xD9 得 FFD9），
 这里顺手算好一并写入，省得用户还要再填一个值。
 
-这个模块刻意不导入 config：独立的 tools/imagekey.py 要在用户生成配置之前也能跑，
-而 config 在 import 期就会查找 config.json，找不到直接抛异常。
+这个模块只按需惰性导入 ``config.paths``：独立的 tools/imagekey.py 要在用户生成配置
+之前也能跑，而那条路径不该牵动配置加载与日志装配。
 """
 
 from __future__ import annotations
@@ -21,7 +21,6 @@ import logging
 import os
 import re
 import subprocess
-import sys
 import threading
 import time
 from ctypes import wintypes
@@ -69,16 +68,10 @@ class MBI(ctypes.Structure):
 
 
 def default_key_file() -> str:
-    """默认落盘位置：打包后取 exe 同级的 data/，源码运行时取仓库根下的 data/。
+    """默认落盘位置：数据目录下的 ``wx_image_key.json``，规则与配置模块一致。"""
+    from .config.paths import default_data_dir
 
-    与 config.data_dir() 的规则一致。这里不直接复用它是为了避开导入期副作用
-    （见模块开头）。
-    """
-    if getattr(sys, "frozen", False):
-        base = os.path.dirname(sys.executable)
-    else:
-        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    return os.path.join(base, "data", "wx_image_key.json")
+    return os.path.join(default_data_dir(), "wx_image_key.json")
 
 
 def current_wxid(root: Optional[str] = None) -> str:

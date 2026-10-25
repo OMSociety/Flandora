@@ -36,10 +36,10 @@ HEX64 = "62d08ee9343a4fc5a2ad910e0ec7aa221dd7df66231f46c89ef4c7f90771f4e7"
 
 
 @pytest.fixture
-def wiz(tmp_path, monkeypatch):
-    """在空目录里新建一个 Wizard：config.CONFIG_FILE 只在本用例内被指过去。"""
-    monkeypatch.setattr(config, "CONFIG_FILE", str(tmp_path / "config.json"))
-    return wizard_mod.Wizard()
+def wiz(tmp_path):
+    """在空目录里新建一个 Wizard：配置也只在本用例内指向这个目录。"""
+    with config.temporary(str(tmp_path / "config.json")):
+        yield wizard_mod.Wizard()
 
 
 @pytest.fixture

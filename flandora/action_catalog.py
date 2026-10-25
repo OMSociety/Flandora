@@ -641,10 +641,25 @@ _TYPE_CHECKS = {
 }
 
 
+def _coerce(kind: str, value):
+    """把客户端的等价写法收敛成本类型（只收敛、不报错）。
+
+    客户端的字段类型并不总严格：AstrBot 的引用解析会把 ``message_id`` 先按字符串
+    试一遍（``{"message_id": "402"}``，见它的 ``quoted_message/onebot_client.py``），
+    纯数字字符串没有歧义——收下来比让客户端白试三轮更省事。
+    """
+    if kind == "int" and isinstance(value, str):
+        text = value.strip()
+        if text.lstrip("+-").isdigit():
+            return int(text)
+    return value
+
+
 def validate_params(action: Action | str, params: dict | None) -> list[str]:
     """校验参数，返回错误描述列表（空列表表示通过）。
 
     只查声明的参数：未声明的额外参数一律放行，避免客户端的多余字段把请求打回。
+    纯数字字符串按整数收下，并写回同一份 ``params``——派发层拿到的是收敛后的值。
     """
     spec = lookup(action) if isinstance(action, str) else action
     if spec is None:
@@ -656,6 +671,7 @@ def validate_params(action: Action | str, params: dict | None) -> list[str]:
             if p.required:
                 errors.append(f"缺少参数 {p.name}（{p.type}）")
             continue
+        values[p.name] = _coerce(p.type, values[p.name])
         check = _TYPE_CHECKS[p.type]
         if not check(values[p.name]):
             errors.append(

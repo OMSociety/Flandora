@@ -77,6 +77,20 @@ def test_bool_is_not_accepted_as_int():
     assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
 
 
+def test_numeric_string_is_taken_as_int():
+    """客户端把整数字段写成字符串（AstrBot 的引用解析会先试字符串），按整数收下。"""
+    params = {"message_id": "402"}
+    assert action_catalog.validate_params("get_msg", params) == []
+    assert params["message_id"] == 402
+
+
+def test_non_numeric_string_is_still_refused_as_int():
+    """只有纯数字字符串被收下，别的字符串照旧按类型不对报错。"""
+    assert action_catalog.validate_params("get_msg", {"message_id": "四零二"}) == [
+        "参数 message_id 应为 int，收到 str"
+    ]
+
+
 def test_empty_message_is_refused():
     """空消息没有可发送的内容，必须报错而不是回一个空成功的 message_id。"""
     resp = _call({"action": "send_private_msg", "params": {"user_id": 1, "message": []}})

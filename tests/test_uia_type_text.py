@@ -241,6 +241,19 @@ def pytest_fail(message):
     raise AssertionError(message)
 
 
+def test_mismatch_window_points_at_the_first_difference():
+    info = uia_sender.mismatch_window("0123456789", "01234X6789")
+    assert "第 5 个字起不同" in info
+    assert "'0123456789'" in info and "'01234X6789'" in info
+    assert "长度 10/10" in info
+
+
+def test_mismatch_window_handles_a_missing_tail():
+    info = uia_sender.mismatch_window("abcdef\n", "abcdef")
+    assert "第 6 个字起不同" in info
+    assert "长度 7/6" in info
+
+
 # ---------------------------------------------------------------- 粘贴
 
 

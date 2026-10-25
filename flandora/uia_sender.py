@@ -80,6 +80,22 @@ def has_non_bmp(text: str) -> bool:
     return any(ord(ch) > 0xFFFF for ch in text)
 
 
+def mismatch_window(want: str, got: str) -> str:
+    """回读不符时的定位信息：第几个字起不同、两边的上下文、各自的长度。
+
+    只打前 40 个字看不出是「漏了一个换行」还是「多了一个杂字」——2026-10-26 的
+    一次真机失败就卡在这里：期望以换行结尾、实得末尾是个 `U`，两种可能都说得通。
+    """
+    at = next(
+        (i for i, (a, b) in enumerate(zip(want, got)) if a != b),
+        min(len(want), len(got)),
+    )
+    return (
+        f"第 {at} 个字起不同：期望 {want[max(0, at - 20) : at + 20]!r}，"
+        f"实得 {got[max(0, at - 20) : at + 20]!r}；长度 {len(want)}/{len(got)}"
+    )
+
+
 class BaseSender:
     """消息发送器基类"""
 
@@ -1277,7 +1293,7 @@ class UiaSender(BaseSender):
             got = self._input_text()
             if got == text:
                 return True
-            log.warning(f"输入框回读不符（期望 {text[:40]!r}，实得 {got[:40]!r}），清空重打")
+            log.warning(f"输入框回读不符（{mismatch_window(text, got)}），清空重打")
             self._clear_input()
         return False
 
@@ -1368,7 +1384,7 @@ class UiaSender(BaseSender):
         got = read()
         if got == text:
             return True
-        log.warning(f"粘贴后回读不符（期望 {text[:40]!r}，实得 {got[:40]!r}）")
+        log.warning(f"粘贴后回读不符（{mismatch_window(text, got)}）")
         return False
 
     def _send_text_impl(self, contact: str, text: str) -> bool:

@@ -93,6 +93,46 @@ def test_auto_escape_sends_cq_string_verbatim(monkeypatch, isolated_ids):
     assert sender.texts == [("张三", raw)]
 
 
+class _NameStore:
+    """只提供 ``display_names()`` 的最小本地库视图。"""
+
+    def __init__(self, names: dict[str, str]):
+        self._names = names
+
+    def display_names(self) -> dict[str, str]:
+        return dict(self._names)
+
+
+def test_private_send_asks_the_local_db_for_the_display_name(monkeypatch, isolated_ids):
+    """没学过的私聊标识（filehelper 这类系统会话）要先换成显示名再发。"""
+    sender = FakeSender()
+    RUNTIME.sender = sender
+    monkeypatch.setattr(ob_protocol, "_store", lambda: _NameStore({"filehelper": "文件传输助手"}))
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": "filehelper", "message": "在吗"},
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.texts == [("文件传输助手", "在吗")]
+
+
+def test_private_send_falls_back_to_the_handle(monkeypatch, isolated_ids):
+    """本地库也给不出名字时，仍然按原来的方式拿标识去搜索。"""
+    sender = FakeSender()
+    RUNTIME.sender = sender
+    monkeypatch.setattr(ob_protocol, "_store", lambda: _NameStore({"filehelper": "filehelper"}))
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": "wxid_never_seen", "message": "在吗"},
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.texts == [("wxid_never_seen", "在吗")]
+
+
 def test_unsupported_segment_reports_failure(monkeypatch, isolated_ids):
     sender = FakeSender()
     uid = _prepare(monkeypatch, sender)

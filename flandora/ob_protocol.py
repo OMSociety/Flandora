@@ -210,8 +210,10 @@ async def _handle_ob_api(data: dict):
                     echo,
                 )
         else:
-            # 私聊：缓存里的备注名优先，其次按 wxid 搜索（微信能搜到好友的 wxid）
-            contact = contact or contact_handle
+            # 私聊：先用学过的名字；没有就问本地库要备注名（把 wxid 直接丢进搜索框，
+            # 对「文件传输助手」这类系统会话搜不出来），最后才退回按 wxid 搜索。
+            if not contact:
+                contact = await asyncio.to_thread(_contact_name, contact_handle) or contact_handle
 
         # 客户端段 → 领域段：base64 内联数据与客户端附件在这一步落成本地文件，
         # 解不出来的段如实记账，之后再规划动作。
@@ -920,6 +922,19 @@ def _group_name(handle: str) -> str:
         if group.get("username") == handle:
             return str(group.get("name") or "")
     return ""
+
+
+def _contact_name(handle: str) -> str:
+    """在线程池中执行：按 wxid 取微信里显示的备注名/昵称，找不到返回空串。
+
+    名字还没学过时不能拿 wxid 去搜索框碰运气：「文件传输助手」这类系统会话在
+    微信搜索框里搜 ``filehelper`` 搜不出结果（实测），得先换成显示名。
+    """
+    store = _store()
+    if store is None:
+        return ""
+    name = str(store.display_names().get(handle) or "")
+    return "" if name == handle else name
 
 
 def _members_roster(group_handle: str) -> list:

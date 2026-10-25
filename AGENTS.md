@@ -55,11 +55,19 @@ run_bridge.py -> flandora.main
    收件：wx_source -> wx_store -> wx_crypto/zstandard -> bridge_core -> ob_protocol -> ob_network -> OneBot 客户端
    更新：webui 端点 -> updater（下载/暂存）+ 退出后执行的 PowerShell 替换脚本
    发件：WebUI /api/send 或 OneBot 调用 -> senders.create_sender() -> uia_sender -> wx_desktop（隔离桌面）
-   面板：flandora/webui/app.py（FastAPI）读写 state 与 bridge_core，并静态托管 flandora/webui/dist
+   面板：flandora/webui/app.py（FastAPI）读写 runtime 与 bridge_core，并静态托管 flandora/webui/dist
+   进程级状态：flandora/runtime/（LIFECYCLE 管阶段/暂停/桥接线程，RUNTIME 管 sender、bridge、OneBot 入口占用与版本提示）
+   身份与名字索引：flandora/ob_ids.py（SELF、remember_name/lookup_name，账号级，换账号一起复位）
+   OneBot 入口线程：flandora/ob_server.py（OneBotServer 起停专用事件循环与网络管理器）
    取钥：wizard（状态机）-> wxkey（capture/locator/recover）+ wxkey.store（DPAPI）
 ```
 
 - 允许：`webui/app.py` 调用任意后端模块；`bridge_core` 调用收件源与发送器。
+- 允许的进程级可变对象只有 `flandora/runtime/` 的 `LIFECYCLE`、`RUNTIME` 与 `flandora/ob_ids.py` 的 `SELF`。
+  禁止新增 `state.py` 式的共享状态模块，也禁止在模块层新起可变全局（模块级赋值的目标只能是全大写常量、
+  类型别名或上述对象；`log`、各模块惰性单例等既有绑定登记在 `tests/architecture_allowlist.py`）。
+  判据：`tests/test_runtime_lifecycle.py` 用 AST 双向核对名单——新长出的全局、删掉后没销账的条目都失败。
+  原因：共享状态没有唯一写者时，启停、心跳与面板会各自读到不同的事实。
 - 禁止：窗口与桌面操作散落到 `wx_desktop` / `uia_sender` 之外。原因：微信跑在独立桌面
   `FlandoraSandbox` 上，只有持有该桌面句柄的进程能绑定窗口，旁路实现会静默失败。
 - 禁止：前端直接接触微信或本地库。原因：浏览器侧只有 `/api/*` 一个入口，绕过它就拿不到密钥与桌面句柄。
@@ -68,6 +76,9 @@ run_bridge.py -> flandora.main
 
 | 我要… | 改这里 |
 |---|---|
+| 改进程级状态（启停阶段、暂停、桥接线程、发送器与 OneBot 入口占用） | `flandora/runtime/lifecycle.py`、`flandora/runtime/runtime.py` |
+| 改机器人身份或「整数 ID → 显示名」索引 | `flandora/ob_ids.py` |
+| 改 OneBot 入口线程的起停 | `flandora/ob_server.py`（`OneBotServer.start()/stop()`） |
 | 加 API 端点 | `flandora/webui/app.py`（仿 `/api/desktop/status`，docstring 里同步端点清单） |
 | 加一个控制台页面 | `webui-frontend/src/pages/`，再在 `src/navigation.js` 的 `NAV_GROUPS` 登记页面与侧栏项 |
 | 改收件（读库、字段解析） | `flandora/bridge_core.py`，数据层在 `flandora/wx_store.py` |
@@ -84,6 +95,11 @@ run_bridge.py -> flandora.main
 `wx_source` 轮询微信本地库（`wlog` 增量）→ `wx_store` 只读查询配合 `wx_crypto` 解密 → `bridge_core`
 组装 OneBot 事件（群消息带 `is_mentioned`；撤回与拍一拍先摘成 `notice`，不进消息流）→ `ob_protocol` 整形 → `ob_network` 按入口推给已连接的客户端，其中每条连接建立时推 `lifecycle(connect)`、停止时推 `disable`，心跳按 `ob_heartbeat_seconds` 定时推；
 发送方向由 `senders` 选出的 `uia_sender` 在隔离桌面上把文本投递进微信输入框并回车。
+
+启停方向：`main.start_bridge()` 先 `OneBotServer.start()` 再起桥接线程，`stop_bridge()` 先
+`LIFECYCLE.begin_stop()` 让收件循环退出（最多等 5 秒）再 `OneBotServer.stop()` 释放端口，最后
+`LIFECYCLE.mark_stopped()`。暂停（`LIFECYCLE.pause()`）只把心跳与状态回报切成「已暂停/离线」，
+收件与推送照常。
 
 ## 修改契约
 

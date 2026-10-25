@@ -21,7 +21,8 @@ import shutil
 import sqlite3
 import time
 
-from . import config, ob_store, state, updater, wx_source
+from . import config, ob_store, updater, wx_source
+from .runtime import RUNTIME
 
 log = logging.getLogger("flandora")
 
@@ -185,7 +186,7 @@ def overview() -> dict:
 
 def _live_store():
     """正在跑的收件源里的 WxStore；桥接没运行时返回 None。"""
-    source = getattr(state.bridge_instance, "_source", None)
+    source = getattr(RUNTIME.bridge, "_source", None)
     return getattr(source, "store", None)
 
 

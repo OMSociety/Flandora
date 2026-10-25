@@ -115,16 +115,16 @@ def check(timeout: float = TIMEOUT):
 
 
 def check_async(timeout: float = TIMEOUT) -> threading.Thread:
-    """后台查一次，结果写进 state.update_available。返回该线程便于测试等待。"""
+    """后台查一次，结果写进 ``RUNTIME.update_available``。返回该线程便于测试等待。"""
 
     def worker():
         found = check(timeout=timeout)
         if found:
             latest, url = found
             try:
-                from . import state
+                from .runtime import RUNTIME
 
-                state.update_available = {
+                RUNTIME.update_available = {
                     "latest": latest,
                     "current": __version__,
                     "url": url,

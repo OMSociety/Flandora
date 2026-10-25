@@ -12,6 +12,10 @@ OneBot v11 里 ``user_id`` / ``group_id`` / ``self_id`` / ``message_id`` 都是�
 
 进程内另有 ``int → 原始标识`` 的反向缓存，只用于日志与调试：丢了可以从磁盘重建，
 不进额外存储。
+
+机器人自身身份（``SELF``）与「整数 ID → 显示名」的索引（``remember_name`` /
+``lookup_name``）也放在这里：两者都是账号级的，换登录账号必须一起复位，而
+OneBot 的 ``self_id`` 与发送时搜索用的名字本来就都从这一层取。
 """
 
 from __future__ import annotations
@@ -290,8 +294,87 @@ def allocate_message_id(talker: str, **kwargs) -> int:
     return message_ids().allocate(talker, **kwargs)
 
 
+# ---------------------------------------------------------------- 机器人身份
+
+
+class SelfIdentity:
+    """机器人自身身份：登录账号的 wxid、OneBot ``self_id`` 与昵称缓存。
+
+    三者必须一起变：沿用上一个账号的 ``user_id`` 或昵称，事件里的 ``self_id``
+    与 ``get_login_info`` 就会指错人，客户端据此回消息会发到错的地方。
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._wxid = ""
+        self._user_id = 0
+        self._nickname = ""
+
+    def set_wxid(self, wxid: str) -> int:
+        """按登录账号重设身份：重新分配 ``user_id`` 并作废昵称缓存，返回新 ``user_id``。"""
+        handle = str(wxid or "")
+        oid = contact_id(handle) if handle else 0
+        with self._lock:
+            self._wxid = handle
+            self._user_id = oid
+            self._nickname = ""
+            return oid
+
+    def user_id(self) -> int:
+        with self._lock:
+            return self._user_id
+
+    def wxid(self) -> str:
+        with self._lock:
+            return self._wxid
+
+    def nickname(self) -> str:
+        """缓存的昵称；空串表示还没解析过。"""
+        with self._lock:
+            return self._nickname
+
+    def set_nickname(self, name: str) -> None:
+        with self._lock:
+            self._nickname = str(name or "")
+
+
+SELF = SelfIdentity()
+
+
+# ---------------------------------------------------------------- 名字索引
+# OneBot 整数 ID → 微信里显示的联系名/群名。收件链路写入、协议与面板读取，
+# 因此读写都过同一把锁；对外只给拷贝，遍历期间不会被写坏。
+
+_names: dict[int, str] = {}
+_names_lock = threading.Lock()
+
+
+def remember_name(ob_id: int, name: str) -> None:
+    """记下某个 OneBot ID 的显示名（覆盖旧值）。"""
+    with _names_lock:
+        _names[int(ob_id)] = str(name or "")
+
+
+def lookup_name(ob_id: int) -> str:
+    """取显示名；没记过返回空串。"""
+    with _names_lock:
+        return _names.get(int(ob_id), "")
+
+
+def name_snapshot() -> dict[int, str]:
+    """名字索引的拷贝：调用方遍历时桥接线程仍可写入。"""
+    with _names_lock:
+        return dict(_names)
+
+
+def clear_names() -> None:
+    """清空名字索引（切换登录账号或测试换数据目录时用）。"""
+    with _names_lock:
+        _names.clear()
+
+
 def reset_singletons() -> None:
-    """丢弃进程内单例（切换登录账号或测试换目录时用）。"""
+    """丢弃进程内单例与账号级索引（切换登录账号或测试换目录时用）。"""
     global _contact_ids, _message_ids
     with _singleton_lock:
         if _message_ids is not None:
@@ -301,3 +384,5 @@ def reset_singletons() -> None:
                 pass
         _contact_ids = None
         _message_ids = None
+    SELF.set_wxid("")
+    clear_names()

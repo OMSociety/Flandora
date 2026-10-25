@@ -15,8 +15,9 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from flandora import config, state
+from flandora import config
 from flandora import main as bridge_main
+from flandora.runtime import LIFECYCLE
 from flandora.webui import app as webui_app
 from flandora.webui import auth
 
@@ -130,21 +131,36 @@ def test_control_endpoints_reach_the_bridge_module(monkeypatch, client):
     """回归：控制端点必须打到 flandora.main 的起停函数，而不是一个不存在的模块。"""
     calls = []
 
-    monkeypatch.setattr(bridge_main, "start_bridge", lambda: calls.append("start"))
-    monkeypatch.setattr(bridge_main, "stop_bridge", lambda: calls.append("stop"))
+    def fake_start():
+        calls.append("start")
+        LIFECYCLE.begin_start()
+
+    def fake_stop():
+        calls.append("stop")
+        LIFECYCLE.begin_stop()
+        LIFECYCLE.mark_stopped()
+
+    monkeypatch.setattr(bridge_main, "start_bridge", fake_start)
+    monkeypatch.setattr(bridge_main, "stop_bridge", fake_stop)
 
     async def _no_sleep(_seconds):
         return None
 
     monkeypatch.setattr(webui_app.asyncio, "sleep", _no_sleep)
-    state.paused.clear()
 
+    seen = {}
     for action in ("start", "stop", "restart", "pause", "resume"):
         resp = client.post("/api/control", json={"action": action})
         assert resp.status_code == 200, f"{action}: {resp.text}"
+        seen[action] = resp.json()
 
     assert calls == ["start", "stop", "stop", "start"]
-    assert state.paused.is_set() is False
+    # 暂停只影响在线口径：running 仍是 True，paused 翻转，恢复后回到原样
+    assert seen["stop"]["running"] is False
+    assert seen["pause"]["running"] is True
+    assert seen["pause"]["paused"] is True
+    assert seen["resume"]["paused"] is False
+    assert LIFECYCLE.snapshot().paused is False
 
     unknown = client.post("/api/control", json={"action": "nope"})
     assert unknown.status_code == 400

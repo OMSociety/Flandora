@@ -42,9 +42,10 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__, config, ob_network, state, storage, wechat_account
+from .. import __version__, config, ob_ids, ob_network, storage, wechat_account
 from ..config import fields as config_fields
 from ..ob_network import manager as ob_networks
+from ..runtime import LIFECYCLE, RUNTIME
 from . import auth, monitor
 from .monitor import bus
 
@@ -81,7 +82,7 @@ def _self_identity() -> dict:
     """机器人身份（全自动识别）：wxid 取自当前登录账号，昵称优先取自本地库自己的联系人。"""
     acct = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
     nickname = ""
-    bi = state.bridge_instance
+    bi = RUNTIME.bridge
     store = getattr(getattr(bi, "_source", None), "store", None)
     if store is not None:
         try:
@@ -92,14 +93,14 @@ def _self_identity() -> dict:
 
 
 def get_status() -> dict:
-    bi = state.bridge_instance
+    snap = LIFECYCLE.snapshot()
+    bi = RUNTIME.bridge
     source_ready = bi is not None and getattr(bi, "_source", None) is not None
     uptime = None
-    started = getattr(state, "bridge_started_at", None)
-    if state.running and started:
-        uptime = round(time.time() - started, 1)
+    if snap.is_active and snap.started_at:
+        uptime = round(time.time() - snap.started_at, 1)
     window = None
-    sender = state.sender_instance
+    sender = RUNTIME.sender
     if sender is not None and hasattr(sender, "current_window_info"):
         try:
             window = sender.current_window_info()
@@ -108,8 +109,8 @@ def get_status() -> dict:
     with bus._lock:
         counters = dict(bus.counters)
     return {
-        "running": state.running,
-        "paused": state.paused.is_set(),
+        "running": snap.is_active,
+        "paused": snap.paused,
         "uptime_sec": uptime,
         "pid": os.getpid(),
         "version": VERSION,
@@ -139,7 +140,7 @@ def get_status() -> dict:
         "counters": counters,
         "window": window,
         "window_locked": bool(getattr(config, "WECHAT_HWND", 0)),
-        "update": state.update_available,
+        "update": RUNTIME.update_available,
         "self": _self_identity(),
     }
 
@@ -169,7 +170,7 @@ def _on_config_changed(settings, changed: frozenset) -> None:
     """HOT 字段写完要动进程状态的那部分：微信窗口换绑。"""
     if "wechat_hwnd" not in changed:
         return
-    sender = state.sender_instance
+    sender = RUNTIME.sender
     if sender is None or not hasattr(sender, "rebind_window"):
         return
     hwnd = int(settings.WECHAT_HWND or 0)
@@ -316,20 +317,20 @@ async def api_control(payload: dict):
     action = (payload or {}).get("action", "")
     from .. import main as bridge_main
 
+    # 起停要等桥接线程退出与 OneBot 端口释放，最坏十秒量级：放到线程里做，
+    # 否则整个面板（含状态推送与轮询）会被这一次请求一起卡住。
     if action == "start":
-        bridge_main.start_bridge()
+        await asyncio.to_thread(bridge_main.start_bridge)
     elif action == "stop":
-        bridge_main.stop_bridge()
+        await asyncio.to_thread(bridge_main.stop_bridge)
     elif action == "restart":
-        bridge_main.stop_bridge()
+        await asyncio.to_thread(bridge_main.stop_bridge)
         await asyncio.sleep(1.5)
-        bridge_main.start_bridge()
+        await asyncio.to_thread(bridge_main.start_bridge)
     elif action == "pause":
-        state.paused.set()
-        log.info("[WebUI] 已暂停")
+        log.info("[WebUI] 已暂停" if LIFECYCLE.pause() else "[WebUI] 桥接未运行，暂停未生效")
     elif action == "resume":
-        state.paused.clear()
-        log.info("[WebUI] 已恢复")
+        log.info("[WebUI] 已恢复" if LIFECYCLE.resume() else "[WebUI] 桥接未运行，恢复未生效")
     else:
         return JSONResponse({"ok": False, "error": f"未知操作: {action}"}, 400)
 
@@ -351,7 +352,7 @@ def api_update_status():
         "current": VERSION,
         "app_dir": updater.app_dir(),
         "app_dir_writable": updater.can_write_app_dir(),
-        "latest": state.update_available,
+        "latest": RUNTIME.update_available,
         "pending": updater.pending(),
     }
 
@@ -772,7 +773,7 @@ def api_contacts():
     for gid, name in (config.GROUP_NAME_MAP or {}).items():
         add(str(gid), name, "group")
 
-    store = getattr(getattr(state.bridge_instance, "_source", None), "store", None)
+    store = getattr(getattr(RUNTIME.bridge, "_source", None), "store", None)
     if store is not None:
         try:
             for group in store.groups():
@@ -786,7 +787,7 @@ def api_contacts():
             log.warning(f"[WebUI] 读取好友名册失败: {e}")
     add("filehelper", "文件传输助手", "private")
 
-    for oid, name in state._ob_id_to_contact.items():
+    for oid, name in ob_ids.name_snapshot().items():
         add(str(oid), name, "group" if str(oid).endswith("@chatroom") else "private")
     return {"contacts": contacts}
 
@@ -801,8 +802,8 @@ async def api_send(payload: dict):
     if not contact or not text:
         return JSONResponse({"ok": False, "error": "联系人和内容不能为空"}, 400)
 
-    sender = state.sender_instance
-    if not state.running or sender is None:
+    sender = RUNTIME.sender
+    if not LIFECYCLE.snapshot().is_active or sender is None:
         return JSONResponse({"ok": False, "error": "桥接未运行，请先启动"}, 400)
 
     log.info(f"[WebUI] 测试发送 -> {contact}: {text[:50]}")
@@ -899,7 +900,7 @@ def api_windows():
         return JSONResponse({"ok": False, "error": str(e)}, 500)
 
     cur_hwnd = 0
-    sender = state.sender_instance
+    sender = RUNTIME.sender
     if sender is not None:
         cur_hwnd = getattr(sender, "_hwnd", 0) or 0
     saved_hwnd = int(getattr(config, "WECHAT_HWND", 0) or 0)
@@ -918,7 +919,7 @@ def api_select_window(payload: dict):
     except (TypeError, ValueError):
         return JSONResponse({"ok": False, "error": "hwnd 必须是整数"}, 400)
 
-    sender = state.sender_instance
+    sender = RUNTIME.sender
     if sender is None or not hasattr(sender, "rebind_window"):
         return JSONResponse({"ok": False, "error": "发送器未就绪（桥接未运行）"}, 400)
 

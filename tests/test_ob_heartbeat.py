@@ -7,7 +7,6 @@
 import asyncio
 import json
 import socket
-import threading
 
 import pytest
 from fastapi.responses import JSONResponse
@@ -84,25 +83,25 @@ def test_no_heartbeat_when_interval_is_zero(monkeypatch):
     asyncio.run(main())
 
 
-def test_heartbeat_status_reflects_runtime(monkeypatch):
-    class State:
-        running = True
-        paused = threading.Event()
-        bridge_instance = object()
-        sender_instance = object()
+def test_heartbeat_status_reflects_runtime():
+    """在线 = 已起且未暂停；sender 就绪才算 good。"""
+    from flandora.runtime import LIFECYCLE, RUNTIME
 
-    state = State()
-    assert ob_network.NetworkManager._heartbeat_status(state) == {"online": True, "good": True}
+    LIFECYCLE.begin_start()
+    LIFECYCLE.mark_running()
+    RUNTIME.bridge = object()
+    RUNTIME.sender = object()
+    assert ob_network.NetworkManager._heartbeat_status() == {"online": True, "good": True}
 
-    state.sender_instance = None
-    assert ob_network.NetworkManager._heartbeat_status(state) == {"online": True, "good": False}
+    RUNTIME.sender = None
+    assert ob_network.NetworkManager._heartbeat_status() == {"online": True, "good": False}
 
-    state.paused.set()
-    assert ob_network.NetworkManager._heartbeat_status(state) == {"online": False, "good": False}
+    assert LIFECYCLE.pause() is True
+    assert ob_network.NetworkManager._heartbeat_status() == {"online": False, "good": False}
 
-    state.paused.clear()
-    state.bridge_instance = None
-    assert ob_network.NetworkManager._heartbeat_status(state) == {"online": False, "good": False}
+    assert LIFECYCLE.resume() is True
+    RUNTIME.bridge = None
+    assert ob_network.NetworkManager._heartbeat_status() == {"online": False, "good": False}
 
 
 @pytest.fixture()

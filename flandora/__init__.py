@@ -4,7 +4,8 @@
 
     main             入口与生命周期
     config           配置读取
-    state            进程级运行状态
+    runtime          进程级状态（LIFECYCLE / RUNTIME 是唯一允许新建的进程级对象）
+    ob_ids           OneBot 整数 ID ↔ 微信标识，机器人身份与名字索引
     single_instance  单实例判重（命名互斥量）
     update_check     启动时查一次新版本
     webui/           本地配置界面（FastAPI + 前端产物 dist/）

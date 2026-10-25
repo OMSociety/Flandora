@@ -3,7 +3,7 @@
 不联网——`update_check._opener` 被换成桩函数。要验的是三件事：版本号怎么比
 （字符串序会踩的坑、补零、解析不出来）、各种失败（连不上 / 超时 / 限流 /
 响应不是 XML / 订阅里没有条目）是不是真的静默，以及后台线程写进
-`state.update_available` 的内容对不对。
+`RUNTIME.update_available` 的内容对不对。
 
 两种跑法等价：
 
@@ -21,7 +21,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from flandora import state, update_check  # noqa: E402
+from flandora import update_check  # noqa: E402
+from flandora.runtime import RUNTIME
 
 _FEED = """<?xml version="1.0" encoding="UTF-8"?>
 <feed xmlns="http://www.w3.org/2005/Atom">
@@ -83,9 +84,9 @@ def opener(monkeypatch):
 
 @pytest.fixture
 def clean_update_state(monkeypatch):
-    """state.update_available 归零，用例结束自动还原。"""
-    monkeypatch.setattr(state, "update_available", None)
-    return state
+    """RUNTIME.update_available 归零，用例结束自动还原。"""
+    monkeypatch.setattr(RUNTIME, "update_available", None)
+    return RUNTIME
 
 
 # ===== 版本号解析 =====
@@ -191,11 +192,11 @@ def test_check_failure_is_silent(opener, label, body, exc):
     assert update_check.check(timeout=0.1) is None, f"{label} 时返回了非 None"
 
 
-# ===== 后台线程把结果写进 state =====
+# ===== 后台线程把结果写进 RUNTIME =====
 
 
 def test_check_async_writes_state(opener, clean_update_state):
-    """check_async 把 (latest, current, url) 写进 state.update_available。"""
+    """check_async 把 (latest, current, url) 写进 RUNTIME.update_available。"""
     opener(body=_body("v9.9.9", "https://example.invalid/v999"))
     update_check.check_async(timeout=0.1).join(timeout=10)
     assert clean_update_state.update_available == {
@@ -206,14 +207,14 @@ def test_check_async_writes_state(opener, clean_update_state):
 
 
 def test_check_async_leaves_state_alone_when_current(opener, clean_update_state):
-    """没有新版时 check_async 不写 state。"""
+    """没有新版时 check_async 不写 RUNTIME。"""
     opener(body=_body("v" + update_check.__version__))
     update_check.check_async(timeout=0.1).join(timeout=10)
     assert clean_update_state.update_available is None
 
 
 def test_check_async_is_quiet_when_offline(opener, clean_update_state):
-    """连不上时 check_async 不写 state、不抛异常。"""
+    """连不上时 check_async 不写 RUNTIME、不抛异常。"""
     opener(exc=urllib.error.URLError("no network"))
     update_check.check_async(timeout=0.1).join(timeout=10)
     assert clean_update_state.update_available is None

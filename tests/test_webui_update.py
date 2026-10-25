@@ -5,6 +5,7 @@ import json
 import os
 
 from flandora import updater
+from flandora.runtime import RUNTIME
 from flandora.webui import app as webui_app
 
 
@@ -18,7 +19,7 @@ def _isolate(monkeypatch, tmp_path):
 
 def test_update_status_reports_source_mode(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
-    monkeypatch.setattr(webui_app.state, "update_available", {})
+    monkeypatch.setattr(RUNTIME, "update_available", {})
     data = webui_app.api_update_status()
     assert data["ok"] is True
     assert data["mode"] == "source"

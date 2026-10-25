@@ -11,7 +11,7 @@
 两者都做。``message_format`` 可逐入口覆盖全局 ``ob_message_format``——同一个事件
 对不同入口可以分别按数组或 CQ 字符串送出。
 
-线程模型：所有适配器活在同一个事件循环里（``_run_ob_server`` 建的那个线程），
+线程模型：所有适配器活在同一个事件循环里（``ob_server.OneBotServer`` 建的那个线程），
 而事件由桥接线程推送。``broadcast()`` 因此是同步函数，内部用
 ``run_coroutine_threadsafe`` 切回循环，与旧 ``ws_pool.broadcast`` 的调用方式一致。
 """
@@ -289,13 +289,12 @@ class NetworkManager:
         「这条连接」的开始，与进程启动无关。心跳投递失败只记 debug——
         某个入口掉了由它的监督任务负责重连，不该让心跳循环自己退出。
         """
-        from . import state
         from .ob_protocol import make_heartbeat_event
 
         try:
             while True:
                 await asyncio.sleep(interval)
-                status = self._heartbeat_status(state)
+                status = self._heartbeat_status()
                 await self._broadcast(make_heartbeat_event(interval, **status))
         except asyncio.CancelledError:
             raise
@@ -303,12 +302,11 @@ class NetworkManager:
             log.error(f"[OB11] 心跳循环异常退出：{e}")
 
     @staticmethod
-    def _heartbeat_status(state) -> dict:
-        """心跳里的状态：桥接在跑且已挂上实例算在线，发送器就绪才算 good。"""
-        running = bool(getattr(state, "running", False)) and not state.paused.is_set()
-        online = running and getattr(state, "bridge_instance", None) is not None
-        good = online and getattr(state, "sender_instance", None) is not None
-        return {"online": online, "good": good}
+    def _heartbeat_status() -> dict:
+        """心跳里的状态：判定只有一份，见 ``RUNTIME.online_flags()``。"""
+        from .runtime import RUNTIME
+
+        return RUNTIME.online_flags()
 
     async def _supervise(self, node: dict):
         """起一个入口，出错就记下来并退避重试——单个入口挂掉不该拖垮其余入口。"""

@@ -22,9 +22,9 @@ from . import (
     ob_segments,
     ob_store,
     send_plan,
-    state,
 )
 from .ob_network import broadcast as push_event_broadcast
+from .runtime import RUNTIME
 
 try:
     from .webui import monitor
@@ -49,13 +49,14 @@ def _failure(message: str, retcode: int, echo=None) -> dict:
 def _resolve_self_name() -> str:
     """机器人显示名：优先本地通讯录里自己那行的微信昵称，读不到退回 wechat-bot。
 
-    识别成功就缓存进 state._self_name（账号切换时已被清空，会按新账号重识别）；
+    识别成功就记进 ``ob_ids.SELF``（账号切换时昵称缓存已作废，会按新账号重识别）；
     失败不缓存，下次调用再试。昵称的读库与缓存由 bridge 实例统一负责，
     与 @ 识别、防自回环用的是同一个来源。
     """
-    if state._self_name:
-        return state._self_name
-    bridge = state.bridge_instance
+    cached = ob_ids.SELF.nickname()
+    if cached:
+        return cached
+    bridge = RUNTIME.bridge
     resolver = getattr(bridge, "self_nickname", None)
     if callable(resolver):
         try:
@@ -63,7 +64,7 @@ def _resolve_self_name() -> str:
         except Exception:  # noqa: BLE001
             nick = ""
         if nick:
-            state._self_name = nick
+            ob_ids.SELF.set_nickname(nick)
             return nick
     return "wechat-bot"
 
@@ -175,7 +176,7 @@ async def _handle_ob_api(data: dict):
                 "message 为空，没有可发送的内容", action_catalog.RETCODE_BAD_PARAM, echo
             )
         contact_handle = ob_ids.handle_of(target_id) or ""
-        contact = state._ob_id_to_contact.get(target_id) or ""
+        contact = ob_ids.lookup_name(target_id) or ""
         if not target_id:
             return _failure("缺少 user_id / group_id", action_catalog.RETCODE_BAD_PARAM, echo)
         # 群聊：微信搜索框搜不到 @chatroom ID，必须有群名。
@@ -226,7 +227,7 @@ async def _handle_ob_api(data: dict):
             微信的 @ 是「提及」对象而不是正文，发送器必须走成员选择弹层；
             发送器没有这条路径时如实记账，不退回纯文字（那会变成假提及）。
             """
-            fn = getattr(state.sender_instance, "send_mention_text", None)
+            fn = getattr(RUNTIME.sender, "send_mention_text", None)
             if not callable(fn):
                 failures.append("@ 提及发送失败（发送器不支持）")
                 log.error("[OB11] 发送器没有 send_mention_text，@ 未发送")
@@ -265,7 +266,7 @@ async def _handle_ob_api(data: dict):
             if seg_type == "text":
                 text = seg_data.get("text", "")
                 if text:
-                    if await _send("文字", state.sender_instance.send_text, contact, text):
+                    if await _send("文字", RUNTIME.sender.send_text, contact, text):
                         _record_out(contact, is_group, text)
 
             elif seg_type == "image":
@@ -297,7 +298,7 @@ async def _handle_ob_api(data: dict):
 
                 if img_path:
                     try:
-                        if await _send("图片", state.sender_instance.send_image, contact, img_path):
+                        if await _send("图片", RUNTIME.sender.send_image, contact, img_path):
                             _record_out(contact, is_group, "[图片]")
                     finally:
                         if img_path and "tmp" in img_path:
@@ -313,9 +314,7 @@ async def _handle_ob_api(data: dict):
                     # 无文件：尝试把 QQ 表情 id 映射为微信自带表情代码（[微笑] 等文本即渲染）
                     face_code = QQ_FACE_TO_WECHAT.get(_safe_int(seg_data.get("id")))
                     if face_code:
-                        if await _send(
-                            "QQ表情", state.sender_instance.send_text, contact, face_code
-                        ):
+                        if await _send("QQ表情", RUNTIME.sender.send_text, contact, face_code):
                             _record_out(contact, is_group, face_code)
                     else:
                         log.debug(f"[OB11] 跳过未知 face 段: {seg_data}")
@@ -345,9 +344,7 @@ async def _handle_ob_api(data: dict):
 
                 if face_path:
                     try:
-                        if await _send(
-                            "表情", state.sender_instance.send_image, contact, face_path
-                        ):
+                        if await _send("表情", RUNTIME.sender.send_image, contact, face_path):
                             _record_out(contact, is_group, "[表情]")
                     finally:
                         if face_path and "tmp" in face_path:
@@ -398,7 +395,7 @@ async def _handle_ob_api(data: dict):
 
                     if voice_path:
                         if await _send(
-                            "语音（文件形式）", state.sender_instance.send_file, contact, voice_path
+                            "语音（文件形式）", RUNTIME.sender.send_file, contact, voice_path
                         ):
                             _record_out(contact, is_group, "[语音]")
                 finally:
@@ -441,7 +438,7 @@ async def _handle_ob_api(data: dict):
                     continue
                 try:
                     if video_path and await _send(
-                        "视频（文件形式）", state.sender_instance.send_file, contact, video_path
+                        "视频（文件形式）", RUNTIME.sender.send_file, contact, video_path
                     ):
                         _record_out(contact, is_group, "[视频]")
                 finally:
@@ -489,7 +486,7 @@ async def _handle_ob_api(data: dict):
 
     elif action == "get_login_info":
         resp_data["data"] = {
-            "user_id": state._self_id_int,
+            "user_id": ob_ids.SELF.user_id(),
             "nickname": _resolve_self_name(),
         }
 
@@ -501,15 +498,16 @@ async def _handle_ob_api(data: dict):
         }
 
     elif action == "get_status":
-        source = getattr(state.bridge_instance, "_source", None)
+        source = getattr(RUNTIME.bridge, "_source", None)
+        flags = RUNTIME.online_flags()
         resp_data["data"] = {
-            "online": bool(state.running),
-            "good": bool(state.running and state.sender_instance is not None),
+            "online": flags["online"],
+            "good": flags["good"],
             "app_name": "flandora",
             "app_version": __version__,
             "protocol_version": "v11",
             "receiver_ready": source is not None,
-            "sender_ready": state.sender_instance is not None,
+            "sender_ready": RUNTIME.sender is not None,
         }
 
     elif action == "can_send_image":
@@ -668,7 +666,7 @@ def make_message_event(
     """
     event = {
         "time": int(timestamp or time.time()),
-        "self_id": state._self_id_int,
+        "self_id": ob_ids.SELF.user_id(),
         "post_type": "message",
         "message_id": message_id,
     }
@@ -699,7 +697,7 @@ def make_heartbeat_event(interval: int, *, online: bool = True, good: bool = Tru
     """
     return {
         "time": int(time.time()),
-        "self_id": state._self_id_int,
+        "self_id": ob_ids.SELF.user_id(),
         "post_type": "meta_event",
         "meta_event_type": "heartbeat",
         "status": {"online": bool(online), "good": bool(good)},
@@ -711,7 +709,7 @@ def make_lifecycle_event(sub_type: str) -> dict:
     """OneBot v11 生命周期元事件（connect / enable / disable）。"""
     return {
         "time": int(time.time()),
-        "self_id": state._self_id_int,
+        "self_id": ob_ids.SELF.user_id(),
         "post_type": "meta_event",
         "meta_event_type": "lifecycle",
         "sub_type": sub_type,
@@ -733,7 +731,7 @@ def make_recall_event(
     """
     event = {
         "time": int(time.time()),
-        "self_id": state._self_id_int,
+        "self_id": ob_ids.SELF.user_id(),
         "post_type": "notice",
         "notice_type": "group_recall" if group_id else "friend_recall",
         "user_id": int(user_id),
@@ -756,7 +754,7 @@ def make_poke_event(
     """
     event = {
         "time": int(time.time()),
-        "self_id": state._self_id_int,
+        "self_id": ob_ids.SELF.user_id(),
         "post_type": "notice",
         "notice_type": "notify",
         "sub_type": "poke",
@@ -792,7 +790,7 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
         return out
     count = max(1, min(count, 100))
 
-    bi = state.bridge_instance
+    bi = RUNTIME.bridge
     store = getattr(getattr(bi, "_source", None), "store", None)
     if store is None:
         log.warning(f"[OB11] 收件源尚未就绪，历史拉取跳过 (talker={talker})")
@@ -813,7 +811,7 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
             if not text:
                 continue
             if m.get("outgoing"):
-                uid = state._self_id_int
+                uid = ob_ids.SELF.user_id()
                 nick = _resolve_self_name()
             else:
                 sender_wxid = m.get("sender") or ""
@@ -839,7 +837,7 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
 
 def _store():
     """取当前桥接实例的只读本地库句柄；收件源未就绪时返回 None。"""
-    return getattr(getattr(state.bridge_instance, "_source", None), "store", None)
+    return getattr(getattr(RUNTIME.bridge, "_source", None), "store", None)
 
 
 def _contacts_roster() -> list:

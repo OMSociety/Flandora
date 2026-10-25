@@ -10,9 +10,10 @@ import sys
 import threading
 import time
 
-from . import __version__, config, ob_ids, state, update_check, wechat_account
+from . import __version__, config, ob_ids, update_check, wechat_account
 from .bridge_core import Flandora
-from .ob_server import _run_ob_server
+from .ob_server import ONEBOT_SERVER
+from .runtime import LIFECYCLE, RUNTIME
 from .senders import create_sender
 from .single_instance import BRIDGE_MUTEX_NAME, acquire_mutex
 
@@ -23,18 +24,12 @@ log = logging.getLogger("flandora")
 
 
 def start_bridge():
-    with state.run_lock:
-        if state.running:
-            return
-        state.running = True
-    state.bridge_started_at = time.time()
-    state.paused.clear()
+    if not LIFECYCLE.begin_start():
+        return
 
-    # 先把 OB11 服务端拉起来——发消息可能依赖微信窗口搜索，先保证能收消息
-    if not state.ob_server_started:
-        t = threading.Thread(target=_run_ob_server, daemon=True, name="ob11-server")
-        t.start()
-        state.ob_server_started = True
+    # 先把 OB11 服务端拉起来——发消息可能依赖微信窗口搜索，先保证能收消息。
+    # 已在跑时 start() 自己返回 False，这里不需要另设标志。
+    ONEBOT_SERVER.start()
 
     # create_sender() 会做 UIA 窗口枚举，可能阻塞（微信最小化/锁屏时尤甚），
     # 放到独立线程避免卡住 _bridge_loop（SSE 收消息）的启动。
@@ -51,24 +46,26 @@ def start_bridge():
         except Exception as exc:  # noqa: BLE001
             log.error(f"隔离桌面启动异常: {exc}")
         try:
-            state.sender_instance = create_sender()
+            RUNTIME.sender = create_sender()
         except Exception as exc:  # noqa: BLE001
             log.error(f"创建 UIA 发送器失败: {exc}")
 
     threading.Thread(target=_create_sender_async, daemon=True, name="sender-init").start()
 
-    state.bridge_thread = threading.Thread(target=_bridge_loop, daemon=True, name="bridge")
-    state.bridge_thread.start()
+    thread = threading.Thread(target=_bridge_loop, daemon=True, name="bridge")
+    LIFECYCLE.attach_thread(thread)
+    thread.start()
     log.info("[Web] 已启动")
 
 
 def stop_bridge():
-    with state.run_lock:
-        state.running = False
+    was_active = LIFECYCLE.begin_stop()
 
-    # 重置启动标记，让下次 start 能重新拉起网络入口线程
-    state.ob_server_started = False
-
+    # 先等收件循环退出，再关 OneBot 入口：反过来的话，收件线程还会往已停的网络推事件
+    if was_active and not LIFECYCLE.join(timeout=5.0):
+        log.warning("[Web] 桥接线程 5 秒内未退出，继续关闭 OneBot 入口")
+    ONEBOT_SERVER.stop()
+    LIFECYCLE.mark_stopped()
     log.info("[Web] 已停止")
 
 
@@ -81,27 +78,27 @@ def _bridge_loop():
         f"Bridge | 收件: local | OB11: ws://{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT} | 发送: uia"
     )
 
-    bridge = Flandora(state.sender_instance)
-    with state.bridge_lock:
-        state.bridge_instance = bridge
+    LIFECYCLE.mark_running()
+    bridge = Flandora(RUNTIME.sender)
+    RUNTIME.bridge = bridge
 
     # 本地库收件自己轮询、自己重试，起不来时（还没登录、口令没取到）
     # 隔一会儿再试，避免把失败当成功直接退出。
-    while state.running:
-        try:
-            bridge.listen_local_db()
-        except Exception as e:  # noqa: BLE001
-            log.error(f"本地库收件异常：{e}")
-        if not state.running:
-            break
-        log.warning("本地库收件未就绪，10s 后重试")
-        for _ in range(10):
-            if not state.running:
+    try:
+        while LIFECYCLE.should_continue():
+            try:
+                bridge.listen_local_db()
+            except Exception as e:  # noqa: BLE001
+                log.error(f"本地库收件异常：{e}")
+            if not LIFECYCLE.should_continue():
                 break
-            time.sleep(1)
-
-    with state.bridge_lock:
-        state.bridge_instance = None
+            log.warning("本地库收件未就绪，10s 后重试")
+            for _ in range(10):
+                if not LIFECYCLE.should_continue():
+                    break
+                time.sleep(1)
+    finally:
+        RUNTIME.bridge = None
 
 
 def start_web():
@@ -156,14 +153,13 @@ def _rebuild_for_account(old, new):
     联系人。
     """
     old_wxid = old.wxid if old else "（未识别）"
-    state._ob_id_to_contact.clear()
-    state._self_id_int = ob_ids.contact_id(new.wxid)
-    state._self_name = ""  # 昵称缓存作废：下次 get_login_info 时按新账号的本地库重新识别
+    ob_ids.clear_names()
+    ob_ids.SELF.set_wxid(new.wxid)  # user_id 重新分配，昵称缓存同时作废
     log.warning("=" * 64)
     log.warning(f"[账号] 微信登录账号已切换：{old_wxid} -> {new.wxid}")
     log.warning(f"[账号] 新账号数据目录：{new.data_dir or '（未找到）'}")
     log.warning("[账号] 已作废 OneBot 会话映射（联系人 / 群名缓存）")
-    log.warning(f"[账号] 机器人身份已切换为 {new.wxid}（self_id={state._self_id_int}）")
+    log.warning(f"[账号] 机器人身份已切换为 {new.wxid}（self_id={ob_ids.SELF.user_id()}）")
     log.warning("[账号] 本地库密钥只对上一个账号有效，新账号的库需重新提取密钥后才能读取")
     log.warning("[账号] 图片密钥同样是账号级的，需对新账号重取；在此之前图片消息只给占位符")
     log.warning("[账号] 给新账号发消息前请重新确认目标，映射已清空的会话会如实报失败")
@@ -194,8 +190,7 @@ def main() -> int:
     # 机器人身份全自动：取当前登录的微信账号，无需任何配置。
     # 检测不到（微信没登录/没运行）时用 wechat_bot 占位，微信登录后重启桥接即自动识别。
     acct = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
-    state._self_id_int = ob_ids.contact_id(acct.wxid if acct is not None else "wechat_bot")
-    state._self_name = ""
+    ob_ids.SELF.set_wxid(acct.wxid if acct is not None else "wechat_bot")
     if acct is not None:
         log.info(f"[身份] 机器人账号：{acct.wxid}")
     else:

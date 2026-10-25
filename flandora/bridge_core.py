@@ -18,13 +18,14 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-from . import ob_ids, ob_inbound, state, wx_crypto, wx_source
+from . import ob_ids, ob_inbound, wx_crypto, wx_source
 from .ob_protocol import (
     make_message_event,
     make_poke_event,
     make_recall_event,
     push_event,
 )
+from .runtime import LIFECYCLE
 
 try:
     from .webui import monitor
@@ -204,7 +205,7 @@ class Flandora:
         if is_group:
             # 自动学习群名映射：若推送了真实群名（非 @chatroom 原始 ID），存入映射供发送时用
             if group_name_raw and not group_name_raw.endswith("@chatroom"):
-                state._ob_id_to_contact[ob_ids.contact_id(session_id_data)] = group_name_raw.strip()
+                ob_ids.remember_name(ob_ids.contact_id(session_id_data), group_name_raw.strip())
                 log.info(f"[群名学习] {session_id_data} -> {group_name_raw}")
 
         self._push_entry(self._entry_for(data, content))
@@ -388,8 +389,8 @@ class Flandora:
                 )
                 # 标记该群消息是否真实 @ 了机器人，由客户端决定是否响应
                 event["is_mentioned"] = bool(self._is_mentioned(entry.get("raw_data", {})))
-                state._ob_id_to_contact[group_id] = contact
-                state._ob_id_to_contact[user_id] = sender_name
+                ob_ids.remember_name(group_id, contact)
+                ob_ids.remember_name(user_id, sender_name)
             else:
                 sender_name = entry.get("source_name", contact)
                 private_segments = self._inbound_segments(entry, combined, session_handle)
@@ -402,7 +403,7 @@ class Flandora:
                     message_id=message_id,
                     timestamp=entry.get("timestamp", 0),
                 )
-                state._ob_id_to_contact[user_id] = contact
+                ob_ids.remember_name(user_id, contact)
 
             sent = push_event(event)
             if sent > 0:
@@ -451,10 +452,10 @@ class Flandora:
         self._source = source  # 历史回填与昵称解析都从这里取 store
         source.prime()
         try:
-            while state.running:
+            while LIFECYCLE.should_continue():
                 try:
                     for data in source.poll():
-                        if not state.running:
+                        if not LIFECYCLE.should_continue():
                             break
                         self._ingest(data)
                 except wx_crypto.WrongKey:

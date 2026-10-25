@@ -14,7 +14,8 @@ from types import SimpleNamespace
 import pytest
 from fastapi.responses import JSONResponse
 
-from flandora import config, ob_store, state, storage
+from flandora import config, ob_store, storage
+from flandora.runtime import RUNTIME
 from flandora.webui import app as webui_app
 
 
@@ -23,7 +24,7 @@ def workspace(monkeypatch, tmp_path):
     """数据目录、日志、缓存根全部钉进临时目录。"""
     data = tmp_path / "data"
     data.mkdir()
-    monkeypatch.setattr(state, "bridge_instance", None, raising=False)
+    monkeypatch.setattr(RUNTIME, "bridge", None, raising=False)
     ob_store.reset_singletons()
     monkeypatch.setattr(ob_store, "_store", ob_store.MessageStore(str(data / "messages.db")))
     with config.temporary(
@@ -137,12 +138,10 @@ def test_clean_images_only_touches_images(workspace):
 # ---------- 微信数据缓存 ----------
 
 
-def test_clean_wx_cache_redecrypts_at_once(monkeypatch, workspace):
+def test_clean_wx_cache_redecrypts_at_once(workspace):
     root = _account_dir(workspace)
     fake = _FakeStore()
-    monkeypatch.setattr(
-        state, "bridge_instance", SimpleNamespace(_source=SimpleNamespace(store=fake))
-    )
+    RUNTIME.bridge = SimpleNamespace(_source=SimpleNamespace(store=fake))
 
     out = storage.clean_wx_cache()
 
@@ -165,7 +164,7 @@ def test_clean_wx_cache_without_a_running_source(workspace):
     assert out["redecrypt_error"] == ""
 
 
-def test_clean_wx_cache_reports_a_failed_redecrypt(monkeypatch, workspace):
+def test_clean_wx_cache_reports_a_failed_redecrypt(workspace):
     _account_dir(workspace)
 
     class _Broken:
@@ -174,9 +173,7 @@ def test_clean_wx_cache_reports_a_failed_redecrypt(monkeypatch, workspace):
         def refresh(self, force=False):
             raise RuntimeError("口令与账号对不上")
 
-    monkeypatch.setattr(
-        state, "bridge_instance", SimpleNamespace(_source=SimpleNamespace(store=_Broken()))
-    )
+    RUNTIME.bridge = SimpleNamespace(_source=SimpleNamespace(store=_Broken()))
 
     out = storage.clean_wx_cache()
 

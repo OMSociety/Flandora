@@ -1,6 +1,6 @@
 """测试公共设置。
 
-三件事：
+四件事：
 1. pytest 的临时目录钉在仓库内。系统临时目录在受限沙箱或 ACL 被改过的机器上
    可能连列目录都 PermissionError，于是所有用 ``tmp_path`` 的测试在 setup 阶段
    就集体失败——和被测代码毫无关系。根目录固定在 ``.pytest-tmp/``（已 gitignore），
@@ -8,7 +8,9 @@
 2. ``_config_session`` 夹具：整个会话的配置与日志都指向
    ``.pytest-tmp/config-session/``。不钉的话，第一次读配置属性就会按示例生成
    仓库里的 ``data/config.json``，日志也会写进真实数据目录。
-3. ``isolated_ids`` / ``isolated_store`` 夹具：把 ID 层与消息存档的单例换成临时
+3. ``_reset_runtime`` 夹具：每个用例前后把进程级状态（``LIFECYCLE``/``RUNTIME``）
+   归零，避免运行态跨用例泄漏。
+4. ``isolated_ids`` / ``isolated_store`` 夹具：把 ID 层与消息存档的单例换成临时
    目录里的实例，测试不会往真实的 ``data/`` 里写 id_map.json、msg_ids.db。
 """
 
@@ -50,20 +52,42 @@ def _config_session():
         yield
 
 
+@pytest.fixture(autouse=True)
+def _reset_runtime():
+    """每个用例前后把进程级状态归零。
+
+    ``LIFECYCLE`` 与 ``RUNTIME`` 是进程级单例：前一个用例留下的运行态、发送器
+    或桥接实例会改变后一个用例的判定，所以统一在这里清干净。
+    """
+    from flandora.runtime import LIFECYCLE, RUNTIME
+
+    def clean():
+        LIFECYCLE.begin_stop()
+        LIFECYCLE.mark_stopped()
+        RUNTIME.sender = None
+        RUNTIME.bridge = None
+        RUNTIME.release_ob_server()
+        RUNTIME.update_available = None
+
+    clean()
+    try:
+        yield
+    finally:
+        clean()
+
+
 @pytest.fixture
 def isolated_ids(tmp_path):
     """把 ID 层单例指到临时目录，避免测试污染真实 data/。"""
-    from flandora import ob_ids, state
+    from flandora import ob_ids
 
     ob_ids.reset_singletons()
     ob_ids._contact_ids = ob_ids.ContactIds(str(tmp_path / "id_map.json"))
     ob_ids._message_ids = ob_ids.MessageIds(str(tmp_path / "msg_ids.db"))
-    state._ob_id_to_contact.clear()
     try:
         yield ob_ids
     finally:
         ob_ids.reset_singletons()
-        state._ob_id_to_contact.clear()
 
 
 @pytest.fixture

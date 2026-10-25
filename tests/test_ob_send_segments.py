@@ -12,7 +12,8 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from flandora import action_catalog, ob_ids, ob_protocol, state  # noqa: E402
+from flandora import action_catalog, ob_ids, ob_protocol  # noqa: E402
+from flandora.runtime import RUNTIME
 
 
 class FakeSender:
@@ -48,17 +49,17 @@ def _call(payload: dict) -> dict:
 
 
 def _prepare(monkeypatch, sender) -> int:
-    monkeypatch.setattr(state, "sender_instance", sender, raising=False)
+    RUNTIME.sender = sender
     uid = ob_ids.contact_id("wxid_zhangsan")
-    state._ob_id_to_contact[uid] = "张三"
+    ob_ids.remember_name(uid, "张三")
     return uid
 
 
 def _prepare_group(monkeypatch, sender, members: list[dict]) -> tuple[int, int]:
-    monkeypatch.setattr(state, "sender_instance", sender, raising=False)
+    RUNTIME.sender = sender
     monkeypatch.setattr(ob_protocol, "_members_roster", lambda handle: members)
     gid = ob_ids.contact_id("50071592949@chatroom")
-    state._ob_id_to_contact[gid] = "测试群"
+    ob_ids.remember_name(gid, "测试群")
     uid = ob_ids.contact_id("wxid_lisi")
     return gid, uid
 
@@ -326,7 +327,7 @@ def test_invalid_message_shape_is_bad_param(monkeypatch, isolated_ids):
 def test_group_name_falls_back_to_roster(monkeypatch, isolated_ids):
     """没收到过消息、也没配映射时，群名从本地库名册取。"""
     sender = FakeSender()
-    monkeypatch.setattr(state, "sender_instance", sender, raising=False)
+    RUNTIME.sender = sender
     monkeypatch.setattr(ob_protocol, "_group_name", lambda handle: "名册里的群")
     gid = ob_ids.contact_id("50071592949@chatroom")
     resp = _call(
@@ -341,7 +342,7 @@ def test_group_name_falls_back_to_roster(monkeypatch, isolated_ids):
 
 def test_group_without_any_name_is_reported(monkeypatch, isolated_ids):
     sender = FakeSender()
-    monkeypatch.setattr(state, "sender_instance", sender, raising=False)
+    RUNTIME.sender = sender
     monkeypatch.setattr(ob_protocol, "_group_name", lambda handle: "")
     gid = ob_ids.contact_id("60000000000@chatroom")
     resp = _call(

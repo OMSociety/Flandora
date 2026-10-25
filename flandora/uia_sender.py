@@ -80,6 +80,17 @@ def has_non_bmp(text: str) -> bool:
     return any(ord(ch) > 0xFFFF for ch in text)
 
 
+def needs_paste(text: str) -> bool:
+    """正文是否必须走剪贴板：含 emoji 或换行。
+
+    两类字符 WM_CHAR 都送不进去：
+    - U+FFFF 以上（emoji）：wParam 只有一个 16 位码元，投进去会被微信丢掉；
+    - 换行：微信输入框把 LF 整行吞掉（实测一次 270 字的正文回读只有 261 字，
+      每个换行少一个字），而按 Enter 是「发送」而不是换行，只能靠粘贴带进去。
+    """
+    return has_non_bmp(text) or "\n" in text
+
+
 def mismatch_window(want: str, got: str) -> str:
     """回读不符时的定位信息：第几个字起不同、两边的上下文、各自的长度。
 
@@ -1283,7 +1294,7 @@ class UiaSender(BaseSender):
         输入法会扰动字符（实测输入 `t` 落到输入框里变成 `上`），所以打完必须
         回读比对；不符就清空重打，三次仍不符判定失败。
 
-        只适用于 BMP 字符：含 emoji 的正文由 :meth:`_enter_text` 改走粘贴。
+        只适用于不含 emoji 与换行的文本：那两类由 :meth:`_enter_text` 改走粘贴。
         """
         for _ in range(3):
             for ch in text:
@@ -1300,12 +1311,12 @@ class UiaSender(BaseSender):
     def _enter_text(self, text: str) -> bool:
         """把正文送进输入框，按内容挑通路（输入框此刻应为空）。
 
-        全 BMP 字符逐字符投 WM_CHAR；出现 emoji 这类 U+FFFF 以上的字符就改走
-        剪贴板粘贴——那种字符 WM_CHAR 根本传不进去（见 :func:`utf16_units`）。
+        普通文本逐字符投 WM_CHAR；含 emoji 或换行的正文改走剪贴板粘贴（判据见
+        :func:`needs_paste`）——这两类字符 WM_CHAR 传不进去。
         """
-        if not has_non_bmp(text):
+        if not needs_paste(text):
             return self._type_text(text)
-        log.info("正文含 emoji，改用剪贴板粘贴投递")
+        log.info("正文含 emoji 或换行，改用剪贴板粘贴投递")
         if self._paste_text(text):
             return True
         self._clear_input()

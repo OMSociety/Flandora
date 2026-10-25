@@ -15,7 +15,13 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from flandora import uia_sender  # noqa: E402
-from flandora.uia_sender import WM_CHAR, UiaSender, has_non_bmp, utf16_units  # noqa: E402
+from flandora.uia_sender import (  # noqa: E402
+    WM_CHAR,
+    UiaSender,
+    has_non_bmp,
+    needs_paste,
+    utf16_units,
+)
 
 CF_UNICODETEXT = 13
 
@@ -226,6 +232,22 @@ def test_enter_text_pastes_when_the_text_has_an_emoji():
     sender._paste_text = lambda text, *a, **k: pasted.append(text) or True
     assert sender._enter_text("晚安🥺") is True
     assert pasted == ["晚安🥺"]
+
+
+def test_needs_paste_covers_emoji_and_newlines():
+    assert needs_paste("普通一行") is False
+    assert needs_paste("带 emoji 🥺") is True
+    assert needs_paste("第一行\n第二行") is True
+
+
+def test_enter_text_pastes_when_the_text_has_a_newline():
+    """换行 WM_CHAR 送不进去（实测整行被吞），必须走粘贴。"""
+    pasted = []
+    sender = _sender()
+    sender._type_text = lambda text: pytest_fail("含换行的正文不该逐字符投递")
+    sender._paste_text = lambda text, *a, **k: pasted.append(text) or True
+    assert sender._enter_text("第一行\n第二行") is True
+    assert pasted == ["第一行\n第二行"]
 
 
 def test_enter_text_clears_the_input_when_pasting_fails():

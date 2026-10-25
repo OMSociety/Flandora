@@ -4,7 +4,9 @@
 不依赖任何第三方插件，微信也不必交给别的程序控制。
 
 消息的新旧靠每个会话的 local_id 游标判断。首次启动时把游标推到当前值，
-不重放历史（需要重放时把 wx_backfill_seconds 设成正数）。
+不重放历史（需要重放时把 wx_backfill_seconds 设成正数）；启动之后才出现的会话
+（陌生人第一次来信、新加群、删掉又重建的会话）按同一个分界处理：分界之前算历史，
+分界之后——也就是程序正跑着的时候到的——照常推送。
 """
 
 import json
@@ -88,6 +90,8 @@ class WxLocalSource:
         self.poll_seconds = max(0.2, float(poll_seconds or 1.0))
         self.cursors = {}
         self.names = {}
+        # 本进程开始收件的时刻：启动之后新出现的会话靠它划分「历史」与「刚到的」
+        self.started_at = int(time.time())
         self._primed = False
 
     # ---------- 启动 ----------
@@ -127,9 +131,18 @@ class WxLocalSource:
             username = s["username"]
             cursor = self.cursors.get(username)
             if cursor is None:
-                # 新出现的会话（例如刚建群）：从当前位置开始，不补历史
-                self.cursors[username] = int(s["last_local_id"] or 0)
-                continue
+                # 会话是本进程跑起来之后才出现的。启动时那份名单里没有它，显示名要现取
+                # 一次，否则群里只会显示 123456@chatroom 这类原始 ID，桥接也学不到群名。
+                try:
+                    self.names.update(self.store.display_names())
+                except Exception as e:  # noqa: BLE001 - 名字只影响展示，读不到不该挡住收件
+                    log.debug("新会话 %s 的显示名读取失败：%s", username, e)
+                cursor = self._boundary_cursor(username, int(s["last_local_id"] or 0))
+                self.cursors[username] = cursor
+                log.info(
+                    f"本地库收件：新会话 {self.names.get(username) or username}，"
+                    f"从 local_id {cursor} 之后开始读"
+                )
             try:
                 msgs = self.store.messages(username, cursor, limit=MAX_BATCH)
             except WxStoreError as e:
@@ -141,6 +154,32 @@ class WxLocalSource:
                     continue
                 out.append(self._to_data(s, m))
         return out
+
+    def _boundary_cursor(self, username: str, latest: int) -> int:
+        """新会话的起读游标：分界之前最后一条的 local_id（没有就是 0）。
+
+        分界与 :meth:`prime` 同一口径——不开回填是「本进程启动的时刻」，开了回填是
+        「最近 backfill_seconds 秒」。分界之前的算历史，不重放；分界之后的照常推，
+        所以「让会话第一次现身的那条消息」不会丢。
+
+        只回看尾部 PRIME_LIMIT 条：新会话的存量通常很短，一次查询就够找到分界；
+        存量比这还长（旧会话以新面孔出现）时索性跳过更早的部分，不为了找分界
+        把整段历史读一遍。
+        """
+        if latest <= 0:
+            return 0
+        if self.backfill_seconds > 0:
+            cutoff = int(time.time()) - self.backfill_seconds
+        else:
+            cutoff = self.started_at
+        start = max(0, latest - PRIME_LIMIT)
+        try:
+            msgs = self.store.messages(username, start, limit=PRIME_LIMIT + 1)
+        except WxStoreError as e:
+            log.debug("读取新会话 %s 的历史失败：%s", username, e)
+            return latest
+        history = [m["local_id"] for m in msgs if (m["create_time"] or 0) < cutoff]
+        return max(history) if history else start
 
     def _to_data(self, session, msg):
         username = session["username"]

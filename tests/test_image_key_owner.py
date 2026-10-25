@@ -2,77 +2,109 @@
 
 场景——用户从账号 A 切到 B，密钥文件仍是 A 的。此时必须按「无密钥」处理，
 而不是拿 A 的密钥去解 B 的图。
+
+两种跑法等价：
+
+    python -m pytest tests/test_image_key_owner.py -q
+    python tests/test_image_key_owner.py
 """
 
+import contextlib
 import json
 import os
+import shutil
 import sys
 import tempfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKG = os.path.join(REPO_ROOT, "flandora")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
+from flandora import config, wx_source  # noqa: E402
 
-def with_cfg(fn):
-    """在临时目录里造 config.json，让 config 只认这一份，跑完还原。
+# 记账用的一份密钥，归属 wxid_someone_else
+_KEY_PAYLOAD = {"wxid": "wxid_someone_else", "aes_key": "0123456789abcdef", "xor_key": 135}
 
-    用 ``FLANDORA_DATA_DIR`` 把默认数据目录钉到临时目录：否则源码目录里一旦
-    真的存在 ``data/config.json``（从源码跑过一次就会有），它会被优先选中。
+
+@contextlib.contextmanager
+def key_file(payload=None):
+    """把 ``config.WX_IMAGE_KEY_FILE`` 指到临时目录里的一份密钥，出块即还原。
+
+    直接改这个配置项而不是靠 ``FLANDORA_DATA_DIR``：后者只在 import config 之前
+    生效，而 pytest 全量跑时 config 早已被别的用例导入并缓存，再设环境变量不会
+    改变 ``config.data_dir()`` 的返回值。
     """
+    payload = _KEY_PAYLOAD if payload is None else payload
     d = tempfile.mkdtemp(prefix="wwb-idx-")
-    import shutil
-
-    shutil.copy(os.path.join(PKG, "config.example.json"), os.path.join(d, "config.json"))
-    old_env = os.environ.get("FLANDORA_DATA_DIR")
-    os.environ["FLANDORA_DATA_DIR"] = d
+    path = os.path.join(d, "wx_image_key.json")
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+    old = config.WX_IMAGE_KEY_FILE
+    config.WX_IMAGE_KEY_FILE = path
     try:
-        return fn(d)
+        yield path
     finally:
-        if old_env is None:
-            os.environ.pop("FLANDORA_DATA_DIR", None)
-        else:
-            os.environ["FLANDORA_DATA_DIR"] = old_env
+        config.WX_IMAGE_KEY_FILE = old
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_key_of_other_account_is_ignored():
+    """账号不符 → 按无密钥处理，不拿旧密钥去解新账号的图。"""
+    with key_file():
+        key, xor = wx_source.load_image_key("wxid_current_user")
+    assert key == b"", f"账号不符时不应返回密钥，实际 {key!r}"
+    assert xor == -1, f"账号不符时 XOR 也应为 -1，实际 {xor}"
+
+
+def test_key_of_same_account_is_loaded():
+    """账号一致 → 正常返回 AES 密钥与 XOR 密钥。"""
+    with key_file():
+        key, xor = wx_source.load_image_key("wxid_someone_else")
+    assert key == b"0123456789abcdef", key
+    assert xor == 135, xor
+
+
+def test_unspecified_account_does_not_block():
+    """未指定当前账号（老调用方）→ 不阻断。"""
+    with key_file():
+        key, xor = wx_source.load_image_key("")
+    assert key == b"0123456789abcdef", key
+    assert xor == 135, xor
+
+
+def test_missing_key_file_returns_empty():
+    """密钥文件不存在 → 返回 (b"", -1)，图片退回占位符而不抛错。"""
+    d = tempfile.mkdtemp(prefix="wwb-idx-")
+    old = config.WX_IMAGE_KEY_FILE
+    config.WX_IMAGE_KEY_FILE = os.path.join(d, "absent.json")
+    try:
+        key, xor = wx_source.load_image_key("wxid_anyone")
+    finally:
+        config.WX_IMAGE_KEY_FILE = old
+        shutil.rmtree(d, ignore_errors=True)
+    assert (key, xor) == (b"", -1)
+
+
+def test_bad_hex_key_is_rejected():
+    """aes_key 既不是 32 位十六进制也不是 16 个 ASCII → 视为无密钥。"""
+    with key_file({"wxid": "", "aes_key": "not-a-key", "xor_key": 1}):
+        key, xor = wx_source.load_image_key("")
+    assert key == b"", key
+    assert xor == -1, xor
 
 
 def main() -> int:
-    os.environ.pop("WX_IMAGE_KEY_FILE", None)
-
-    def run(d):
-        from flandora import (
-            config,  # noqa: F401  触发配置加载
-            wx_source,
-        )
-
-        # 写一份属于账号 other 的密钥
-        with open(os.path.join(d, "wx_image_key.json"), "w", encoding="utf-8") as fh:
-            json.dump(
-                {"wxid": "wxid_someone_else", "aes_key": "0123456789abcdef", "xor_key": 135}, fh
-            )
-        return wx_source
-
-    wx_source = with_cfg(run)
-
-    # 当前账号与密钥归属不一致 → 必须返回空
-    key, xor = wx_source.load_image_key("wxid_current_user")
-    assert key == b"", f"账号不符时不应返回密钥，实际 {key!r}"
-    assert xor == -1, f"账号不符时 XOR 也应为 -1，实际 {xor}"
-    print("  ok   账号不符 → 按无密钥处理")
-
-    # 账号一致 → 正常返回
-    key, xor = wx_source.load_image_key("wxid_someone_else")
-    assert key == b"0123456789abcdef", key
-    assert xor == 135, xor
-    print("  ok   账号一致 → 正常加载")
-
-    # 未指定当前账号（老调用方）→ 不阻断
-    key, xor = wx_source.load_image_key("")
-    assert key == b"0123456789abcdef", key
-    print("  ok   未指定当前账号 → 不阻断")
-
-    print("3/3 通过")
-    return 0
+    tests = [v for k, v in sorted(globals().items()) if k.startswith("test_")]
+    failed = 0
+    for fn in tests:
+        try:
+            fn()
+            print(f"  ok   {fn.__name__}")
+        except AssertionError as exc:
+            failed += 1
+            print(f"  FAIL {fn.__name__}: {exc}")
+    print(f"{len(tests) - failed}/{len(tests)} 通过")
+    return 0 if failed == 0 else 1
 
 
 if __name__ == "__main__":

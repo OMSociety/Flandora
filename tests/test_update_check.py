@@ -4,11 +4,18 @@
 （字符串序会踩的坑、补零、解析不出来）、各种失败（连不上 / 超时 / 限流 /
 响应不是 XML / 订阅里没有条目）是不是真的静默，以及后台线程写进
 `state.update_available` 的内容对不对。
+
+两种跑法等价：
+
+    python -m pytest tests/test_update_check.py -q
+    python tests/test_update_check.py
 """
 
 import os
 import sys
 import urllib.error
+
+import pytest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -64,12 +71,29 @@ def _stub(body: bytes = b"", exc: BaseException = None):
     return opener
 
 
-def main() -> int:
-    checks = 0
-    original_opener = update_check._opener
+@pytest.fixture
+def opener(monkeypatch):
+    """把 update_check._opener 换成桩，用例结束自动还原。"""
 
-    # ===== 版本号解析 =====
-    for text, want in [
+    def install(body: bytes = b"", exc: BaseException = None):
+        monkeypatch.setattr(update_check, "_opener", _stub(body=body, exc=exc))
+
+    return install
+
+
+@pytest.fixture
+def clean_update_state(monkeypatch):
+    """state.update_available 归零，用例结束自动还原。"""
+    monkeypatch.setattr(state, "update_available", None)
+    return state
+
+
+# ===== 版本号解析 =====
+
+
+@pytest.mark.parametrize(
+    "text,want",
+    [
         ("v1.2.3", (1, 2, 3)),
         ("1.2.3", (1, 2, 3)),
         ("v1.0.0-beta.1", (1, 0, 0)),
@@ -81,14 +105,20 @@ def main() -> int:
         ("v", ()),
         ("abc", ()),
         ("1.x.0", ()),
-    ]:
-        got = update_check.parse_version(text)
-        assert got == want, f"parse_version({text!r}) = {got!r}，期望 {want!r}"
-    print("  ok   版本号解析 11 例（v 前缀、预发布与 build 后缀、空白、乱输入）")
-    checks += 1
+    ],
+)
+def test_parse_version(text, want):
+    """v 前缀、预发布与 build 后缀、空白、乱输入都按同一规则解析。"""
+    got = update_check.parse_version(text)
+    assert got == want, f"parse_version({text!r}) = {got!r}，期望 {want!r}"
 
-    # ===== 新旧比较 =====
-    for candidate, current, want in [
+
+# ===== 新旧比较 =====
+
+
+@pytest.mark.parametrize(
+    "candidate,current,want",
+    [
         ("v1.0.1", "1.0.0", True),
         ("v1.0.0", "1.0.0", False),
         ("v1.0", "1.0.0", False),  # 缺位补 0，不算新
@@ -99,52 +129,47 @@ def main() -> int:
         ("v1.0.1", "", False),
         ("nonsense", "1.0.0", False),
         ("v1.0.1-beta.1", "1.0.0", True),
-    ]:
-        got = update_check.is_newer(candidate, current)
-        assert got is want, f"is_newer({candidate!r}, {current!r}) = {got}，期望 {want}"
-    print("  ok   新旧比较 10 例（含 1.10 与 1.9 的字符串序陷阱）")
-    checks += 1
+    ],
+)
+def test_is_newer(candidate, current, want):
+    """含 1.10 与 1.9 的字符串序陷阱：按数字段比才判得对。"""
+    assert update_check.is_newer(candidate, current) is want
 
-    # ===== 查到新版 =====
-    try:
-        update_check._opener = _stub(body=_body("v9.9.9", "https://example.invalid/v999"))
-        got = update_check.check(timeout=0.1)
-        assert got == ("9.9.9", "https://example.invalid/v999"), got
-        print("  ok   查到新版返回 (版本号, 页面链接)，tag 的 v 前缀已去掉")
-        checks += 1
-    finally:
-        update_check._opener = original_opener
 
-    # ===== 订阅里没有链接时自己拼发布页 =====
-    try:
-        update_check._opener = _stub(body=_FEED.format(tag="v9.9.9", url="").encode("utf-8"))
-        got = update_check.check(timeout=0.1)
-        assert got and got[0] == "9.9.9" and got[1].endswith("/tag/v9.9.9"), got
-        print("  ok   订阅里没给链接时，按 tag 自己拼发布页地址")
-        checks += 1
-    finally:
-        update_check._opener = original_opener
+# ===== 查到新版 =====
 
-    # ===== 已是最新 =====
-    try:
-        update_check._opener = _stub(body=_body("v" + update_check.__version__))
-        assert update_check.check(timeout=0.1) is None
-        print(f"  ok   已是最新（{update_check.__version__}）返回 None")
-        checks += 1
-    finally:
-        update_check._opener = original_opener
 
-    # ===== 订阅里没有任何 release =====
-    try:
-        update_check._opener = _stub(body=_EMPTY_FEED.encode("utf-8"))
-        assert update_check.check(timeout=0.1) is None
-        print("  ok   订阅里没有条目（仓库还没发过版）→ 静默返回 None")
-        checks += 1
-    finally:
-        update_check._opener = original_opener
+def test_check_reports_newer_version(opener):
+    """查到新版返回 (版本号, 页面链接)，tag 的 v 前缀已去掉。"""
+    opener(body=_body("v9.9.9", "https://example.invalid/v999"))
+    assert update_check.check(timeout=0.1) == ("9.9.9", "https://example.invalid/v999")
 
-    # ===== 五种失败都要静默 =====
-    for label, body, exc in [
+
+def test_check_builds_page_url_from_tag_when_link_missing(opener):
+    """订阅里没给链接时，按 tag 自己拼发布页地址。"""
+    opener(body=_FEED.format(tag="v9.9.9", url="").encode("utf-8"))
+    got = update_check.check(timeout=0.1)
+    assert got and got[0] == "9.9.9" and got[1].endswith("/tag/v9.9.9"), got
+
+
+def test_check_returns_none_when_current(opener):
+    """已是最新版本时返回 None。"""
+    opener(body=_body("v" + update_check.__version__))
+    assert update_check.check(timeout=0.1) is None
+
+
+def test_check_returns_none_on_empty_feed(opener):
+    """订阅里没有条目（仓库还没发过版）→ 静默返回 None。"""
+    opener(body=_EMPTY_FEED.encode("utf-8"))
+    assert update_check.check(timeout=0.1) is None
+
+
+# ===== 五种失败都要静默 =====
+
+
+@pytest.mark.parametrize(
+    "label,body,exc",
+    [
         ("连不上", None, urllib.error.URLError("no network")),
         ("超时", None, TimeoutError("timed out")),
         (
@@ -158,56 +183,52 @@ def main() -> int:
             urllib.error.HTTPError(update_check.FEED_API, 404, "Not Found", {}, None),
         ),
         ("响应不是 XML", b"<html>502 Bad Gateway</html>", None),
-    ]:
-        try:
-            update_check._opener = _stub(body=body, exc=exc)
-            got = update_check.check(timeout=0.1)
-            assert got is None, f"{label} 时返回了 {got!r}"
-            print(f"  ok   {label} → 静默返回 None")
-            checks += 1
-        finally:
-            update_check._opener = original_opener
+    ],
+)
+def test_check_failure_is_silent(opener, label, body, exc):
+    """查不动时不能抛异常，也不能报出根本不存在的版本。"""
+    opener(body=body, exc=exc)
+    assert update_check.check(timeout=0.1) is None, f"{label} 时返回了非 None"
 
-    # ===== 后台线程把结果写进 state =====
-    try:
-        state.update_available = None
-        update_check._opener = _stub(body=_body("v9.9.9", "https://example.invalid/v999"))
-        update_check.check_async(timeout=0.1).join(timeout=10)
-        got = state.update_available
-        assert got == {
-            "latest": "9.9.9",
-            "current": update_check.__version__,
-            "url": "https://example.invalid/v999",
-        }, got
-        print("  ok   check_async 把 (latest, current, url) 写进 state.update_available")
-        checks += 1
-    finally:
-        update_check._opener = original_opener
 
-    # ===== 没有新版时 state 不动 =====
-    try:
-        state.update_available = None
-        update_check._opener = _stub(body=_body("v" + update_check.__version__))
-        update_check.check_async(timeout=0.1).join(timeout=10)
-        assert state.update_available is None, state.update_available
-        print("  ok   没有新版时 check_async 不写 state")
-        checks += 1
-    finally:
-        update_check._opener = original_opener
+# ===== 后台线程把结果写进 state =====
 
-    # ===== 查不动时也照样安静地结束 =====
-    try:
-        state.update_available = None
-        update_check._opener = _stub(exc=urllib.error.URLError("no network"))
-        update_check.check_async(timeout=0.1).join(timeout=10)
-        assert state.update_available is None, state.update_available
-        print("  ok   连不上时 check_async 不写 state、不抛异常")
-        checks += 1
-    finally:
-        update_check._opener = original_opener
 
-    print(f"{checks}/{checks} 通过")
-    return 0
+def test_check_async_writes_state(opener, clean_update_state):
+    """check_async 把 (latest, current, url) 写进 state.update_available。"""
+    opener(body=_body("v9.9.9", "https://example.invalid/v999"))
+    update_check.check_async(timeout=0.1).join(timeout=10)
+    assert clean_update_state.update_available == {
+        "latest": "9.9.9",
+        "current": update_check.__version__,
+        "url": "https://example.invalid/v999",
+    }
+
+
+def test_check_async_leaves_state_alone_when_current(opener, clean_update_state):
+    """没有新版时 check_async 不写 state。"""
+    opener(body=_body("v" + update_check.__version__))
+    update_check.check_async(timeout=0.1).join(timeout=10)
+    assert clean_update_state.update_available is None
+
+
+def test_check_async_is_quiet_when_offline(opener, clean_update_state):
+    """连不上时 check_async 不写 state、不抛异常。"""
+    opener(exc=urllib.error.URLError("no network"))
+    update_check.check_async(timeout=0.1).join(timeout=10)
+    assert clean_update_state.update_available is None
+
+
+def main() -> int:
+    """脚本直跑：本文件已改成 pytest 原生用例（fixture + parametrize）。
+
+    双模式的通用 main() 只能直接调用无参函数，而这里的用例依赖 fixture 与
+    参数化表，直接调会 TypeError。所以脚本模式改为委托给 pytest，两条入口
+    仍是同一套断言，不会出现「pytest 绿、脚本红」的分裂。
+    """
+    import pytest
+
+    return pytest.main([os.path.abspath(__file__), "-q"])
 
 
 if __name__ == "__main__":

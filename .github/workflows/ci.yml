@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements-dev.txt
       - name: 语法编译检查
-        run: python -m compileall -q flandora manager
+        run: python -m compileall -q flandora manager sdk mcp tools
       - name: Lint
         run: python -m ruff check .
       - name: 格式检查
@@ -45,6 +45,10 @@ jobs:
           python -m flandora_mcp.server --selftest
       - name: 单元测试
         run: python -m pytest tests -q
+      - name: 每个测试文件都要被 pytest 收集到用例
+        # 挡的是「文件名叫 test_*.py 但只有 main() 脚本式断言」：pytest 收到 0 个
+        # 用例却不报错，整套断言会在 CI 里静默跳过。见 tools/check_test_collection.py。
+        run: python tools/check_test_collection.py
 
   frontend:
     name: WebUI 控制台（build · playwright）

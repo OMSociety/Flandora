@@ -5,21 +5,36 @@
 http11.Response、datastructures.Headers），换大版本后必须重跑这里。
 
 覆盖到的实测版本：16.1.1 / 17.3。
+
+**两处与 ob_networks 改造对齐的约定**（改这块时别改回去）：
+
+1. 服务端只读 ``config.OB_NETWORKS``，不再看 ``OB_SERVER_PORT``。只改端口号
+   会让它起在 config.json 里的默认端口上，测试连的却是随机空闲端口。
+2. 入口的 ``role`` 取 ``api``：该角色的入口在连接建立时**不推 lifecycle(connect)**
+   （见 ``ob_network._announce_connect``），所以第一条收到的就是动作响应。
+   用 ``universal`` 的话要先吃掉一条 meta_event。
+
+两种跑法等价：
+
+    python -m pytest tests/test_ob_server.py -q
+    python tests/test_ob_server.py
 """
 
 import asyncio
 import json
-import logging
 import os
 import shutil
 import socket
 import sys
 import tempfile
 
+import pytest
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PKG = os.path.join(REPO_ROOT, "flandora")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
+
+from flandora import ob_network  # noqa: E402
 
 TOKEN = "test-token-8f3a"
 MB = 1024 * 1024
@@ -62,70 +77,184 @@ async def _wait_rejected(url: str, timeout: float = 15.0):
     raise AssertionError(f"服务端未在 {timeout}s 内就绪: {last!r}")
 
 
-async def _checks(ob_server, config) -> int:
-    import websockets.exceptions as wx_exc
-    from websockets.asyncio.client import connect
+@pytest.fixture(scope="module")
+def server():
+    """起一个真实监听的服务端（module 作用域：起停成本高，用例共享）。
 
-    checks = 0
-    url = f"ws://127.0.0.1:{config.OB_SERVER_PORT}/"
+    返回 (port, base_url)。服务端跑在独立线程自己的事件循环里，
+    与 pytest 的事件循环互不干扰。
+    """
+    d = os.environ.get("FLANDORA_TEST_TMP") or os.path.join(REPO_ROOT, ".pytest-tmp")
+    os.makedirs(d, exist_ok=True)
+    cfg_dir = tempfile.mkdtemp(prefix="wwb-ob-", dir=d)
+    shutil.copy(
+        os.path.join(REPO_ROOT, "flandora", "config.example.json"),
+        os.path.join(cfg_dir, "config.json"),
+    )
 
-    task = asyncio.create_task(ob_server._ob_server_main())
+    from flandora import config
+
+    old = {
+        "CONFIG_FILE": config.CONFIG_FILE,
+        "OB_NETWORKS": getattr(config, "OB_NETWORKS", None),
+        "OB_HEARTBEAT_SECONDS": getattr(config, "OB_HEARTBEAT_SECONDS", None),
+    }
+    port = _free_port()
+    config.CONFIG_FILE = os.path.join(cfg_dir, "config.json")
+    # 关键：服务端真正读的是 OB_NETWORKS。role=api 避开 lifecycle(connect)。
+    config.OB_NETWORKS = [
+        ob_network.normalize_node(
+            {
+                "type": "ws_server",
+                "name": "test",
+                "host": "127.0.0.1",
+                "port": port,
+                "path": "/",
+                "role": "api",
+                "access_token": TOKEN,
+            },
+            0,
+        )
+    ]
+    config.OB_HEARTBEAT_SECONDS = 0  # 心跳会往会话里塞 meta_event，这里关掉
+
+    import threading
+
+    loop = asyncio.new_event_loop()
+    started = threading.Event()
+    stop_flag = threading.Event()
+
+    async def _serve():
+        mgr = ob_network.manager()
+        mgr.configure(config.OB_NETWORKS)
+        mgr.start(asyncio.get_running_loop())
+        started.set()
+        while not stop_flag.is_set():
+            await asyncio.sleep(0.05)
+        await mgr.stop()
+
+    def _run():
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(_serve())
+        finally:
+            loop.close()
+
+    t = threading.Thread(target=_run, daemon=True, name="ob-server-test")
+    t.start()
+    if not started.wait(timeout=15):
+        raise RuntimeError("服务端未能在 15s 内启动")
+
     try:
-        # ---------- 1. 服务端就绪且拒绝无凭证连接 ----------
+        yield port, f"ws://127.0.0.1:{port}/"
+    finally:
+        stop_flag.set()
+        t.join(timeout=15)
+        for key, value in old.items():
+            setattr(config, key, value)
+        shutil.rmtree(cfg_dir, ignore_errors=True)
+
+
+# ===== 1. 握手鉴权 =====
+
+
+def test_server_rejects_connection_without_token(server):
+    """起监听之后，不带 token 的连接必须被拒（401）。"""
+    _, url = server
+
+    async def run():
+
         exc = await _wait_rejected(url)
         assert _rejected(exc), f"拒绝原因不是 401: {exc!r}"
-        print("  ok   服务端起监听，不带 token 的连接被拒（401）")
-        checks += 1
 
-        # ---------- 2. 运行期用到的符号都还在 ----------
-        # ob_server 的接口面：起服务的 serve、鉴权时回 401 用的 http11.Response
-        # 与 datastructures.Headers、断开分支捕获的 ConnectionClosed。
-        from websockets.asyncio.server import serve  # noqa: F401
-        from websockets.datastructures import Headers  # noqa: F401
-        from websockets.exceptions import ConnectionClosed  # noqa: F401
-        from websockets.http11 import Response  # noqa: F401
+    asyncio.run(run())
 
-        print("  ok   ob_server 用到的 websockets 符号齐备")
-        checks += 1
 
-        # ---------- 3. ?access_token= 鉴权 + 请求往返 ----------
+def test_websockets_symbols_still_exist():
+    """ob_server 用到的 websockets 符号齐备（大版本升级的回归网）。"""
+    from websockets.asyncio.server import serve  # noqa: F401
+    from websockets.datastructures import Headers  # noqa: F401
+    from websockets.exceptions import ConnectionClosed  # noqa: F401
+    from websockets.http11 import Response  # noqa: F401
+
+
+def test_access_token_query_is_accepted(server):
+    """?access_token= 鉴权通过，请求往返带回 echo。"""
+    _, url = server
+
+    async def run():
+        from websockets.asyncio.client import connect
+
         async with connect(url + f"?access_token={TOKEN}") as ws:
             await ws.send(json.dumps({"action": "__selftest__", "echo": "e1"}))
             resp = await asyncio.wait_for(ws.recv(), timeout=15)
         payload = json.loads(resp)
         assert payload.get("echo") == "e1", f"响应的 echo 不对: {payload!r}"
         assert "status" in payload and "retcode" in payload, f"响应不是 OneBot 形状: {payload!r}"
-        print("  ok   ?access_token= 鉴权通过，请求往返带回 echo")
-        checks += 1
 
-        # ---------- 4. Authorization: Bearer 请求头鉴权 ----------
+    asyncio.run(run())
+
+
+def test_authorization_header_is_accepted(server):
+    """Authorization: Bearer 请求头同样认。"""
+    _, url = server
+
+    async def run():
+        from websockets.asyncio.client import connect
+
         async with connect(url, additional_headers={"Authorization": f"Bearer {TOKEN}"}) as ws:
             await ws.send(json.dumps({"action": "__selftest__", "echo": "e2"}))
             resp = await asyncio.wait_for(ws.recv(), timeout=15)
         assert json.loads(resp).get("echo") == "e2", resp
-        print("  ok   Authorization 请求头鉴权通过")
-        checks += 1
 
-        # ---------- 5. 错误 token 被拒 ----------
+    asyncio.run(run())
+
+
+def test_wrong_token_is_rejected(server):
+    """错误 token 的连接被拒（401）。"""
+    _, url = server
+
+    async def run():
+        import websockets.exceptions as wx_exc
+        from websockets.asyncio.client import connect
+
         try:
             async with connect(url + "?access_token=wrong"):
                 pass
             raise AssertionError("错误 token 竟然连上了")
         except wx_exc.InvalidStatus as e:
             assert _rejected(e), f"拒绝原因不是 401: {e!r}"
-        print("  ok   错误 token 的连接被拒（401）")
-        checks += 1
 
-        # ---------- 6. 大消息往返（服务端 max_size = 16MB）----------
+    asyncio.run(run())
+
+
+# ===== 2. 大消息与超限 =====
+
+
+def test_large_message_roundtrip(server):
+    """大消息往返（服务端 max_size = 16MB）。"""
+    _, url = server
+
+    async def run():
+        from websockets.asyncio.client import connect
+
         blob = "x" * (8 * MB)
         async with connect(url + f"?access_token={TOKEN}", max_size=None) as ws:
             await ws.send(json.dumps({"action": "__selftest__", "echo": "e3", "blob": blob}))
             resp = await asyncio.wait_for(ws.recv(), timeout=60)
         assert json.loads(resp).get("echo") == "e3", resp[:200]
-        print("  ok   8 MiB 消息往返正常")
-        checks += 1
 
-        # ---------- 7. 超过 max_size 时干净关闭（1009）----------
+    asyncio.run(run())
+
+
+def test_oversized_message_closes_with_1009(server):
+    """超过 max_size 时干净关闭（1009），不是把进程搞崩。"""
+    _, url = server
+
+    async def run():
+        import websockets.exceptions as wx_exc
+        from websockets.asyncio.client import connect
+
         async with connect(url + f"?access_token={TOKEN}", max_size=None) as ws:
             await ws.send(b"y" * (20 * MB))
             try:
@@ -134,54 +263,45 @@ async def _checks(ob_server, config) -> int:
             except wx_exc.ConnectionClosed as e:
                 code = e.rcvd.code if e.rcvd else None
                 assert code == 1009, f"期望关闭码 1009，实际 {code}"
-        print("  ok   超过 max_size 的连接以 1009 关闭")
-        checks += 1
 
-        # ---------- 8. 超限之后服务端仍可继续服务 ----------
+    asyncio.run(run())
+
+
+# ===== 3. 韧性与收尾 =====
+
+
+def test_server_survives_oversized_connection(server):
+    """超限断开之后服务端仍可继续服务。"""
+    _, url = server
+
+    async def run():
+        from websockets.asyncio.client import connect
+
         async with connect(url + f"?access_token={TOKEN}") as ws:
             await ws.send(json.dumps({"action": "__selftest__", "echo": "e4"}))
             resp = await asyncio.wait_for(ws.recv(), timeout=15)
         assert json.loads(resp).get("echo") == "e4", resp
-        print("  ok   超限之后服务端仍能正常服务")
-        checks += 1
 
-        # ---------- 9. 客户端断开不引发异常 ----------
+    asyncio.run(run())
+
+
+def test_client_disconnect_is_quiet(server):
+    """客户端正常断开会话不引发异常。"""
+    _, url = server
+
+    async def run():
+        from websockets.asyncio.client import connect
+
         ws = await connect(url + f"?access_token={TOKEN}")
         await ws.close(code=1000, reason="bye")
         await asyncio.sleep(0.5)
-        print("  ok   客户端正常断开会话不引发异常")
-        checks += 1
-    finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
 
-    return checks
+    asyncio.run(run())
 
 
 def main() -> int:
-    logging.getLogger().setLevel(logging.CRITICAL)
-    d = tempfile.mkdtemp(prefix="wwb-ob-")
-    shutil.copy(os.path.join(PKG, "config.example.json"), os.path.join(d, "config.json"))
-    old = os.getcwd()
-    os.chdir(d)
-    try:
-        from flandora import config
-
-        config.OB_SERVER_HOST = "127.0.0.1"
-        config.OB_SERVER_PORT = _free_port()
-        config.OB_SERVER_TOKEN = TOKEN
-        from flandora import ob_server
-
-        checks = asyncio.run(_checks(ob_server, config))
-    finally:
-        os.chdir(old)
-        shutil.rmtree(d, ignore_errors=True)
-
-    print(f"{checks}/{checks} 通过")
-    return 0
+    """脚本直跑：本文件的用例依赖 module 级 fixture，改委托给 pytest。"""
+    return pytest.main([os.path.abspath(__file__), "-q"])
 
 
 if __name__ == "__main__":

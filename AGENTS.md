@@ -20,7 +20,8 @@
 文档索引：
 
 - 用户向说明与配置详解：[README.md](./README.md)
-- 设计基线：[DESIGN.md](./DESIGN.md)、产品口径：[PRODUCT.md](./PRODUCT.md)
+- 界面设计规范：[DESIGN.md](./DESIGN.md)（配色、字体、间距与组件写法，不描述代码架构）、
+  产品口径：[PRODUCT.md](./PRODUCT.md)
 - 已知限制：[docs/known-limits-desktop.md](./docs/known-limits-desktop.md)、[docs/known-limits-dat-format.md](./docs/known-limits-dat-format.md)
 
 ## 常用命令
@@ -34,7 +35,8 @@
 | 跑单个测试文件 | `.venv\Scripts\python.exe -m pytest tests/test_ob_server.py -q` |
 | 装 SDK / MCP（下游包） | `-m pip install -e sdk\python` 与 `-m pip install -e mcp\python`；自检 `-m flandora_mcp.server --selftest` |
 | 重新导出动作快照 | `.venv\Scripts\python.exe tools/gen_sdk_catalog.py`（改动作后必跑，CI 核对无差异） |
-| 语法检查 | `.venv\Scripts\python.exe -m compileall -q flandora manager sdk mcp` |
+| 语法检查 | `.venv\Scripts\python.exe -m compileall -q flandora manager sdk mcp tools` |
+| 核对每个测试文件都被收集 | `.venv\Scripts\python.exe tools\check_test_collection.py`（零收集即失败） |
 | Lint | `.venv\Scripts\python.exe -m ruff check .` |
 | 格式化 | `.venv\Scripts\python.exe -m ruff format .`（CI 用 `--check`，不通过即红） |
 | 起桥接（源码） | `.venv\Scripts\python.exe run_bridge.py` |
@@ -67,7 +69,7 @@ run_bridge.py -> flandora.main
 | 我要… | 改这里 |
 |---|---|
 | 加 API 端点 | `flandora/webui/app.py`（仿 `/api/desktop/status`，docstring 里同步端点清单） |
-| 加一个控制台页面 | `webui-frontend/src/pages/`，再在 `src/App.vue` 注册路由与侧栏项 |
+| 加一个控制台页面 | `webui-frontend/src/pages/`，再在 `src/navigation.js` 的 `NAV_GROUPS` 登记页面与侧栏项 |
 | 改收件（读库、字段解析） | `flandora/bridge_core.py`，数据层在 `flandora/wx_store.py` |
 | 改发送（投递、清空输入框） | `flandora/uia_sender.py` |
 | 改桌面隔离与接管 | `flandora/wx_desktop.py` |
@@ -85,9 +87,12 @@ run_bridge.py -> flandora.main
 
 ## 修改契约
 
-- 增删配置项：依次改 `flandora/config.py` → `flandora/config.example.json` → `README.md`「配置详解」
-  → `webui-frontend/src/pages/Config.vue` 的 `DEFAULTS` 与表单 → `webui-frontend/tests/fixtures.js`。
-  少改一处就会出现「后端认、界面不认」的静默不一致。
+- 增删配置项：依次改 `flandora/config.py`（读取与默认值）→ `flandora/config.example.json`
+  （示例与 `_comment_` 说明）→ `README.md`「配置详解」→ `webui-frontend/src/pages/Config.vue`
+  的 `DEFAULTS`（仅少数需兜底的键）→ `webui-frontend/tests/fixtures.js`。
+  界面没有逐字段表单，多数配置项在「系统设置 → 高级」里直接编辑 JSON，所以界面侧不需要逐项加控件；
+  但 `DEFAULTS` 与 README 漏了就会出现「后端认、文档或界面不认」的静默不一致。
+  配置项的取值校验目前写在 `flandora/webui/app.py` 的 `api_put_config`，加项时在那里补校验。
 - 改 `/api/status`、`/api/desktop/status` 等响应字段：同步 `webui-frontend/tests/fixtures.js` 的夹具，
   否则前端断言与后端字段脱节，测试仍会绿。
 - 改 OneBot 事件字段或协议行为：改 `flandora/ob_protocol.py`，并跑 `tests/test_ob_server.py`；动通知事件或心跳时另跑 `tests/test_ob_notice.py`、`tests/test_ob_heartbeat.py`、`tests/test_ob_network.py`（后两者起真端口，meta_event 会混进会话，等事件要跳过它）。
@@ -118,14 +123,19 @@ run_bridge.py -> flandora.main
 
 改动完成 = 下列全部通过：
 
-1. `.venv\Scripts\python.exe -m compileall -q flandora manager sdk mcp`
+1. `.venv\Scripts\python.exe -m compileall -q flandora manager sdk mcp tools`
 2. `.venv\Scripts\python.exe -m ruff check .` 与 `.venv\Scripts\python.exe -m ruff format --check .`
 3. `.venv\Scripts\python.exe -m pytest tests -q`
-4. 改了 `webui-frontend/` 时追加：`cd webui-frontend; npm test` 与 `npm run build`
+4. `.venv\Scripts\python.exe tools\check_test_collection.py`（每个 `tests/test_*.py` 都要被 pytest 收到用例）
+5. 改了 `webui-frontend/` 时追加：`cd webui-frontend; npm test` 与 `npm run build`
 
 `.github/workflows/ci.yml` 在 push 到 `main` 与 PR 上跑同一组命令（另加前端 job），
 本地先跑绿能省一轮往返。真实环境验证需要 Windows 桌面与已登录的微信，
 涉及桌面/发送/取钥的改动要另外重启桥接看日志，测试通过不能替代这一步。
+
+新增测试文件时按双模式写：既要有 `def test_*`（pytest 收集），也要有收集它们的 `main()`
+（单文件直跑看逐条结果），范式见 `tests/test_wxkey_store.py`。只写 `main()` 不写
+`def test_*` 的文件会被收集闸拦下——那类文件的断言在 CI 里根本不会执行。
 
 ## 提交与协作
 

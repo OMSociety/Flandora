@@ -3,14 +3,18 @@
 格式（实测，微信 4.1.15.56）：
 
     [0:6]    magic 07 08 56 32 08 07
-    [6:10]   AES 段长度   u32 LE（实测恒为 1024）
+    [6:10]   AES 段明文长度 u32 LE（实测恒为 1024，不含填充）
     [10:14]  尾段长度     u32 LE
     [14]     填充字节
-    [15 .. ] AES-128-ECB 密文，长度按 16 向上对齐
+    [15 .. ] AES-128-ECB 密文，长度 = 明文长度按 PKCS#7 补齐到 16 的整数倍
     [ .. ]   明文中段
     [ .. ]   单字节 XOR 尾段
 
-    完整图像 = AES 段解密结果 + 明文中段 + 尾段逐字节 XOR
+    完整图像 = AES 段解密结果（去掉 PKCS#7 填充）+ 明文中段 + 尾段逐字节 XOR
+
+**填充块不是明文中段**：明文长度正好是 16 的整数倍时，PKCS#7 还要多出一个整块填充，
+它的密文紧跟在 AES 段之后。把它当明文中段拼回去，HEVC 那类比特流会从那里失步
+（CABAC 没有重同步点，整张图只剩上面一小条能解），JPEG 只是画面上多一道花。
 
 **AES 密钥与 XOR 密钥都是账号级的**：换账号后必须重新取，取错就解出随机字节。
 实测同一账号下 195/195 个文件全部可解。
@@ -123,15 +127,21 @@ def decode(raw: bytes, aes_key: bytes, xor_key: int) -> DecodedImage:
         raise ImageDecodeError("不是 V2 格式")
 
     aes_size, xor_size = struct.unpack_from("<LL", raw, 6)
-    if aes_size <= 0 or aes_size % AES_BLOCK:
+    if aes_size <= 0:
         raise ImageDecodeError(f"AES 段长度异常：{aes_size}")
 
-    aes_end = 15 + aes_size
+    # 头里的长度是明文长度；密文按 PKCS#7 补齐，明文长度正好整除时还要多一个整块。
+    pad_block = AES_BLOCK - aes_size % AES_BLOCK or AES_BLOCK
+    aes_end = 15 + aes_size + pad_block
     raw_end = len(raw) - xor_size
     if aes_end > raw_end or raw_end > len(raw):
         raise ImageDecodeError(f"段长度越界：aes={aes_size} xor={xor_size} 文件={len(raw)}")
 
-    plain_aes = aes_ecb_decrypt(aes_key, raw[15:aes_end])
+    padded = aes_ecb_decrypt(aes_key, raw[15:aes_end])
+    pad = padded[-1]
+    if not 0 < pad <= AES_BLOCK or padded[-pad:] != bytes([pad]) * pad:
+        raise ImageDecodeError("AES 段的 PKCS#7 填充不合法（多半是密钥不对）")
+    plain_aes = padded[:-pad]
     plain_mid = raw[aes_end:raw_end]
     plain_xor = bytes(b ^ xor_key for b in raw[raw_end:])
     data = plain_aes + plain_mid + plain_xor

@@ -125,7 +125,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | `reply` | 支持 | 引用消息的 `refermsg/svrid` 就是被引消息的 `server_id`，按它回查 `message_id`；查不到时 `id` 记 `0`（引用关系仍在，取不到原文） |
 | `text` | 支持 | 其余内容按原文成段，认出中间夹着的提及时在前后切开 |
 
-做不到的能力与各自原因写在 [`docs/wip.md`](docs/wip.md)；需要在真机上确认的三项（@ 弹层、撤回、拍一拍）连同实验步骤写在 [`docs/needs-user.md`](docs/needs-user.md)。
+做不到的能力与各自原因写在 [`docs/wip.md`](docs/wip.md)；需要在真机上确认的三项（@ 弹层、撤回、拍一拍）连同实验步骤写在 [`docs/needs-user.md`](docs/needs-user.md)；接 AstrBot 的步骤与能力缺口清单见 [`docs/astrbot.md`](docs/astrbot.md)。
 
 微信 PC 客户端确实没有对应能力的动作（群管理、群文件、点赞等）返回 `failed` 并在 `message` 里写明原因，不会回一个空对象假装成功：
 

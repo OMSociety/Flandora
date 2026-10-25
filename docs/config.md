@@ -58,10 +58,12 @@
 
 | 类型 | 方向 | 谁发起连接 | 说明 |
 | --- | --- | --- | --- |
-| `ws_server` | 正向 WebSocket | 机器人框架连过来 | 最常用，AstrBot 等填 `ws://127.0.0.1:7999/` |
+| `ws_server` | 正向 WebSocket | 机器人框架连过来 | 最常用；框架作为正向 WS 客户端连本机 7999 |
 | `http_server` | 正向 HTTP | 机器人框架调过来 | 同时收 GET 查询串与 POST JSON，响应体是 OneBot 标准响应 |
 | `ws_client` | 反向 WebSocket | 桥接连出去 | 适配只会起服务端的框架，断了按 `reconnect_interval_ms` 重连 |
 | `http_client` | 反向 HTTP | 桥接连出去 | 事件用 POST 上报到框架，不做 API |
+
+接 AstrBot 的完整步骤与能力缺口清单见 [astrbot.md](astrbot.md)：它的适配器本身是反向 WebSocket 服务端，要用这里的 `ws_client` 连它（默认 `ws://127.0.0.1:6199/ws`）。
 
 每个入口的字段：
 

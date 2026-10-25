@@ -1,4 +1,4 @@
-"""发送链路的段形态：视频、@ 提及、未支持段与只发引用段。
+"""发送链路的段形态：语音、视频、@ 提及、未支持段与只发引用段。
 
 重点不是「能发出去」，而是**发不出去时必须报错**：未接线的段类型静默跳过会让
 客户端把内容记进上下文；@ 必须走真实名册与提及对象，不能退化成「@昵称」正文。
@@ -164,6 +164,68 @@ def test_video_without_file_reports_failure(monkeypatch, isolated_ids):
     )
     assert resp["status"] == "failed"
     assert "视频缺少 file" in resp["message"]
+
+
+def test_record_segment_is_sent_as_file(monkeypatch, isolated_ids, tmp_path):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    path = tmp_path / "hello.mp3"
+    payload = b"ID3\x04\x00\x00\x00\x00\x00\x00" + b"\x00" * 32
+    path.write_bytes(payload)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [{"type": "record", "data": {"file": str(path)}}],
+            },
+        }
+    )
+    assert resp["status"] == "ok"
+    assert resp["data"]["message_id"] > 0
+    assert sender.files and sender.files[0][0] == "张三"
+    assert sender.files[0][2] == payload
+
+
+def test_record_base64_is_written_and_removed(monkeypatch, isolated_ids):
+    import base64
+
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    raw = b"ID3\x04\x00\x00" + b"x" * 16
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [
+                    {
+                        "type": "record",
+                        "data": {"file": "base64://" + base64.b64encode(raw).decode()},
+                    }
+                ],
+            },
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.files and sender.files[0][2] == raw
+    assert sender.files[0][1].endswith(".mp3")
+    # 临时文件在发送结束后删掉，不留在 data 目录里
+    assert not os.path.exists(sender.files[0][1])
+
+
+def test_record_without_file_reports_failure(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": uid, "message": [{"type": "record", "data": {}}]},
+        }
+    )
+    assert resp["status"] == "failed"
+    assert "语音缺少 file" in resp["message"]
+    assert sender.files == []
 
 
 def test_mention_is_sent_with_member_name(monkeypatch, isolated_ids):

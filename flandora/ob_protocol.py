@@ -307,7 +307,7 @@ async def _handle_ob_api(data: dict):
 
     elif action == "can_send_record":
         # 微信 PC 客户端只能按住麦克风录音，外部无法提交语音消息；
-        # voice 段目前以 mp3 文件形式投递，因此这里如实回 false。
+        # record 段目前以 mp3 文件形式投递，因此这里如实回 false。
         resp_data["data"] = {"yes": False}
 
     elif action == "get_group_info":
@@ -580,34 +580,38 @@ def _media_file(file_val: str, label: str, prep: _OutboundPrep) -> str | None:
     return None
 
 
-def _voice_file(data: dict, prep: _OutboundPrep) -> str | None:
-    """语音段落成本地音频文件。
+def _record_file(data: dict, prep: _OutboundPrep) -> str | None:
+    """语音段（``record``）落成本地音频文件。
 
     微信 PC 端没有「提交语音消息」的接口（语音必须按住麦克风录制），所以 bridge
-    把 voice 段以文件形式发到聊天窗口（音频文件卡片，双击可播放）。接受
-    ``base64://`` 内联数据与已落盘的本地路径两种写法。
+    把 record 段以文件形式发到聊天窗口（音频文件卡片，双击可播放）。接受
+    ``base64://`` 内联数据与已落盘的本地路径两种写法；缺文件与解码失败都要记账，
+    客户端否则会以为语音发出去了。
     """
     file_val = str(data.get("file") or data.get("data") or "")
     if not file_val:
-        log.warning(f"[OB11] 跳过 voice 段：无 file 字段: {data}")
+        prep.failures.append("语音缺少 file")
+        log.warning(f"[OB11] 跳过 record 段：无 file 字段: {data}")
         return None
     if file_val.startswith("base64://"):
         try:
             audio = base64.b64decode(file_val[9:])
         except Exception as e:  # noqa: BLE001
-            log.warning(f"[OB11] voice base64 解码失败: {e}")
+            prep.failures.append(f"语音 base64 解码失败：{e}")
+            log.warning(f"[OB11] record base64 解码失败: {e}")
             return None
         with tempfile.NamedTemporaryFile(
-            prefix="bridge_voice_", suffix=".mp3", delete=False
+            prefix="bridge_record_", suffix=".mp3", delete=False
         ) as tmp:
             tmp.write(audio)
             path = tmp.name
         prep.temp_files.append(path)
-        log.info(f"[OB11] voice 已解码: {os.path.basename(path)} ({len(audio)} bytes)")
+        log.info(f"[OB11] record 已解码: {os.path.basename(path)} ({len(audio)} bytes)")
         return path
     if os.path.isfile(file_val):
         return file_val
-    log.warning(f"[OB11] voice 文件未找到: {file_val}")
+    prep.failures.append("语音文件未找到")
+    log.warning(f"[OB11] record 文件未找到: {file_val}")
     return None
 
 
@@ -688,8 +692,8 @@ def _prepare_message(message: list) -> _OutboundPrep:
                 prep.segments.append(Face(face_id=face_code))
             else:
                 log.debug(f"[OB11] 跳过未知 face 段: {data}")
-        elif seg_type == "voice":
-            path = _voice_file(data, prep)
+        elif seg_type == "record":
+            path = _record_file(data, prep)
             if path:
                 prep.segments.append(Voice(path=path))
         elif seg_type == "video":

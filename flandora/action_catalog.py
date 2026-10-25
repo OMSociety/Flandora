@@ -21,6 +21,7 @@ from typing import Any
 # retcode 取值（OneBot v11 只约定 0 表示成功，其余由实现方定义，这里固定下来供客户端与文档引用）
 RETCODE_OK = 0
 RETCODE_BAD_PARAM = 1400
+RETCODE_AUTH_FAILED = 1401
 RETCODE_NOT_IMPLEMENTED = 1404
 RETCODE_UNSUPPORTED = 1405
 RETCODE_NOT_FOUND = 1406

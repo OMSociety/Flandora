@@ -1,0 +1,33 @@
+# 行尾与编码：仓库里所有文本文件统一 LF 检出。
+#
+# 本文件自身也钉 LF，免得检出后再改它时多出一条行尾变更
+.gitattributes text eol=lf
+
+# 快照文件由 tools/gen_sdk_catalog.py 生成，CI 用「重新生成后 git diff」来防漂移。
+# 若检出时被 core.autocrlf 改成 CRLF，工作区就会常驻一份「内容相同、只差行尾」的
+# 修改，而 diff 为空——闸门看不见，人也会习惯性忽略 git status。
+*_catalog.json text eol=lf
+
+# Python 与前端源码
+*.py text eol=lf
+*.js text eol=lf
+*.vue text eol=lf
+*.css text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.toml text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
+*.ini text eol=lf
+*.txt text eol=lf
+*.iss text eol=lf
+*.spec text eol=lf
+*.bat text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制产物不参与行尾转换
+*.png binary
+*.ico binary
+*.zip binary
+*.exe binary
+*.db binary

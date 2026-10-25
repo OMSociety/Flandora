@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { get } from '../api'
 import { refreshStatus, status, toast } from '../store'
 import AppIcon from '../components/AppIcon.vue'
@@ -9,6 +9,7 @@ import ToggleSwitch from '../components/ToggleSwitch.vue'
 import NodeDialog from '../components/nodes/NodeDialog.vue'
 import { NODE_TYPES, blankNode, nodeTarget, stateInfo, typeMeta, uniqueName } from '../components/nodes/nodeMeta'
 import { useSettingsSave } from '../composables/useSettingsSave'
+import { useDirtyGuard } from '../composables/useDirtyGuard'
 
 // 没有单独配置入口时，桥接按这几个值造一个 WS 服务端——「通用设置」标签页管的就是它们。
 // 附件目录放在这张卡里：它属于本机微信客户端，与入口本身无关。
@@ -25,12 +26,16 @@ const pendingRemove = ref(null)
 const loaded = ref(false)
 const loadError = ref('')
 const { saving, saved, save: putSettings } = useSettingsSave()
+const { markDirty, clearDirty } = useDirtyGuard()
 
 const self = computed(() => status.self || {})
 const initials = computed(() => (self.value.nickname || self.value.wxid || '微').slice(0, 1))
 const runtime = computed(() => (Array.isArray(status.ob?.nodes) ? status.ob.nodes : []))
 const stale = computed(() => JSON.stringify(draft.value) !== JSON.stringify(baseline.value.networks))
 const dirty = computed(() => stale.value || GENERAL_KEYS.some((key) => String(general[key] ?? '') !== String(baseline.value.general[key] ?? '')))
+// 离开守卫只认这个 dirty：草稿与已保存条目的差异，和顶栏「有未保存的改动」同一判据。
+// 保存成功会重新 load()，草稿回到基线，dirty 自然变回 false。
+watch(dirty, (value) => (value ? markDirty() : clearDirty()))
 const connections = computed(() => runtime.value.reduce((sum, node) => sum + (node.connections || 0), 0))
 const enabledCount = computed(() => draft.value.filter((node) => node.enabled !== false).length)
 const counts = computed(() => Object.fromEntries(NODE_TYPES.map((type) => [type.value, draft.value.filter((node) => node.type === type.value).length])))
@@ -298,7 +303,7 @@ onMounted(load)
 .nodes-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; flex-wrap:wrap; }
 .nodes-head .card-title { margin-bottom:3px; }
 .head-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.dirty-flag { font-size:10.5px; color:var(--warn, #b7791f); }
+.dirty-flag { font-size:10.5px; color:var(--warn); }
 .save-btn { min-width:104px; }
 .node-tabs { display:flex; gap:4px; margin:16px 0 14px; padding-bottom:2px; overflow-x:auto; border-bottom:1px solid var(--border); }
 .node-tabs button { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; padding:8px 12px; min-height:34px; border:0; border-bottom:2px solid transparent; background:transparent; color:var(--muted); font-size:12px; font-family:inherit; cursor:pointer; }
@@ -316,13 +321,13 @@ onMounted(load)
 .node-main small { font-size:10.5px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .node-state { font-size:10.5px; color:var(--muted); }
 .node-state.ok { color:var(--primary-deep); }
-.node-state.warn { color:var(--warn, #b7791f); }
+.node-state.warn { color:var(--warn); }
 .node-state.err { color:var(--danger); }
 .node-conn { font-size:10.5px; color:var(--muted); text-align:right; }
 .state-dot { width:8px; height:8px; border-radius:50%; background:var(--border); }
 .state-dot.on { background:var(--primary); }
 .state-dot.ok { background:var(--primary); }
-.state-dot.warn { background:var(--warn, #d69e2e); }
+.state-dot.warn { background:var(--warn); }
 .state-dot.err { background:var(--danger); }
 .icon-btn.danger:hover { color:var(--danger); }
 .general-row { border-style:dashed; }

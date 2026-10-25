@@ -4,19 +4,13 @@ import Sidebar from './components/Sidebar.vue'
 import AppIcon from './components/AppIcon.vue'
 import BrandMark from './components/BrandMark.vue'
 import ToastContainer from './components/ToastContainer.vue'
-import Dashboard from './pages/Dashboard.vue'
-import Messages from './pages/Messages.vue'
-import Logs from './pages/Logs.vue'
-import Config from './pages/Config.vue'
-import Nodes from './pages/Nodes.vue'
-import Desktop from './pages/Desktop.vue'
-import Wizard from './pages/Wizard.vue'
-import DevPanel from './pages/DevPanel.vue'
+import ConfirmDialog from './components/ConfirmDialog.vue'
 import Login from './pages/Login.vue'
 import { get } from './api'
 import { wsState, connectWS, closeWS, on } from './ws'
 import { startStatusPolling, stopStatusPolling, refreshStatus, setMessages, setLogs, addMessage, addLog, status } from './store'
-import { PAGE_MAP, pageFromHash } from './navigation'
+import { PAGE_MAP, pageFromHash } from './pages/index.js'
+import { canLeave, leavePromptOpen, resolveLeave } from './composables/useDirtyGuard'
 import { useTheme } from './useTheme'
 import { pushOverlay, popOverlay } from './overlayStack'
 
@@ -31,7 +25,18 @@ const page = computed(() => PAGE_MAP[tab.value])
 const wsLabel = computed(() => ({ connected: '实时连接正常', reconnecting: '正在重新连接', closed: '实时连接已断开' }[wsState.state] || '正在连接服务'))
 const wsClass = computed(() => ({ connected: 'connected', reconnecting: 'reconnecting', closed: 'disconnected' }[wsState.state] || 'connecting'))
 
-function changePage(id) {
+// 用户选「留在本页」时把地址栏拨回当前页：被拦下的那个 hash 已经进了历史，
+// 不还原就会出现「地址栏换了页、内容没换」的错位。
+function restoreHash() {
+  const hash = `#/${tab.value}`
+  if (window.location.hash !== hash) window.location.hash = `/${tab.value}`
+}
+
+async function changePage(id) {
+  if (id !== tab.value && !(await canLeave())) {
+    restoreHash()
+    return
+  }
   tab.value = id
   window.location.hash = `/${id}`
   drawerOpen.value = false
@@ -40,11 +45,17 @@ function openAbout() {
   window.location.hash = '/config?section=about'
   drawerOpen.value = false
 }
-function onHashChange(event) {
+async function onHashChange() {
   const hash = window.location.hash
   // #main-content 这类页内锚点不是路由，交给浏览器自己滚动，不能重置当前页面。
   if (hash && !hash.startsWith('#/')) return
-  tab.value = pageFromHash(hash)
+  const next = pageFromHash(hash)
+  if (next === tab.value) return
+  if (!(await canLeave())) {
+    restoreHash()
+    return
+  }
+  tab.value = next
 }
 function toggleSidebar() {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -85,10 +96,16 @@ const authed = computed(() => !auth.value.enabled || auth.value.authenticated)
 const unsubscribers = []
 let booted = false
 
+// 后台标签页里轮询会被跳过，切回前台补一次，别让顶栏状态停在旧值上。
+function onVisibilityChange() {
+  if (!document.hidden && booted) refreshStatus(true)
+}
+
 function boot() {
   if (booted) return
   booted = true
   startStatusPolling()
+  document.addEventListener('visibilitychange', onVisibilityChange)
   unsubscribers.push(
     on('msg', addMessage),
     on('log', addLog),
@@ -106,6 +123,7 @@ function boot() {
 function shutdown() {
   stopStatusPolling()
   closeWS()
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   while (unsubscribers.length) unsubscribers.pop()()
   booted = false
 }
@@ -171,17 +189,20 @@ onBeforeUnmount(() => {
       </header>
 
       <main id="main-content" class="page" tabindex="-1">
-        <Dashboard v-if="tab === 'dashboard'" />
-        <Messages v-else-if="tab === 'messages'" />
-        <Nodes v-else-if="tab === 'nodes'" />
-        <Logs v-else-if="tab === 'logs'" />
-        <Config v-else-if="tab === 'config'" />
-        <Desktop v-else-if="tab === 'desktop'" />
-        <Wizard v-else-if="tab === 'wizard'" />
-        <DevPanel v-else-if="tab === 'dev'" />
+        <component :is="page.component" />
       </main>
     </div>
     <ToastContainer />
+    <ConfirmDialog
+      :open="leavePromptOpen"
+      title="还有没保存的改动"
+      message="这个页面还有没保存的改动，现在离开会丢掉它们。"
+      confirm-text="放弃改动并离开"
+      cancel-text="留在本页"
+      danger
+      @confirm="resolveLeave(true)"
+      @cancel="resolveLeave(false)"
+    />
   </div>
   <div v-else class="app-boot" role="status">正在检查登录状态…</div>
 </template>

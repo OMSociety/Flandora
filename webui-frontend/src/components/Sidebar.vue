@@ -1,17 +1,14 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { computed } from 'vue'
 import AppIcon from './AppIcon.vue'
 import BrandMark from './BrandMark.vue'
-import { NAV_GROUPS } from '../navigation'
-import { get } from '../api'
+import { NAV_GROUPS } from '../pages/index.js'
+import { status } from '../store'
 
 defineProps({ active: { type: String, required: true }, collapsed: { type: Boolean, default: false } })
 const emit = defineEmits(['change', 'about'])
-const version = ref('')
-onMounted(async () => {
-  const res = await get('/api/status')
-  if (res.ok && res.data && res.data.version) version.value = res.data.version
-})
+// 版本号读 store 的唯一状态：侧栏不再自己请求一次状态接口。
+const version = computed(() => status.version || '')
 </script>
 
 <template>

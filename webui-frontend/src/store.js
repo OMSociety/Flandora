@@ -50,7 +50,12 @@ export async function refreshStatus(silent = false) {
 export function startStatusPolling(interval = 5000) {
   stopStatusPolling()
   refreshStatus()
-  statusTimer = setInterval(() => refreshStatus(true), interval)
+  statusTimer = setInterval(() => {
+    // 标签页在后台时跳过这一轮：没人看的状态不必每 5 秒打一次接口，
+    // 切回前台由 App 的 visibilitychange 立刻补一次，定时器本身不重建。
+    if (document.hidden) return
+    refreshStatus(true)
+  }, interval)
 }
 
 export function stopStatusPolling() {

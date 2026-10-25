@@ -1,6 +1,22 @@
 import { test, expect } from '@playwright/test'
 import { mockApi } from './fixtures.js'
 
+// 页面登记表与图标白名单都从页面侧的 Vite 模块图读取：Playwright 运行器不编译 .vue，
+// 而登记表静态引入页面组件。读到的仍是控制台真正使用的那份模块，字段与源文件一致。
+async function readRegistry(page) {
+  return page.evaluate(async () => {
+    const [{ PAGES, NAV_GROUPS }, { ICON_NAMES }] = await Promise.all([
+      import('/src/pages/index.js'),
+      import('/src/components/AppIcon.vue'),
+    ])
+    return {
+      PAGES: PAGES.map(({ id, group, label, icon, description, menu }) => ({ id, group, label, icon, description, menu })),
+      groups: NAV_GROUPS.map((group) => ({ label: group.label, ids: group.items.map((item) => item.id) })),
+      icons: [...ICON_NAMES],
+    }
+  })
+}
+
 async function openPage(page, path = 'dashboard', theme = 'light') {
   await mockApi(page)
   await page.addInitScript((selected) => {
@@ -43,14 +59,16 @@ test('desktop navigation, theme persistence and dashboard are usable', async ({ 
   expect(icon.x + icon.width).toBeLessThanOrEqual(rail.x + rail.width)
   await page.getByRole('button', { name: '消息记录', exact: false }).click()
   await expect(page).toHaveURL(/#\/messages$/)
+  const { PAGES } = await readRegistry(page)
   const navLabels = await page.locator('.nav-copy strong').allTextContents()
-  expect(navLabels).toEqual(['仪表盘', '消息记录', '节点配置', '微信画面', '取钥向导', '运行日志', '调试面板', '系统设置'])
+  expect(navLabels).toEqual(PAGES.filter((item) => item.menu !== false).map((item) => item.label))
   expect(errors).toEqual([])
 })
 
-test('all eight routes render and mobile layout has no horizontal overflow', async ({ page }) => {
+test('all registered routes render and mobile layout has no horizontal overflow', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   const errors = await openPage(page)
+  const { PAGES } = await readRegistry(page)
   await expect(page.locator('.desktop-sidebar')).toBeHidden()
   await page.screenshot({ path: '../.impeccable/review/mobile.png', fullPage: true })
   await page.getByRole('button', { name: '打开导航', exact: true }).click()
@@ -59,7 +77,7 @@ test('all eight routes render and mobile layout has no horizontal overflow', asy
   await page.getByRole('button', { name: '消息记录', exact: false }).click()
   await expect(page.getByRole('dialog', { name: '控制台导航' })).toHaveCount(0)
 
-  for (const path of ['messages', 'nodes', 'logs', 'dev', 'desktop', 'wizard', 'config']) {
+  for (const path of PAGES.filter((item) => item.menu !== false).map((item) => item.id)) {
     await page.goto(`/#/${path}`)
     await expect(page.locator('#main-content > *').first()).toBeVisible()
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)
@@ -67,6 +85,19 @@ test('all eight routes render and mobile layout has no horizontal overflow', asy
     await page.screenshot({ path: `../.impeccable/review/mobile-${path}.png`, fullPage: true })
   }
   expect(errors).toEqual([])
+})
+
+test('every registered page icon exists in the AppIcon whitelist', async ({ page }) => {
+  await openPage(page)
+  const { PAGES, icons } = await readRegistry(page)
+  const known = new Set(icons)
+  expect(PAGES.filter((item) => !known.has(item.icon)).map((item) => `${item.id}: ${item.icon}`)).toEqual([])
+})
+
+test('sidebar groups flatten to the registered page order', async ({ page }) => {
+  await openPage(page)
+  const { PAGES, groups } = await readRegistry(page)
+  expect(groups.flatMap((group) => group.ids)).toEqual(PAGES.filter((item) => item.menu !== false).map((item) => item.id))
 })
 
 test('config page opens on the first section and validates raw JSON', async ({ page }) => {
@@ -140,6 +171,31 @@ test('node page adds, toggles and removes OneBot endpoints', async ({ page }) =>
   await page.getByRole('dialog', { name: '删除这个入口' }).getByRole('button', { name: '删除', exact: true }).click()
   await expect(page.getByText('通用设置生成的入口')).toBeVisible()
   await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  expect(errors).toEqual([])
+})
+
+test('leaving the node editor with unsaved changes asks first', async ({ page }) => {
+  const errors = await openPage(page, 'nodes')
+  await expect(page.locator('.page-heading h1')).toHaveText('节点配置')
+  // 改一个字段但不保存：顶栏出现未保存标记，导航要拦下来
+  await page.getByLabel('客户端附件目录').fill('D:/wechat/unsaved')
+  await expect(page.locator('.dirty-flag')).toBeVisible()
+
+  await page.getByRole('button', { name: '消息记录', exact: false }).click()
+  const prompt = page.getByRole('dialog', { name: '还有没保存的改动' })
+  await expect(prompt).toBeVisible()
+  await prompt.getByRole('button', { name: '留在本页' }).click()
+  await expect(prompt).toHaveCount(0)
+  // 取消后地址栏与页面都不动
+  await expect(page).toHaveURL(/#\/nodes$/)
+  await expect(page.locator('.page-heading h1')).toHaveText('节点配置')
+
+  // 确认离开之后才真的切页
+  await page.getByRole('button', { name: '消息记录', exact: false }).click()
+  await expect(prompt).toBeVisible()
+  await prompt.getByRole('button', { name: '放弃改动并离开' }).click()
+  await expect(page).toHaveURL(/#\/messages$/)
+  await expect(page.locator('.page-heading h1')).toHaveText('消息记录')
   expect(errors).toEqual([])
 })
 

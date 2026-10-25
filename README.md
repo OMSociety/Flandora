@@ -322,7 +322,7 @@ python -m flandora_mcp.server --selftest
 
 | 配置项 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `wechat_files_root` | 字符串 | 空 | 微信数据根目录，留空自动取「文档」下的 `xwechat_files` |
+| `wechat_files_root` | 字符串 | 空 | 微信数据根目录，留空自动定位：先看「文档」，再看微信自己记的存储位置 |
 | `wx_key_file` | 字符串 | 空 | 数据库口令文件，留空为配置目录下的 `wx_key.dat` |
 | `wx_work_dir` | 字符串 | 空 | 解密副本与游标目录，留空为配置目录下的 `wx_cache` |
 | `wx_poll_seconds` | 浮点 | `1.0` | 轮询本地库的间隔（秒） |

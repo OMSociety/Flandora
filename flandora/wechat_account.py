@@ -52,9 +52,61 @@ def _documents_dir() -> str:
     return os.path.join(os.path.expanduser("~"), "Documents")
 
 
+def _wechat_config_dir() -> str:
+    """微信自己的配置目录：``%APPDATA%\\Tencent\\xwechat\\config``。"""
+    appdata = os.environ.get("APPDATA") or os.path.join(
+        os.path.expanduser("~"), "AppData", "Roaming"
+    )
+    return os.path.join(appdata, "Tencent", "xwechat", "config")
+
+
+def _configured_root() -> str:
+    """微信记住的存储基准目录（用户把「存储位置」改到别的盘时用得上）。
+
+    微信把基准目录（不含 ``xwechat_files`` 那层）写在这个目录下的一个 ``.ini`` 里，
+    文件名是机器相关的哈希，所以遍历全部 ``.ini``，取第一个内容指向现存目录的。
+    """
+    directory = _wechat_config_dir()
+    try:
+        names = sorted(os.listdir(directory))
+    except OSError:
+        return ""
+    for name in names:
+        if not name.endswith(".ini"):
+            continue
+        try:
+            with open(os.path.join(directory, name), encoding="utf-8", errors="replace") as handle:
+                text = handle.read().strip()
+        except OSError:
+            continue
+        if text and os.path.isdir(text):
+            return text
+    return ""
+
+
+def candidate_roots() -> List[str]:
+    """按可信度排的候选根目录（都带 ``xwechat_files`` 这一层）。"""
+    roots = [
+        os.path.join(_documents_dir(), DATA_DIR_NAME),
+        os.path.join(os.path.expanduser("~"), "Documents", DATA_DIR_NAME),
+    ]
+    configured = _configured_root()
+    if configured:
+        roots.append(os.path.join(configured, DATA_DIR_NAME))
+    return roots
+
+
 def default_root() -> str:
-    """微信数据根目录的默认位置。"""
-    return os.path.join(_documents_dir(), DATA_DIR_NAME)
+    """微信数据根目录：先看系统「文档」，再看微信自己记的存储位置。
+
+    微信 4.x 允许把存储位置改到别的盘（例如 ``D:\\<用户>\\Tencent Files``），
+    那时「文档」下什么都没有；它把改后的位置写进 ``%APPDATA%`` 下自己的配置里。
+    两者都认，用户不必手填 ``wechat_files_root``。
+    """
+    for root in candidate_roots():
+        if os.path.isdir(root):
+            return root
+    return candidate_roots()[0]
 
 
 # ============ 账号识别 ============

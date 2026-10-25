@@ -42,14 +42,49 @@ def _text_of(event):
 
 
 class _StubStore:
-    """收件源 store 的替身：只提供昵称与登录 wxid。"""
+    """收件源 store 的替身：只提供昵称、登录 wxid 与名字表。"""
 
-    def __init__(self, nickname, my_wxid="wxid_me"):
+    def __init__(self, nickname, my_wxid="wxid_me", names=None):
         self._nickname = nickname
         self.my_wxid = my_wxid
+        self._names = dict(names or {})
 
     def self_nickname(self):
         return self._nickname
+
+    def display_names(self):
+        return dict(self._names)
+
+
+def test_group_mention_becomes_an_at_segment(isolated_ids, monkeypatch):
+    """群里的真 @（昵称后带标记字符）要还原成 at 段，标记字符不进客户端文本。"""
+    bridge = _make_bridge()
+    pushed = _capture(monkeypatch)
+    RUNTIME.store = _StubStore("芙兰朵露Flandre", names={"wxid_me": "芙兰朵露Flandre"})
+    isolated_ids.SELF.set_wxid("wxid_me")
+
+    bridge.emit_message({**GROUP_MSG, "content": "@芙兰朵露Flandre\u2005晚上好"})
+
+    assert len(pushed) == 1, pushed
+    event = pushed[0]
+    assert [seg["type"] for seg in event["message"]] == ["at", "text"]
+    # @ 的是桥接自己：at 的 qq 就是事件的 self_id
+    assert event["message"][0]["data"]["qq"] == event["self_id"]
+    assert event["message"][1]["data"]["text"] == "晚上好"
+    assert "\u2005" not in event["raw_message"]
+    assert event["is_mentioned"] is True
+
+
+def test_hand_typed_at_stays_text(isolated_ids, monkeypatch):
+    """手打的 @ 没有标记字符，不能被当成提及拆成 at 段。"""
+    bridge = _make_bridge()
+    pushed = _capture(monkeypatch)
+    RUNTIME.store = _StubStore("芙兰朵露Flandre", names={"wxid_me": "芙兰朵露Flandre"})
+
+    bridge.emit_message({**GROUP_MSG, "content": "@芙兰朵露Flandre 晚上好"})
+
+    assert [seg["type"] for seg in pushed[0]["message"]] == ["text"]
+    assert _text_of(pushed[0]) == "@芙兰朵露Flandre 晚上好"
 
 
 def test_group_message_without_mention_is_reported(isolated_ids, monkeypatch):

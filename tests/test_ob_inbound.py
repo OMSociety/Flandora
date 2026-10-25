@@ -3,7 +3,7 @@
 微信把「选中的提及」渲染成 `@昵称` 加一个 U+2005 分隔符，手打的 @ 没有这个分隔符；
 引用消息把被引内容放在 appmsg 的 `<refermsg>` 里，`<svrid>` 就是被引消息的服务端号。
 这两条都是本机真实数据里核对过的规律，这里守住它们的边界：认得出的还原成段，
-认不出的一律留在原文里。
+认不出的保留原文（只清掉那个不可见的标记字符）。
 """
 
 import os
@@ -41,8 +41,14 @@ def test_plain_at_without_separator_stays_text():
 
 
 def test_unknown_name_keeps_original_text():
+    """认不出的提及保留原文，只清掉那个不可见的标记字符。"""
     segments = ob_inbound.split_mentions("请 @查无此人\u2005 来一下", _resolve)
-    assert segments == [Text("请 @查无此人\u2005 来一下")]
+    assert segments == [Text("请 @查无此人 来一下")]
+
+
+def test_text_without_content_leaves_no_empty_segment():
+    """整段只剩标记字符时不留空文本段。"""
+    assert ob_inbound.split_mentions("\u2005\u200b", _resolve) == []
 
 
 def test_mention_only_message():

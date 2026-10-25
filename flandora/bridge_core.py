@@ -40,9 +40,6 @@ log = logging.getLogger("flandora")
 # 微信给群名挂的 "(3)" 人数后缀：搜索会话时用不上，推事件前剥掉
 _GROUP_COUNT_SUFFIX = re.compile(r"\s*\(\d+\)\s*$")
 
-# 选中的提及会在昵称后带 U+2005 / U+200B 分隔符；正文里这两个字符对客户端没意义
-_MENTION_SEPARATORS = ("\u2005", "\u200b")
-
 
 def _quote_ref(quote) -> QuoteRef | None:
     """引用信息 → 领域对象；没有服务端号就没有可还原的引用。"""
@@ -94,11 +91,6 @@ class Flandora:
             self._nick = nick
             self._nick_store = store
         return self._nick
-
-    def _nicknames(self):
-        """@ 识别用的称呼列表；昵称读不到时为空列表（判定为「没人 @ 我」）。"""
-        nick = self.self_nickname()
-        return [nick] if nick else []
 
     def should_ignore(self, data):
         content = data.get("content", "")
@@ -354,15 +346,10 @@ class Flandora:
             user_id = ob_ids.contact_id(sender_handle)
             message_id = self._message_id_for(session_handle, message.local_id, message.server_id)
 
-            text = message.text
-            if is_group:
-                # 正文保持原样：发言人、群名由事件的 sender/group 字段承载，
-                # 是否 @ 了机器人由 is_mentioned 标记，内容不做改写
-                for nick in self._nicknames():
-                    for separator in _MENTION_SEPARATORS:
-                        text = text.replace(f"@{nick}{separator}", f"@{nick}")
-
-            segments = self._inbound_segments(message, text)
+            # 正文保持原样：发言人、群名由事件的 sender/group 字段承载，是否 @ 了
+            # 机器人由 is_mentioned 标记。提及的标记字符由 ob_inbound 在认出提及之后
+            # 清掉——只有它知道哪一处 @ 是真提及，先清就再也认不出来了。
+            segments = self._inbound_segments(message, message.text)
             segments.extend(Image(path=path) for path in message.media)
 
             event = render_message_event(

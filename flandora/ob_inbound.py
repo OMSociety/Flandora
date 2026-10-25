@@ -5,11 +5,13 @@
 - **@ 提及**：真正的 @ 是「@昵称」后面跟一个 U+2005（四分之一空格）或 U+200B；
   用户手打的 `@昵称` 后面没有这个分隔符。这是区分「真 @」与「只是打了个 @」的
   唯一依据，实测本机库里 5 条带分隔符的消息全部是选中成员产生的提及。
+  这两个字符本身只是标记而非内容：识别完就从输出的文本段里清掉，不给客户端看。
 - **引用消息**：被引内容在 appmsg 的 `<refermsg>` 里，`<svrid>` 就是被引消息的
   服务端号，可用它回查 `message_id`，还原成 v11 的 `reply` 段。
 
-还原不出来的部分一律保持原样：认不出的 @ 留在文本里，查不到的引用 id 记 0，
-绝不猜测或丢弃。这里只产领域段，OneBot 的字段形状由渲染层负责。
+还原不出来的部分一律保持原样：认不出的 @ 保留「@昵称」这段文字（只清掉后面那个
+不可见的标记字符），查不到的引用 id 记 0，绝不猜测或丢弃。这里只产领域段，
+OneBot 的字段形状由渲染层负责。
 """
 
 from __future__ import annotations
@@ -22,13 +24,25 @@ from .domain.message import Mention, Reply, Segment, Text
 # 微信用来标记「这是一个选中的提及」的分隔符（U+2005 见得多，U+200B 也见过）
 MENTION_SEPARATORS = "\u2005\u200b"
 _MENTION_RE = re.compile(rf"@([^\s@{MENTION_SEPARATORS}]{{1,64}})[{MENTION_SEPARATORS}]")
+# 标记字符只用于识别，进不了客户端可见的文本
+_MARKER_CLEANUP = str.maketrans("", "", MENTION_SEPARATORS)
+
+
+def _push_text(segments: list[Segment], raw: str) -> None:
+    """文本段入列前清掉标记字符；清完什么都不剩就不加空段。"""
+    cleaned = raw.translate(_MARKER_CLEANUP)
+    if cleaned:
+        segments.append(Text(cleaned))
 
 
 def split_mentions(text: str, resolve) -> list[Segment]:
     """把正文里真正的 @ 拆成 at 段。
 
     `resolve(昵称)` 返回该成员的 OneBot user_id；返回 0 表示认不出这个人，
-    这一处 @ 连同分隔符原样留在文本段里，不做任何猜测。
+    这一处 @ 保留「@昵称」这段文字，不做任何猜测。
+
+    标记字符必须先用后清：它是判断「这是不是真 @」的唯一依据，清早了就再也认不出
+    提及（那正是本函数与调用方之间曾经踩过的坑）；输出的文本段里不留它。
     """
     segments: list[Segment] = []
     if not text:
@@ -39,11 +53,11 @@ def split_mentions(text: str, resolve) -> list[Segment]:
         if not user_id:
             continue
         if match.start() > pos:
-            segments.append(Text(text[pos : match.start()]))
+            _push_text(segments, text[pos : match.start()])
         segments.append(Mention(user_id=int(user_id), name=match.group(1)))
         pos = match.end()
     if pos < len(text):
-        segments.append(Text(text[pos:]))
+        _push_text(segments, text[pos:])
     return segments
 
 

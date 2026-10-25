@@ -77,6 +77,7 @@ _MENTION_LABEL = "文字+@"
 _MEDIA_LABEL = {
     SegmentKind.IMAGE: ("图片", "[图片]"),
     SegmentKind.EMOJI: ("表情", "[表情]"),
+    SegmentKind.FILE: ("文件", "[文件]"),
     SegmentKind.VOICE: ("语音（文件形式）", "[语音]"),
     SegmentKind.VIDEO: ("视频（文件形式）", "[视频]"),
 }

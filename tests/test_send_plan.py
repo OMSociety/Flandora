@@ -60,10 +60,9 @@ def test_empty_text_segments_are_dropped():
     assert plan == []
 
 
-def test_reply_and_file_yield_no_action():
-    # 引用构造不出来、file 段在协议转换层就被拒绝：规划层都不能凭空造一次发送
-    plan = send_plan.plan_message([Reply(message_id=7), File(path="/tmp/x.bin")])
-    assert plan == []
+def test_reply_yields_no_action():
+    # 引用构造不出来：规划层不能凭空造一次发送（只发 reply 时由协议层回 1404）
+    assert send_plan.plan_message([Reply(message_id=7)]) == []
 
 
 def test_face_uses_wechat_code_as_its_own_text_message():
@@ -76,11 +75,14 @@ def test_face_uses_wechat_code_as_its_own_text_message():
 
 
 def test_media_segments_map_to_their_kinds():
-    plan = send_plan.plan_message([Image("/a.png"), Emoji("/b.gif"), Voice("/c.mp3")])
+    plan = send_plan.plan_message(
+        [Image("/a.png"), Emoji("/b.gif"), Voice("/c.mp3"), File("/d.bin")]
+    )
     assert plan == [
         SendMedia(kind=SegmentKind.IMAGE, path="/a.png"),
         SendMedia(kind=SegmentKind.EMOJI, path="/b.gif"),
         SendMedia(kind=SegmentKind.VOICE, path="/c.mp3"),
+        SendMedia(kind=SegmentKind.FILE, path="/d.bin"),
     ]
 
 

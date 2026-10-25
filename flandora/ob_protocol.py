@@ -15,6 +15,7 @@ import tempfile
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import unquote
 
 from . import (
     __version__,
@@ -29,6 +30,7 @@ from .domain import send as domain_send
 from .domain.message import (
     Emoji,
     Face,
+    File,
     Image,
     Mention,
     Message,
@@ -242,6 +244,14 @@ async def _handle_ob_api(data: dict):
                 except OSError as exc:
                     # 临时文件占了临时目录，删不掉不影响本次发送结果，留痕即可。
                     log.debug(f"[OB11] 临时文件未能删除 {temp_path}: {exc}")
+                    continue
+                # 文件段为了保住卡片上的名字会单独建一个临时目录，顺手收掉
+                parent = os.path.dirname(temp_path)
+                if os.path.basename(parent).startswith("bridge_file_"):
+                    try:
+                        os.rmdir(parent)
+                    except OSError:
+                        pass
 
         sent_count = 0
         for outcome in outcomes:
@@ -622,6 +632,57 @@ def _media_file(file_val: str, label: str, prep: _OutboundPrep) -> str | None:
     return None
 
 
+def _local_path(raw: str) -> str:
+    """把客户端给的文件位置还原成本机路径（``file://`` URI 会被百分号编码）。"""
+    if not raw.startswith("file://"):
+        return raw
+    path = unquote(raw[7:])
+    if len(path) > 2 and path[0] == "/" and path[2] == ":":
+        path = path[1:]  # file:///D:/x 的路径部分是 /D:/x，去掉前导斜杠
+    return path
+
+
+def _file_path(data: dict, prep: _OutboundPrep) -> str | None:
+    """文件段（``file``）落成本地路径。
+
+    客户端给的形式不止一种：``base64://`` 内联、``file:///D:/…`` URI（AstrBot 的
+    ``File`` 组件就走这种）、本机路径，以及客户端附件目录里的文件名。``http(s)``
+    URL 不下载——那是桥接替客户端访问网络，超出这条通道的职责，如实记成失败段。
+
+    文件卡片上的名字跟着实际文件走：内联数据用 ``name`` 命名临时文件，本机路径
+    用文件自己的名字。
+    """
+    raw = str(data.get("file") or "")
+    name = str(data.get("name") or "")
+    if not raw:
+        prep.failures.append("文件段缺少 file 字段")
+        return None
+    if raw.startswith("base64://"):
+        try:
+            path = _decode_base64_file(raw[9:], name)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[OB11] base64 文件解码失败: {e}")
+            prep.failures.append("文件 base64 解码失败")
+            return None
+        prep.temp_files.append(path)
+        log.info(f"[OB11] 文件已解码: {os.path.basename(path)}")
+        return path
+    if raw.startswith(("http://", "https://")):
+        log.warning(f"[OB11] 不下载文件段给的 URL: {raw}")
+        prep.failures.append("文件段不支持 http(s) URL：把文件放本机，用路径或 base64:// 传")
+        return None
+    path = _local_path(raw)
+    if os.path.isfile(path):
+        return path
+    if config.CLIENT_ATTACHMENTS:
+        candidate = os.path.join(config.CLIENT_ATTACHMENTS, os.path.basename(path))
+        if os.path.isfile(candidate):
+            return candidate
+    log.warning(f"[OB11] 文件不存在: {raw}")
+    prep.failures.append(f"文件不存在：{raw}")
+    return None
+
+
 def _record_file(data: dict, prep: _OutboundPrep) -> str | None:
     """语音段（``record``）落成本地音频文件。
 
@@ -721,6 +782,10 @@ def _prepare_message(message: list) -> _OutboundPrep:
             path = _media_file(str(data.get("file") or ""), "图片", prep)
             if path:
                 prep.segments.append(Image(path=path))
+        elif seg_type == "file":
+            path = _file_path(data, prep)
+            if path:
+                prep.segments.append(File(path=path, name=str(data.get("name") or "")))
         elif seg_type == "face":
             file_val = str(data.get("file") or "")
             if file_val:
@@ -1069,6 +1134,21 @@ def _resolve_mentions(
     if not names:
         return [], "@ 段里没有可识别的成员"
     return names, ""
+
+
+def _decode_base64_file(b64_data: str, name: str = "") -> str:
+    """解码 base64 文件并落成临时文件，尽量保住客户端给的文件名。
+
+    发送器投递的是附件卡片，卡片上的名字就是文件的名字，所以这里单独建一个临时
+    目录放它（发送完由调用方删文件、收目录），而不是像图片那样按魔数改扩展名。
+    """
+    data = base64.b64decode(b64_data)
+    safe = os.path.basename(name).strip() or "file.bin"
+    directory = tempfile.mkdtemp(prefix="bridge_file_")
+    path = os.path.join(directory, safe)
+    with open(path, "wb") as fh:
+        fh.write(data)
+    return path
 
 
 def _decode_base64_image(b64_data: str) -> str | None:

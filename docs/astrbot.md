@@ -85,11 +85,11 @@ AstrBot 把消息链转成 OneBot 段名再发下来，它的语音段是 `recor
 | `face` | 支持 | 有图当图片发；只有 QQ 表情 id 时映射成微信文本表情 |
 | `record` | 降级 | 以文件卡片发出：`base64://` 落成 `.mp3` 临时文件，本地路径按原样发，不改扩展名、不做转码 |
 | `video` | 降级 | 以文件形式发出，呈现形态由微信按扩展名决定 |
+| `file` | 支持 | AstrBot 的 `File` 给的是 `file:///D:/…`，直接投递成文件卡片；也收 `base64://`（`name` 当卡片上的文件名）、本机路径，以及光给文件名（到 `client_attachments` 里找） |
 | `reply` | 跳过 | 桌面端无法按 `message_id` 造引用；只发 `reply` 时整条返回 `1404` |
-| `file` | 不接受 | AstrBot 的文件段走 `File`，Flandora 会记进 `failed_segments`（原因见下） |
 | `node` / `nodes` | 不接受 | 合并转发在 AstrBot 侧走 `send_group_forward_msg`，Flandora 回 `1404` |
 
-`file` 段没有对应能力：微信桌面端只能靠拖拽或「发送文件」对话框投递文件，桥接目前没有这条通路。一样的输入在 AstrBot 侧表现为动作失败，`message` 里写明原因。
+`file` 段只投递本机上能拿到的字节：`http(s)` URL 不下载（那是替客户端访问网络），会记进 `failed_segments` 并在 `message` 里写明。
 
 ## 5. 做不到的部分
 

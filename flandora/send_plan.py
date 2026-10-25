@@ -20,6 +20,7 @@ from collections.abc import Sequence
 from .domain.message import (
     Emoji,
     Face,
+    File,
     Image,
     Mention,
     Reply,
@@ -86,5 +87,7 @@ def plan_message(segments: Sequence[Segment] | None) -> list[SendAction]:
             plan.append(SendMedia(kind=SegmentKind.VOICE, path=seg.path))
         elif isinstance(seg, Video):
             plan.append(SendMedia(kind=SegmentKind.VIDEO, path=seg.path))
+        elif isinstance(seg, File):
+            plan.append(SendMedia(kind=SegmentKind.FILE, path=seg.path))
     flush()
     return plan

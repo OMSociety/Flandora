@@ -114,6 +114,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | `face` | 支持 | 有 `file` 当图片发；只有 QQ 表情 id 时映射成微信文本表情（`[微笑]` 等） |
 | `record` | 降级 | 以 mp3 文件发送（对方收到文件卡片，双击可播放） |
 | `video` | 降级 | 以文件形式发送，呈现形态由微信客户端按扩展名决定 |
+| `file` | 支持 | 本机路径、`file://` URI 或 `base64://` 内联（`name` 决定卡片上的文件名）；光给文件名时到 `client_attachments` 里找。`http(s)` URL 不下载，如实回失败 |
 | `reply` | 跳过 | 微信桌面端无法按 `message_id` 构造引用；只发 `reply` 时整条返回 `1404` |
 | 其它 | 报错 | 未接线的段类型计入 `failed_segments`，一个段都没发出去时 `retcode=1500` |
 

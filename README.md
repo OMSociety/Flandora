@@ -12,7 +12,6 @@
 
 <p align="center">
   <a href="#快速开始">快速开始</a> ·
-  <a href="#核心能力">核心能力</a> ·
   <a href="#文档">文档</a> ·
   <a href="docs/config.md">配置</a> ·
   <a href="#使用边界与许可">使用边界</a> ·

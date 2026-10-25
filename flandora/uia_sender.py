@@ -12,7 +12,8 @@ uia_sender.py — 微信消息发送器
 - 开启后每条消息发完立刻把前台还给发送前的前台窗口（实测 3-11 毫秒），
   用户看到的是一次短暂切换，而不是前台被微信占住
 - 联系人切换优先点会话列表项，列表里没有时才退回顶部搜索框
-- 文本用 WM_CHAR 逐字符输入（中文可靠，避免剪贴板/输入法问题）
+- 文本用 WM_CHAR 逐字符输入（中文与 emoji 都走这条路，emoji 按 UTF-16
+  代理项拆开投递；避免剪贴板与输入法带来的问题）
 - 图片/文件用剪贴板 + 伪造 Ctrl 键态的 Ctrl+V
 - 发送前回读输入框校验，发送后按会话摘要行确认；任一步不符即报失败
 - 不移动窗口、不改动窗口尺寸与位置、不改动置顶状态
@@ -57,6 +58,20 @@ SW_RESTORE = 9
 
 # WM_KEYUP 的 lParam：低位为重复次数 1，其余位标明键已抬起
 KEYUP_LPARAM = 0xC0000001
+
+
+def utf16_units(ch: str) -> tuple[int, ...]:
+    """把一个字符拆成 WM_CHAR 的 wParam 序列（UTF-16 码元）。
+
+    WM_CHAR 的 wParam 是一个 16 位码元，放不下 U+FFFF 以上的字符（emoji、
+    生僻字）。这类字符必须按 UTF-16 拆成高低代理项分两条消息投递：整码点发过去
+    微信收不下，字符会静默消失，回读校验一直不符，最终整条消息发送失败。
+    """
+    code = ord(ch)
+    if code <= 0xFFFF:
+        return (code,)
+    code -= 0x10000
+    return (0xD800 + (code >> 10), 0xDC00 + (code & 0x3FF))
 
 
 class BaseSender:
@@ -783,10 +798,11 @@ class UiaSender(BaseSender):
         return True
 
     def _post_char(self, ch: str) -> None:
-        """投递一个可见字符（WM_CHAR，支持中文）。"""
+        """投递一个可见字符（WM_CHAR，支持中文与 emoji）。"""
         user32 = self._user32_inst()
         if self._hwnd:
-            user32.PostMessageW(self._hwnd, WM_CHAR, ord(ch), 1)
+            for unit in utf16_units(ch):
+                user32.PostMessageW(self._hwnd, WM_CHAR, unit, 1)
 
     def _client_lparam(self, sx: float, sy: float, hwnd: int = 0) -> int:
         """屏幕坐标 → 指定窗口客户区坐标，并打包成鼠标消息的 lParam。"""
@@ -1026,13 +1042,12 @@ class UiaSender(BaseSender):
         必须把鼠标消息投给弹层自己的 HWND，投给主窗到不了；这正是「打字能出
         结果、点了却切不过去」的原因。
         """
-        user32 = self._user32_inst()
         field = self._search_input()
         if field is None or not self._post_click(field):
             return False
         time.sleep(0.7)
         for ch in contact:
-            user32.PostMessageW(self._hwnd, WM_CHAR, ord(ch), 1)
+            self._post_char(ch)
             time.sleep(0.05)
         time.sleep(1.2)
         # 搜索结果弹层是独立顶层窗口，主窗口的 UIA 树里未必能拿到；键盘选中更稳：

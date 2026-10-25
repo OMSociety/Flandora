@@ -20,12 +20,18 @@
 
 文档索引：
 
-- 用户向说明与配置详解：[README.md](./README.md)
+- 用户向说明（概览、能力与快速开始）：[README.md](./README.md)
+- 协议面（ID 约定、动作面、消息段、事件面、返回码）：[docs/protocol.md](./docs/protocol.md)
+- 控制台八个页面与数据落点：[docs/console.md](./docs/console.md)
+- 配置与更新：[docs/config.md](./docs/config.md)
+- 客户端工具（Python SDK、MCP 服务）：[docs/sdk.md](./docs/sdk.md)
+- 开发环境、命令与验收：[docs/development.md](./docs/development.md)
+- 已知限制：[docs/limitations.md](./docs/limitations.md)
 - 代码结构、依赖规则与扩展点：[docs/architecture.md](./docs/architecture.md)
 - 真机验收清单：[docs/smoke-test.md](./docs/smoke-test.md)
 - 界面设计规范：[DESIGN.md](./DESIGN.md)（配色、字体、间距与组件写法，不描述代码架构）、
   产品口径：[PRODUCT.md](./PRODUCT.md)
-- 已知限制：[docs/known-limits-desktop.md](./docs/known-limits-desktop.md)、[docs/known-limits-dat-format.md](./docs/known-limits-dat-format.md)
+- 底层格式与桌面机制的实验记录：[docs/known-limits-dat-format.md](./docs/known-limits-dat-format.md)、[docs/known-limits-desktop.md](./docs/known-limits-desktop.md)
 
 ## 常用命令
 

@@ -1,0 +1,59 @@
+# 开发与验收
+
+需要 Python 3.13 与 Node.js（构建前端时）。以下命令在仓库根执行，`python` 指 3.13 的解释器。
+
+## 环境与命令
+
+```powershell
+# 装依赖（运行期 + 测试 + ruff + 依赖漏洞扫描，一份清单装全）
+python -m pip install -r requirements-dev.txt
+
+# 语法检查、lint、后端测试、测试收集闸
+python -m compileall -q flandora manager sdk mcp tools
+python -m ruff check .
+python -m ruff format --check .
+python -m pytest tests -q
+python tools/check_test_collection.py
+
+# 版本号单一来源与打包前校验（CI 同款）
+python tools/sync_version.py --check
+python build.py --check
+
+# SDK（可选：在自己的项目里用它当客户端）
+python -m pip install -e sdk\python
+
+# MCP 服务（可选：给 AI 客户端用）
+python -m pip install -e mcp\python
+
+# 从源码起桥接
+python run_bridge.py
+```
+
+这些命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）同源，提交前本地跑绿即可。CI 另外会重新生成一次 `sdk/python/flandora_sdk/_catalog.json` 并核对无差异（动作目录改了没同步快照会红）；`package` job 会真的跑一遍 `build.py` 并断言载荷清单，发行链接不必等到发版当天才发现打包断了。
+
+前端在 `webui-frontend/`（Vue 3 + Vite）：
+
+```powershell
+cd webui-frontend
+npm install
+npm test        # Playwright，自动在 4175 起 vite
+npm run build   # 产物写入 flandora\webui\dist
+```
+
+打包发行版：
+
+```powershell
+python build.py
+```
+
+产物在 `dist\`：`Flandora-v<版本>.zip` 与 `Flandora-v<版本>-setup.exe`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
+
+> **提示**：打包前会按 mtime 判断 `flandora/webui/dist/index.html` 是否比前端源码旧：旧了才调用 npm 重建。想直接复用现有产物就加 `--skip-web`，它会打印两边的时间；产物缺失时该参数会直接报错，不会打出没有界面的包。
+
+取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。代码结构、依赖规则与扩展点见 [architecture.md](architecture.md)，工程约定与验收口径见 [AGENTS.md](../AGENTS.md)。
+
+## 验收
+
+自动化测试看的是「同样的输入产生同样的输出」；UIA、真机微信与真实的 OneBot 客户端连接只能用清单验。发布前或改动收件、发送、桌面、更新链路后，按 [smoke-test.md](smoke-test.md) 走一遍，每一步都给了可观察的判据，最后把实际看到的结果记在当节下面。
+
+九条自动闸门（语法检查、ruff、pytest、测试收集闸、配置样例、版本单一来源、打包校验、前端测试与构建、真机冒烟）的分工与判定口径写在 [AGENTS.md](../AGENTS.md)。

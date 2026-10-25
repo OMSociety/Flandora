@@ -12,10 +12,10 @@
 
 <p align="center">
   <a href="#快速开始">快速开始</a> ·
-  <a href="#运行链路">运行链路</a> ·
   <a href="#核心能力">核心能力</a> ·
-  <a href="#控制台">控制台</a> ·
-  <a href="docs/config.md">配置项</a> ·
+  <a href="#文档">文档</a> ·
+  <a href="docs/config.md">配置</a> ·
+  <a href="#使用边界与许可">使用边界</a> ·
   <a href="https://github.com/OMSociety/Flandora/issues">问题反馈</a>
 </p>
 
@@ -34,14 +34,6 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | 取钥 | 四步向导：免责声明、数据库口令、图片密钥、校验；口令与密钥由 Windows DPAPI 加密落盘；重启后自动认出盘上已就位的口令与密钥，不会退回重取 |
 | 隔离桌面 | 微信跑在独立的 Windows 桌面上；重启后接管仍在运行的实例；需要时由你点按钮结束 |
 | 控制台 | 仪表盘、消息记录、节点配置、微信画面、取钥向导、运行日志、调试面板、系统设置；明暗两套主题 |
-
-## 运行链路
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/assets/readme/flow.svg" width="100%" alt="微信客户端经 Flandora 的取钥、收件与发送链路，对外连接 OneBot v11 客户端" />
-</p>
-
-会话接入、口令还原、事件组装、动作执行与网络适配保持独立边界。收件按 `wx_poll_seconds` 轮询本机库，不向聊天进程注入钩子；发送只在你调用动作时发生。**桥接只做通道**：要不要回、怎么回、上下文带多少，全部留在客户端侧。
 
 ## 快速开始
 
@@ -69,267 +61,21 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 > **提示**：`ob_server_token` 与客户端 `token` 必须一致。留空表示不校验鉴权，此时服务端只监听 `127.0.0.1`；要让别的机器连进来，改 `ob_server_host`、在防火墙放行 7999，并务必填一串随机 token。
 
-## ID 约定
+## 文档
 
-微信侧的标识是 wxid（`wxid_xxx`）与群会话 ID（`xxx@chatroom`），OneBot v11 要求整数。Flandora 在 `data/id_map.json` 里维护一张双向映射表：wxid 首次出现时分配一个正整数并落盘，之后每次启动、每次升级都是同一个数，客户端存下的 `user_id` 不会因为重启而失效。
-
-| 字段 | 含义 |
+| 想看什么 | 去哪 |
 | --- | --- |
-| `user_id` | 发言人（私聊即对方）的 wxid 映射。群消息里按发言人拆分，同一个人在不同群里是同一个 `user_id` |
-| `group_id` | 群会话 ID 的映射；私聊事件里为 `0` |
-| `message_id` | 非零正整数。收件时按微信本地库的消息行号分配，同一条消息重复上报得到同一个号；发送成功后返回新号 |
-
-发动作时 `user_id` / `group_id` 两种写法都收：整数 ID，或直接写微信标识（`wxid_xxx`、`xxx@chatroom`）。写标识时不必事先换 ID，Flandora 自己折进映射表；写整数时必须是映射表里已分配过的号，从没见过的数字一律回 `1406`，不会拿这个数字去微信里搜人。
-
-事件与名册回的是整数 ID。要原始标识有两个入口：消息事件里带 `group_wxid`（群会话 ID）与 `sender.wxid`（发言人 wxid）；也可以用 `get_contact_id`（标识 → 整数）、`get_contact_handle`（整数 → 标识）、`get_contact_ids`（整表导出）三个动作互查。
-
-映射表与消息号表都在配置目录下，换机时连同 `config.json` 一起带走即可保持 ID 不变。
-
-## 动作面
-
-动作清单的唯一真相源是 `flandora/action_catalog.py`：哪些动作支持、要什么参数、能不能真正执行都写在里面。支持的动作按用途归并如下（只作阅读分组；`category` 字段的取值是 `信息`、`消息`、`好友`、`群信息`、`群管理`、`请求`、`扩展`，MCP 的 `list_actions(category=...)` 按它精确匹配）：
-
-| 分类 | 动作 |
-| --- | --- |
-| 消息 | `send_msg`、`send_private_msg`、`send_group_msg`、`get_msg`、`get_group_msg_history`、`get_friend_msg_history` |
-| 信息 | `get_login_info`、`get_status`、`get_version_info`、`can_send_image`、`can_send_record`、`get_contact_id`、`get_contact_handle`、`get_contact_ids` |
-| 好友 | `get_friend_list`、`get_stranger_info`、`get_friend_info` |
-| 群 | `get_group_list`、`get_group_info`、`get_group_member_list`、`get_group_member_info` |
-
-`user_id` / `group_id` 一类参数在目录里的类型写作 `id`：整数或微信标识都收（见 [ID 约定](#id-约定)）。
-
-名册类查询读的是微信本地库：好友不含群、公众号与文件传输助手，群成员带 `owner` / `member` 角色。本地库没有的字段（性别、年龄、入群时间、群容量）如实回 `unknown` / `0`，不猜。
-
-`get_msg` 取的是 Flandora 自己推送过的消息——每条上报的事件都在 `data/messages.db` 里留了副本，客户端可以用收到的 `message_id` 回查原文。存档不自动清理：`message_id` 是撤回、引用与取原文的长期凭据，静默回收会让老客户端的引用指向不存在的消息。
-
-### 消息段
-
-发送方向按段类型分派，每一段要么真的发出去，要么在响应里留下原因，没有静默跳过的分支：
-
-| 段类型 | 发送 | 说明 |
-| --- | --- | --- |
-| `text` | 支持 | 逐字符投递并回读校验，回显不符会清空重打 |
-| `at` | 群内支持 | 走成员选择弹层：输入 `@`、按昵称筛选、点中唯一匹配项；弹层认不出来就清空输入框并返回失败。`@全体成员` 直接拒绝（桌面端没有这个入口） |
-| `image` | 支持 | `base64://` 或 `client_attachments` 下的相对路径 |
-| `face` | 支持 | 有 `file` 当图片发；只有 QQ 表情 id 时映射成微信文本表情（`[微笑]` 等） |
-| `record` | 降级 | 以 mp3 文件发送（对方收到文件卡片，双击可播放） |
-| `video` | 降级 | 以文件形式发送，呈现形态由微信客户端按扩展名决定 |
-| `file` | 支持 | 本机路径、`file://` URI 或 `base64://` 内联（`name` 决定卡片上的文件名）；光给文件名时到 `client_attachments` 里找。`http(s)` URL 不下载，如实回失败 |
-| `reply` | 跳过 | 微信桌面端无法按 `message_id` 构造引用；只发 `reply` 时整条返回 `1404` |
-| 其它 | 报错 | 未接线的段类型计入 `failed_segments`，一个段都没发出去时 `retcode=1500` |
-
-收件方向会主动还原两种结构，客户端拿到的不是一段扁平文本：
-
-| 段类型 | 收件 | 依据 |
-| --- | --- | --- |
-| `at` | 支持 | 微信把选中的提及渲染成 `@昵称` 加 U+2005 分隔符；手打的 `@昵称` 没有分隔符，照旧留在文本里 |
-| `reply` | 支持 | 引用消息的 `refermsg/svrid` 就是被引消息的 `server_id`，按它回查 `message_id`；查不到时 `id` 记 `0`（引用关系仍在，取不到原文） |
-| `text` | 支持 | 其余内容按原文成段，认出中间夹着的提及时在前后切开 |
-
-做不到的能力与各自原因写在 [`docs/wip.md`](docs/wip.md)；需要在真机上确认的三项（@ 弹层、撤回、拍一拍）连同实验步骤写在 [`docs/needs-user.md`](docs/needs-user.md)；接 AstrBot 的步骤与能力缺口清单见 [`docs/astrbot.md`](docs/astrbot.md)。
-
-微信 PC 客户端确实没有对应能力的动作（群管理、群文件、点赞等）返回 `failed` 并在 `message` 里写明原因，不会回一个空对象假装成功：
-
-| `retcode` | 含义 |
-| --- | --- |
-| `0` | 成功 |
-| `1400` | 参数不合契约，或缺少定位会话所需的信息（例如群名映射还没学到） |
-| `1401` | 入口配置了 access_token，请求未带上或带错 |
-| `1404` | 动作已知但暂未实现，`message` 是具体原因 |
-| `1405` | 动作名不在动作目录里 |
-| `1406` | 动作支持，但传入的 ID 在本地库里查不到；HTTP 入口路径不匹配同样是 `1406` |
-| `1500` | 执行失败（微信未登录、主窗口不可用、实现缺口） |
-
-### 事件面
-
-除消息事件外，桥接还推两类旁路事件。它们不占消息流，客户端按 `post_type` 分派即可：
-
-| 事件 | 触发 | 字段 |
-| --- | --- | --- |
-| `meta_event` / `heartbeat` | 每隔 `ob_heartbeat_seconds` 秒一次，取 0 关闭 | `interval`、`status.online`（桥接在跑且微信已接入）、`status.good`（发送通道也可用） |
-| `meta_event` / `lifecycle` | 每条连接建立时推 `connect`，桥接停止时推 `disable` | `sub_type`；`connect` 是逐连接发的，后连上的客户端同样收得到 |
-| `notice` / `group_recall`、`friend_recall` | 微信消息库里出现撤回系统消息 | `user_id`（撤回者）、`operator_id`、`message_id`、`message_id_known` |
-| `notice` / `notify` + `sub_type: poke` | 群里出现拍一拍 | `user_id`（发起者）、`target_id`（被拍的人）、`suffix`、有群时带 `group_id` |
-
-撤回与拍一拍**只走 notice，不再作为消息事件推送**：这两类内容在微信里是系统提示行，没有可回复的正文，混在消息流里会让客户端对着一行「XX 撤回了一条消息」生成回复。
-
-`message_id_known` 是给客户端的自证字段：微信 PC 端的撤回系统消息里没有被撤回消息的 id（本地库样本里 `newmsgid` 为空），所以 `message_id` 只能填 `0`。客户端看到 `message_id_known: false` 就该只更新界面，不要拿 `0` 去 `get_msg` 或 `delete_msg`。
-
-## 控制台
-
-面板默认监听 `127.0.0.1:4950`，八页：仪表盘、消息记录、节点配置、微信画面、取钥向导、运行日志、调试面板、系统设置。调试面板分「动作调试」与「发送测试」两个标签页：前者把动作目录整张列出来，选动作、按参数表填值、点执行，回来的响应原样打印，也能看最近推送的事件，或者拼好消息段直接生成 CQ 码；后者把一条文本投进真实微信窗口，验证发送通道通不通。两者走同一条动作链路，线上调不通的动作可以在这里先复现；只打开的标签页才会去拉它自己的数据。节点配置把 OneBot 入口按类型归拢（正向 WS 服务端、HTTP 服务端、反向 WS、HTTP 上报），逐条启用、逐条鉴权与编辑，通用设置只在没有启用中的入口时兜底，左列本机账号卡里放客户端附件目录。系统设置按职责分区（安全与服务、存储、高级、关于），一次只显示一个分区，每块单独保存，版本与更新在「关于」里。面板本身可以设登录密码（系统设置「安全与服务」→「面板访问」的「打开面板时要密码」），设了之后所有接口与实时事件流都要先登录，密码只以 PBKDF2 哈希存在 `config.json` 里。同一页还能把监听地址放开到局域网（`0.0.0.0` 只在设了密码后可选）、贴一对 PEM 证书让面板走 HTTPS，以及把 `config.json` 导出带走或从备份恢复。「存储」一页把数据目录的占用按类拆开，并给出图片缓存、解密缓存、日志与消息存档的清理入口。
-<table>
-<tr>
-<td width="50%" align="center"><img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/dashboard.png" alt="仪表盘：运行状态、收发计数与 24 小时消息量"></td>
-<td width="50%" align="center"><img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/messages.png" alt="消息记录：按收发方向与类型筛选"></td>
-</tr>
-<tr>
-<td align="center">仪表盘：收件源、OneBot 连接、发送通道与进程状态</td>
-<td align="center">消息记录：谁说了什么、发出去没有，一眼可查</td>
-</tr>
-</table>
-
-<table>
-<tr>
-<td align="center"><img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/nodes.png" alt="节点配置：入口按类型分组，逐条启用、鉴权与编辑"></td>
-</tr>
-<tr>
-<td align="center">节点配置：正向与反向入口按类型归拢，逐条开关、逐条鉴权，改完统一保存</td>
-</tr>
-</table>
-
-<table>
-<tr>
-<td width="70%" align="center"><img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/config.png" alt="系统设置：分区导航，安全与服务、存储、高级、关于"></td>
-<td width="30%" align="center"><img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/mobile.png" alt="窄屏下的仪表盘"></td>
-</tr>
-<tr>
-<td align="center">系统设置：五处分区，一次只显示一块，每块单独保存；安全与服务里管密码、监听、HTTPS 与备份，存储里管占用与清理</td>
-<td align="center">窄屏：手机上同样能看状态</td>
-</tr>
-</table>
-
-## Python SDK
-
-`flandora-sdk` 把桥接当成 OneBot v11 协议端来用：同步 HTTP、同步 WebSocket、异步 WebSocket 三种客户端，
-消息段构造器与 CQ 码编解码，错误按「桥接说动作失败」和「连不上」分成两类。源码在 `sdk/python/`：
-
-```powershell
-python -m pip install -e sdk\python
-```
-
-```python
-from flandora_sdk import FlandoraWS, MessageChain
-
-client = FlandoraWS("ws://127.0.0.1:7999", token="")
-
-
-@client.on("message")
-def handle(event):
-    if event["message_type"] == "group" and event.get("is_mentioned"):
-        client.send_group_msg(event["group_id"], MessageChain().at(event["user_id"]).text(" 收到"))
-
-
-client.run_forever()
-```
-
-用法、错误分类与已知边界见 [sdk/python/README.md](sdk/python/README.md)。
-
-## MCP 服务
-
-`flandora-mcp` 把动作目录与调用能力包成 MCP 服务，给支持 MCP 的 AI 客户端用：默认 `docs` 模式只读动作目录
-（不需要桥接在线），`read` 模式可调只读动作，`write` 模式才能发消息。源码在 `mcp/python/`：
-
-```powershell
-python -m pip install -e mcp\python
-python -m flandora_mcp.server --selftest
-```
-
-客户端配置、三种模式与工具清单见 [mcp/python/README.md](mcp/python/README.md)。
-
-## 配置与更新
-
-配置项全部在面板里改，写进 `data/config.json`：首次启动自动生成，缺的键按默认值处理。多数字段保存后立刻生效，标着「改后需重启」的那几个（面板端口、绑定地址、TLS、隔离桌面、微信路径）要重启 bridge 才换。字段的类型、默认值与逐个说明见 [`docs/config.md`](docs/config.md)，机器可读的清单是 `flandora/config.example.json`。
-
-打包安装的版本可以在控制台直接更新，源码运行只提示不替换。
-
-- 启动时会查一次 GitHub 发布订阅，有新版本就在仪表盘「版本与更新」里标出来；只提示，不自动下载。
-- 「下载并暂存」把 `Flandora-v<版本>.zip` 下载到 `data/updates/` 并解压到 `staging-<版本>/`，全程不碰正在运行的程序目录。
-  发布页若附带 `Flandora-v<版本>.zip.sha256`，下载后按它核对摘要，不一致就删掉重试；没有哈希时退到「zip 内 `Flandora.exe` 存在且大小合理」，并在日志里写明未校验哈希。
-- 「安装并重启」只对打包安装可用：程序写一个等本进程退出的 PowerShell 脚本
-  （`data/updates/apply-<版本>.ps1`），退出后脚本把旧文件挪进 `backup-<版本>/`、覆盖新文件并重新启动；
-  新版本拉起后脚本观察 20 秒，进程提前退出就当作失败并把备份拷回去，命令行里能看到原因。
-- 程序目录不可写时（通常装在 `Program Files` 下）面板会拒绝安装并提示以管理员身份运行那个脚本。
-- 源码运行（`run_bridge.py`）没有可替换的安装目录，面板如实提示在仓库里 `git pull` 后重装依赖。
-
-发布版本号只有一份手写来源：`flandora/__init__.py` 的 `__version__`。`build.py` 与安装脚本都从它读，
-SDK 与 MCP 包的版本由 `python tools/sync_version.py` 同步；改动版本后跑一次同步脚本，CI 用 `--check` 挡住漏改。
-
-## 数据落点
-
-| 路径 | 内容 |
-| --- | --- |
-| `data/config.json` | 全部配置（含 token 与 API key，别提交进仓库） |
-| `data/wx_key.dat` | 数据库口令（DPAPI 加密） |
-| `data/wx_image_key.json` | 图片密钥 |
-| `data/id_map.json` | wxid / 群 ID 与整数 ID 的映射表，删了 ID 会重新分配 |
-| `data/msg_ids.db` | 消息号表（`message_id` 与微信库行号的对应） |
-| `data/messages.db` | 已推送事件的存档，供 `get_msg` 与历史检索 |
-| `data/wx_cache/` | 解密副本与游标，可随时删 |
-| `data/updates/` | 更新用的安装包、暂存目录、备份与替换脚本，可随时删 |
-| `data/flandora.log` | 运行日志（UTF-8） |
-
-## 已知限制
-
-- **语音、文件、视频拿不到本体**：这几种在磁盘上同样是加密的 `.dat` 封装，目前只还原了图片那一种；收到语音按 `[语音]` 占位文本上报，客户端据此知道有人发过语音，拿不到音频本体。发送方向不受影响。
-- **取钥需要一次重新登录**：口令只在登录瞬间存在，等不来，这是微信的设计。
-- **图片密钥需要一张没被缓存过的图**：密钥只为正在解码的图片短暂驻留内存。
-- **隔离桌面上登录仍需手机确认**：扫码或手机端确认绕不过去。
-- **发送必然触发微信自身的窗口消息处理**：已逐项实测否证十几种「不惊动它」的投递方式（PostMessage、SendMessageTimeout、UIA SetValue、SetFocus、Invoke、SetActiveWindow、完全附着线程等），任何向微信投递的输入都会让它升到前台，这是微信自身行为；隔离桌面是绕开它的办法，不是修好了它。
-- **一个微信号只能被一份实例驱动**：要跑多个号，用 `isolated_desktop_name` 给每份实例配不同桌面名，并用不同的 `ob_server_port`。
-- **视频以文件形式发送**：视频段走文件通道发出，对方一定能收到；呈现成文件卡片还是视频气泡取决于微信客户端。
-- **@ 提及已在真机验证**：2026-10-24 在测试群里真发过一条带提及的消息，落库内容带 U+2005 分隔符（真提及而非纯文本），返回 `retcode=0` 与 `message_id`。过程记录与仍需注意的细节见 [`docs/needs-user.md`](docs/needs-user.md)。
-- **撤回与拍一拍未接通**：两者都要求精确点中某条消息气泡或某个头像，UIA 目前拿不到稳定的定位方式，动作如实返回 `1404`。
-- **未在全新安装的 Windows 上验证过**：开发与测试都在一台已经装了很多东西的机器上完成。
-
-实验过程与数据见 [`docs/known-limits-dat-format.md`](docs/known-limits-dat-format.md) 与 [`docs/known-limits-desktop.md`](docs/known-limits-desktop.md)。
-
-## 开发
-
-需要 Python 3.13 与 Node.js（构建前端时）。以下命令在仓库根执行，`python` 指 3.13 的解释器：
-
-```powershell
-# 装依赖（运行期 + 测试 + ruff + 依赖漏洞扫描，一份清单装全）
-python -m pip install -r requirements-dev.txt
-
-# 语法检查、lint、后端测试、测试收集闸
-python -m compileall -q flandora manager sdk mcp tools
-python -m ruff check .
-python -m ruff format --check .
-python -m pytest tests -q
-python tools/check_test_collection.py
-
-# 版本号单一来源与打包前校验（CI 同款）
-python tools/sync_version.py --check
-python build.py --check
-
-# SDK（可选：在自己的项目里用它当客户端）
-python -m pip install -e sdk\python
-
-# MCP 服务（可选：给 AI 客户端用）
-python -m pip install -e mcp\python
-
-# 从源码起桥接
-python run_bridge.py
-```
-
-这些命令与 CI（`.github/workflows/ci.yml`）同源，提交前本地跑绿即可。CI 另外会重新生成一次 `sdk/python/flandora_sdk/_catalog.json` 并核对无差异（动作目录改了没同步快照会红）；`package` job 会真的跑一遍 `build.py` 并断言载荷清单，发行链接不必等到发版当天才发现打包断了。
-
-前端在 `webui-frontend/`（Vue 3 + Vite）：
-
-```powershell
-cd webui-frontend
-npm install
-npm test        # Playwright，自动在 4175 起 vite
-npm run build   # 产物写入 flandora\webui\dist
-```
-
-打包发行版：
-
-```powershell
-python build.py
-```
-
-产物在 `dist\`：`Flandora-v<版本>.zip` 与 `Flandora-v<版本>-setup.exe`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
-
-> **提示**：打包前会按 mtime 判断 `flandora/webui/dist/index.html` 是否比前端源码旧：旧了才调用 npm 重建。想直接复用现有产物就加 `--skip-web`，它会打印两边的时间；产物缺失时该参数会直接报错，不会打出没有界面的包。
-
-取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。代码结构、依赖规则与扩展点见
-[`docs/architecture.md`](docs/architecture.md)，工程约定与验收口径见 [`AGENTS.md`](AGENTS.md)。
-
-## 验收
-
-自动化测试看的是「同样的输入产生同样的输出」；UIA、真机微信与真实的 OneBot 客户端连接只能用清单验。发布前或改动收件、发送、桌面、更新链路后，按 [`docs/smoke-test.md`](docs/smoke-test.md) 走一遍，每一步都给了可观察的判据，最后把实际看到的结果记在当节下面。
+| 微信标识与 OneBot 整数怎么对应、支持哪些动作、消息段与事件面的实际形态、返回码含义 | [docs/protocol.md](docs/protocol.md) |
+| 控制台八个页面各做什么，`data/` 下每个文件是干什么的 | [docs/console.md](docs/console.md) |
+| 每个配置项的类型、默认值与说明，以及版本更新的工作机制 | [docs/config.md](docs/config.md) |
+| 用 Python 自己写客户端，或把动作面挂给支持 MCP 的 AI 客户端 | [docs/sdk.md](docs/sdk.md) |
+| 开发环境、命令、CI 与该跑哪些闸门 | [docs/development.md](docs/development.md) |
+| 已知限制：拿不到的本体、要付出的代价、还没接通的能力 | [docs/limitations.md](docs/limitations.md) |
+| 接 AstrBot（aiocqhttp 适配器）的步骤与能力缺口清单 | [docs/astrbot.md](docs/astrbot.md) |
+| 代码结构、依赖规则与扩展点 | [docs/architecture.md](docs/architecture.md) |
+| 发布前要手工走一遍的冒烟清单 | [docs/smoke-test.md](docs/smoke-test.md) |
+| 刻意不做的事与原因、需要在真机上确认的项 | [docs/wip.md](docs/wip.md)、[docs/needs-user.md](docs/needs-user.md) |
+| 工程约定与验收口径（给改代码的人） | [AGENTS.md](AGENTS.md) |
 
 ## 使用边界与许可
 
@@ -344,6 +90,7 @@ python build.py
 - [WeChat-Onebot-Bridge](https://github.com/jessiongod/wechat-onebot-bridge)：本仓库的前身与上游，收件、发送与 OneBot 协议层的早期设计来自这个项目
 - [WeFlow](https://github.com/hicccc77/WeFlow)：上游的收件链路基于它的本地微信数据接口；本仓库改为只读解密本地库，不再依赖它运行
 - [OneBot v11](https://github.com/botuniverse/onebot-11)：对外提供的事件与动作遵循这份协议规范
+- [SnowLuma](https://github.com/SnowLuma/SnowLuma)：优秀的 OneBot v11 服务端实现，反向 WebSocket 的入口形态、连接角色与握手细节参考了它的做法
 
 <p align="center">
   <a href="https://github.com/OMSociety/Flandora/graphs/contributors"><img src="https://contrib.rocks/image?repo=OMSociety/Flandora" alt="Flandora 贡献者" /></a>

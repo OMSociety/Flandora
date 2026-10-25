@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import shutil
 import tempfile
 import threading
 from collections.abc import Callable, Iterable, Mapping
@@ -125,13 +124,18 @@ def build_settings(
 
 
 def write_json(path: str, payload: Mapping[str, Any]) -> None:
-    """原子写：先写同目录临时文件再 ``os.replace``，中途断电不会留下半个 JSON。"""
+    """原子写：先写同目录临时文件再 ``os.replace``，中途断电不会留下半个 JSON。
+
+    只写 ``fields`` 声明过的键，顺序照声明顺序；未知键（包括示例模板里的
+    ``_comment*``）不落盘——配置文件里只该有「键: 值」。
+    """
     directory = os.path.dirname(path) or "."
     os.makedirs(directory, exist_ok=True)
     handle_fd, temporary = tempfile.mkstemp(prefix=".config-", suffix=".json", dir=directory)
     try:
         with os.fdopen(handle_fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(payload, handle, indent=4, ensure_ascii=False)
+            ordered = {key: payload[key] for key in fields.KEY_ORDER if key in payload}
+            json.dump(ordered, handle, indent=4, ensure_ascii=False)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
@@ -186,13 +190,18 @@ class ConfigStore:
         return os.path.dirname(self._path) or "."
 
     def read_raw(self) -> dict[str, Any]:
-        """原样读盘；文件不存在按空配置，``_comment_*`` 键也一并返回。"""
+        """只返回 ``fields`` 声明过的键；文件不存在按空配置。
+
+        示例模板里的 ``_comment*`` 与手工加进来的未知键都不参与配置，也不回给面板。
+        """
         try:
             with open(self._path, encoding="utf-8-sig") as handle:
                 data = json.load(handle)
         except FileNotFoundError:
             return {}
-        return data if isinstance(data, dict) else {}
+        if not isinstance(data, dict):
+            return {}
+        return {key: value for key, value in data.items() if key in fields.KEYS}
 
     def subscribe(self, callback: Subscriber) -> None:
         with self._lock:
@@ -208,7 +217,7 @@ class ConfigStore:
         write_json(self._path, payload)
 
     def update(self, payload: Mapping[str, Any]) -> UpdateResult:
-        """严格校验后落盘，再通知 HOT 变更；未知键原样写进文件但不参与配置。
+        """严格校验后落盘，再通知 HOT 变更；未声明的键不写进文件。
 
         严格只针对这次提交的键：盘上原有的非法值不会挡住对别的键的保存，它继续按
         回退规则生效（回退原因在 ``settings.warnings``/``errors`` 里）。
@@ -249,15 +258,21 @@ class ConfigStore:
         return self._settings
 
     def _generate_from_example(self) -> dict[str, Any]:
-        """首次启动：把示例复制成 config.json，返回它的内容（不参与严格校验）。"""
+        """首次启动：按示例里的默认值生成 config.json，返回它的内容（不参与严格校验）。
+
+        示例是给人看的模板，带 ``_comment*``；写盘经 :func:`write_json` 过滤，配置
+        文件里只留「键: 值」。
+        """
         example = paths.find_example()
         if example is None:
             raise FileNotFoundError(
                 "找不到 config.json，也没有可用的 config.example.json。"
                 f"请把 config.example.json 复制为 config.json，放到 {paths.default_data_dir()}。"
             )
+        with open(example, encoding="utf-8-sig") as handle:
+            template = json.load(handle)
         os.makedirs(self.data_dir(), exist_ok=True)
-        shutil.copyfile(example, self._path)
+        self.write_raw(template if isinstance(template, dict) else {})
         self._generated = True
         return self.read_raw()
 

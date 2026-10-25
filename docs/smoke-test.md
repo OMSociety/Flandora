@@ -15,7 +15,7 @@
 
 | 步骤 | 通过判据 |
 |---|---|
-| 删掉（或改名）`data/config.json` 后启动 | 启动后 `data/config.json` 被按示例生成，内容与 `flandora/config.example.json` 一致；日志里出现首次生成的提示，不是崩溃 |
+| 删掉（或改名）`data/config.json` 后启动 | 启动后 `data/config.json` 被按示例生成，键值与 `flandora/config.example.json` 一致但不含 `_comment` 说明项；日志里出现首次生成的提示，不是崩溃 |
 | 观察 `data/flandora.log` | 有新日志、没有 `Traceback`；配置回退告警（若有）以 `WARNING` 形式出现，带具体键名 |
 | 面板地址 | 浏览器能打开 `http://127.0.0.1:4950`，界面正常渲染，控制台无红色报错 |
 

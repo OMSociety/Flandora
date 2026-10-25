@@ -46,6 +46,9 @@ jobs:
         run: python -m ruff check .
       - name: 格式检查
         run: python -m ruff format --check .
+      - name: 配置示例与字段说明一致
+        # config.example.json 是生成物：改了 fields.py 的字段或 desc 却没重跑生成脚本就红
+        run: python tools/gen_config_example.py --check
       - name: SDK 动作快照与目录一致
         run: |
           python tools/gen_sdk_catalog.py

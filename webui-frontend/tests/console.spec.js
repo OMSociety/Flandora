@@ -117,6 +117,19 @@ test('config page opens on the first section and validates raw JSON', async ({ p
   expect(errors).toEqual([])
 })
 
+test('advanced config page pairs the editor with per-key notes', async ({ page }) => {
+  const errors = await openPage(page, 'config')
+  await page.getByRole('button', { name: '高级', exact: false }).click()
+  const notes = page.getByRole('complementary', { name: '配置项说明' })
+  await expect(notes).toContainText('web_port')
+  await expect(notes).toContainText('ob_server_port')
+  await expect(notes.getByText('改后需重启').first()).toBeVisible()
+  // 编辑区就是 /api/config 的返回值：说明项不进配置，也不出现在 JSON 文本里。
+  const editor = page.getByLabel('原始 JSON 配置')
+  expect(await editor.inputValue()).not.toContain('_comment')
+  expect(errors).toEqual([])
+})
+
 test('node page adds, toggles and removes OneBot endpoints', async ({ page }) => {
   // 这里要读回请求体，所以自己挂 mock：openPage 内部会再挂一层，路由被后挂的那层截走。
   const requests = await mockApi(page)

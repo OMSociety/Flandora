@@ -120,6 +120,11 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
 其余键的盘上旧值按同一套 `clean_field()` 规则回退生效。改动是否需要重启由字段的 kind 派生
 （`HOT` 热生效、`RESTART` 需重启、`SECRET` 不回显），面板的 `restart_required` 就是这些键的并集。
 
+字段声明、默认值、校验与逐键说明的唯一来源是 `config/fields.py` 的 `Field.desc`；`flandora/config.example.json`
+由 `python tools/gen_config_example.py` 生成（`--check` 挡漂移），`data/config.json` 只存「键: 值」，
+`_comment*` 与其它未知键在读写时丢弃，落盘顺序按字段声明。面板「高级」页右侧的说明与默认值来自
+`GET /api/config/schema`。
+
 ## 前端
 
 `webui-frontend/src/pages/index.js` 的 `PAGES` 是页面登记表：id、分组、标题、图标名、说明、组件。
@@ -155,5 +160,5 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
 | 加一个 HTTP 端点 | `webui/api/<组>.py` 写处理函数 | 在同文件 `ROUTES` 登档位，`defer` 写原因 |
 | 加一个收件消息类型 | `wx_store` 解出字段 → `domain.message` 的段类型 → `ob_inbound` 解码 | `ob_protocol.to_segment_dict` 补渲染 |
 | 加一个发送能力 | `domain/send.py` 的动作 → `send_plan` → `uia_sender` 的投递 | 面板与 OneBot 都自动复用 |
-| 加一个配置项 | `config/fields.py` → `config.example.json` → README「配置详解」 | 前端 `Config.vue` 的 `DEFAULTS`、`tests/fixtures.js` |
+| 加一个配置项 | `config/fields.py` 加字段与 `desc` → 跑 `python tools/gen_config_example.py` → README「配置详解」 | 前端 `Config.vue` 的 `DEFAULTS`、`tests/fixtures.js` |
 | 加一个面板页面 | `webui-frontend/src/pages/index.js` 的 `PAGES` | 图标名要在 `ICON_NAMES` 里 |

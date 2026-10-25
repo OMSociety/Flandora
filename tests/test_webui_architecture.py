@@ -33,8 +33,8 @@ APP_PATH = os.path.join(WEBUI_DIR, "app.py")
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-# 面板的路由总数：44 条 HTTP + 1 条 WebSocket。改动端点时先改这里，再改业务组。
-ROUTE_TOTAL = 45
+# 面板的路由总数：45 条 HTTP + 1 条 WebSocket。改动端点时先改这里，再改业务组。
+ROUTE_TOTAL = 46
 
 # 路由装饰器的属性名；@app.get / @router.post 都在此列，@app.middleware / @asynccontextmanager 不在
 ROUTE_DECORATORS = {
@@ -138,7 +138,7 @@ def test_route_total_is_pinned():
     websocket = [r for r in routes if getattr(r, "path", "") == "/ws"]
 
     assert len(api) + len(websocket) == ROUTE_TOTAL, (
-        f"面板路由应为 {ROUTE_TOTAL} 条（/api 44 + /ws 1），"
+        f"面板路由应为 {ROUTE_TOTAL} 条（/api 45 + /ws 1），"
         f"实际 /api {len(api)} + /ws {len(websocket)}"
     )
 

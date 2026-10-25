@@ -124,11 +124,10 @@ def test_update_only_applies_hot_keys(tmp_path):
 
         assert result.settings.LOG_MAX_MB == 4
         assert seen == [frozenset({"log_max_mb"})]
-        # 未知键照旧原样写进文件，但不参与配置
+        # 未声明的键不参与配置，也不写进文件
         assert store.read_raw() == {
             "log_max_mb": 4,
             "wechat_exe": "C:/Weixin/Weixin.exe",
-            "custom": 1,
         }
         assert result.restart_required == ("wechat_exe",)
 
@@ -213,7 +212,10 @@ def test_first_run_generates_config_from_example(tmp_path):
 
     assert store.generated is True
     assert path.is_file()
-    assert json.loads(path.read_text(encoding="utf-8"))["web_port"] == 4950
+    generated = json.loads(path.read_text(encoding="utf-8"))
+    assert set(generated) == set(fields.KEYS)
+    assert generated["web_port"] == 4950
+    assert [key for key in generated if key.startswith("_comment")] == []
 
     temp_path = tmp_path / "temp.json"
     with config.temporary(temp_path) as temp_store:

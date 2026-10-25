@@ -38,6 +38,7 @@
 | 跑单个测试文件 | `python -m pytest tests/test_ob_server.py -q` |
 | 装 SDK / MCP（下游包） | `python -m pip install -e sdk\python` 与 `python -m pip install -e mcp\python`；自检 `python -m flandora_mcp.server --selftest` |
 | 重新导出动作快照 | `python tools/gen_sdk_catalog.py`（改动作后必跑，CI 核对无差异） |
+| 生成/校验配置示例 | `python tools/gen_config_example.py`（改字段或说明后必跑；`--check` 在 CI 里挡漂移） |
 | 语法检查 | `python -m compileall -q flandora manager sdk mcp tools` |
 | 核对每个测试文件都被收集 | `python tools/check_test_collection.py`（零收集即失败） |
 | Lint | `python -m ruff check .` |
@@ -126,11 +127,13 @@ run_bridge.py -> flandora.main
   `sdk/python` 与 `mcp/python` 的 `__init__.py`/`pyproject.toml`，并生成 `installer/version.iss`
   （`AppVersion` 与 `PayloadDir`）。`build.py` 不写字面量，运行期从包内读；别处再出现版本字面量会被
   `--check` 判为漂移。
-- 增删配置项：依次改 `flandora/config/fields.py`（字段声明：键名、默认值、kind 与校验）
-  → `flandora/config.example.json`（示例与 `_comment_` 说明）→ `README.md`「配置详解」→
+- 增删配置项：依次改 `flandora/config/fields.py`（字段声明：键名、默认值、kind、校验与 `desc`）
+  → 跑 `python tools/gen_config_example.py` 重新生成 `flandora/config.example.json`（示例与 `_comment_`
+  说明都由字段表派生，不要手改）→ `README.md`「配置详解」→
   `webui-frontend/src/pages/Config.vue` 的 `DEFAULTS`（仅少数需兜底的键）→
   `webui-frontend/tests/fixtures.js`。
-  界面没有逐字段表单，多数配置项在「系统设置 → 高级」里直接编辑 JSON，所以界面侧不需要逐项加控件；
+  界面没有逐字段表单：多数配置项在「系统设置 → 高级」里直接编辑 JSON，右侧逐键说明与默认值来自
+  `GET /api/config/schema`（即字段表的 `desc`），所以界面侧不需要逐项加控件；
   但 `DEFAULTS` 与 README 漏了就会出现「后端认、文档或界面不认」的静默不一致。
   取值校验统一写在 `flandora/config/fields.py` 的 `clean_field()`（文件加载与面板保存共用；
   `strict=True` 拒绝、否则按规则回退），面板侧只留请求编排（密码换哈希、PEM 落文件、绑全网卡前要有密码）。
@@ -170,10 +173,11 @@ run_bridge.py -> flandora.main
 2. `python -m ruff check .` 与 `python -m ruff format --check .`
 3. `python -m pytest tests -q`
 4. `python tools/check_test_collection.py`（每个 `tests/test_*.py` 都要被 pytest 收到用例）
-5. `python tools/sync_version.py --check`（版本号只在 `flandora/__init__.py` 写一次）
-6. `python build.py --check`（改了打包、安装器或前端产物时必跑）
-7. 改了 `webui-frontend/` 时追加：`cd webui-frontend; npm test` 与 `npm run build`
-8. 涉及桌面、发送、取钥或更新链路的改动，按 [docs/smoke-test.md](./docs/smoke-test.md) 在真机上走一遍
+5. `python tools/gen_config_example.py --check`（配置示例与字段说明一致）
+6. `python tools/sync_version.py --check`（版本号只在 `flandora/__init__.py` 写一次）
+7. `python build.py --check`（改了打包、安装器或前端产物时必跑）
+8. 改了 `webui-frontend/` 时追加：`cd webui-frontend; npm test` 与 `npm run build`
+9. 涉及桌面、发送、取钥或更新链路的改动，按 [docs/smoke-test.md](./docs/smoke-test.md) 在真机上走一遍
 
 `.github/workflows/ci.yml` 在 push 到 `main` 与 PR 上跑同一组命令，另加 `package` job（真跑 `build.py`
 并断言载荷清单）与前端 job。本地先跑绿能省一轮往返。真实环境验证需要 Windows 桌面与已登录的微信，

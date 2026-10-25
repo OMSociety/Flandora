@@ -25,6 +25,7 @@ router = APIRouter()
 
 ROUTES: dict[str, dict[str, str]] = {
     "/api/config": {"GET": "call", "PUT": "call"},
+    "/api/config/schema": {"GET": "call"},
     "/api/config/backup": {"GET": "call"},
     "/api/config/restore": {"POST": "call"},
 }
@@ -132,6 +133,17 @@ def api_get_config():
     cfg.setdefault("log_max_mb", config.LOG_MAX_MB)
     cfg.setdefault("log_backup_count", config.LOG_BACKUP_COUNT)
     return cfg
+
+
+@router.get("/api/config/schema")
+def api_config_schema():
+    """面板「高级」页的说明来源：每个键的类型、默认值、生效方式与一句话说明。"""
+    schema = config_fields.schema()
+    return {
+        "ok": True,
+        "fields": schema,
+        "restart_keys": [item["key"] for item in schema if item["restart"]],
+    }
 
 
 @router.put("/api/config")

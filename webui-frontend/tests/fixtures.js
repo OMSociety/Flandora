@@ -61,6 +61,17 @@ export const configFixture = {
   group_name_map: { 'example@chatroom': '测试群聊' },
 }
 
+export const configSchemaFixture = {
+  ok: true,
+  fields: [
+    { key: 'ob_server_port', type: 'int', default: 7999, hot: false, restart: true, secret: false, desc: 'OneBot v11 服务端端口；ob_networks 为空时用它起默认入口。' },
+    { key: 'web_port', type: 'int', default: 4950, hot: false, restart: true, secret: false, desc: '面板端口，默认 4950。' },
+    { key: 'webui_password', type: 'str', default: '', hot: true, restart: false, secret: true, desc: '面板登录密码的 PBKDF2 哈希，由 WebUI 保存时写入。' },
+    { key: 'log_max_mb', type: 'int', default: 8, hot: true, restart: false, secret: false, desc: '单份日志的上限（1–1024 MB）。' },
+  ],
+  restart_keys: ['ob_server_port', 'web_port'],
+}
+
 export const storageFixture = {
   ok: true,
   data_dir: 'D:/WorkSpace/Github/Flandora/data',
@@ -140,6 +151,7 @@ export async function mockApi(page, options = {}) {
     if (url.pathname === '/api/update/status') return json(updateFixture)
     if (url.pathname === '/api/update/check') return json({ ok: true, current: '1.0.0', newer: false, latest: { version: '1.0.0', tag: 'v1.0.0', url: 'https://github.com/OMSociety/Flandora/releases', asset: '' } })
     if (url.pathname === '/api/config' && request.method() === 'GET') return json(configFixture)
+    if (url.pathname === '/api/config/schema') return json(configSchemaFixture)
     if (url.pathname === '/api/config' && request.method() === 'PUT') return json({ ok: true, restart_required: ['ob_server_port', 'ob_networks'] })
     if (url.pathname === '/api/config/backup') {
       return json({

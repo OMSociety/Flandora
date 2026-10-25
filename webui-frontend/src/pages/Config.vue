@@ -12,7 +12,7 @@ import AboutSection from '../components/settings/AboutSection.vue'
 const SECTIONS = [
   { id: 'access', label: '安全与服务', icon: 'ShieldCheck', description: '面板访问、监听与备份' },
   { id: 'storage', label: '存储', icon: 'Database', description: '占用、日志与消息存档' },
-  { id: 'advanced', label: '高级', icon: 'Wrench', description: '直接编辑 config.json' },
+  { id: 'advanced', label: '高级', icon: 'Wrench', description: '逐键说明与 JSON 编辑' },
   { id: 'about', label: '关于', icon: 'Info', description: '版本、更新与仓库' },
 ]
 const activeSection = ref('access')

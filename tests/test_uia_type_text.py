@@ -129,6 +129,8 @@ def _sender(user32=None):
     sender = UiaSender.__new__(UiaSender)
     sender._hwnd = 7
     sender._last_error = ""
+    sender._fg_before = 0
+    sender._attached = False
     target = user32 if user32 is not None else _User32()
     sender._user32_inst = lambda: _Dll(target)
     return sender
@@ -268,6 +270,44 @@ def test_paste_text_gives_up_when_the_clipboard_copy_fails():
 
 
 # ---------------------------------------------------------------- 剪贴板
+
+
+class _PasteUser32(_User32):
+    """记录粘贴动作的先后顺序：先附着输入队列，再置键态，最后投 Ctrl+V。"""
+
+    def __init__(self):
+        super().__init__()
+        self.calls = []
+
+    def GetWindowThreadProcessId(self, hwnd, pid):
+        return 4242
+
+    def AttachThreadInput(self, tid_me, tid_wx, attach):
+        self.calls.append("attach" if attach else "detach")
+        return 1
+
+    def SetActiveWindow(self, hwnd):
+        self.calls.append("active")
+        return hwnd
+
+    def SetKeyboardState(self, state):
+        self.calls.append("keys")
+
+    def PostMessageW(self, hwnd, msg, wparam, lparam):
+        self.calls.append(("post", msg, wparam))
+        return 1
+
+
+def test_paste_clipboard_reattaches_attach_before_posting_ctrl_v(monkeypatch):
+    user32 = _PasteUser32()
+    sender = _sender(user32)
+    sender._input_text = lambda: uia_sender.UiaSender.IMAGE_MARK
+    monkeypatch.setattr(uia_sender.time, "sleep", lambda *_: None)
+    assert sender._paste_clipboard(expect_image=True) is True
+    assert user32.calls.index("attach") < user32.calls.index("keys")
+    posts = [c for c in user32.calls if isinstance(c, tuple)]
+    assert posts[0] == ("post", uia_sender.WM_KEYDOWN, uia_sender.VK_CONTROL)
+    assert posts[1] == ("post", uia_sender.WM_KEYDOWN, uia_sender.VK_V)
 
 
 def test_copy_text_to_clipboard_writes_utf16(monkeypatch):

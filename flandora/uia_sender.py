@@ -231,6 +231,8 @@ class UiaSender(BaseSender):
         # 非空时表示微信跑在指定名字的独立 Desktop 上：窗口枚举改走
         # EnumDesktopWindows，前台提升只影响那个桌面，用户所在的桌面不受打扰。
         self.isolated_desktop = isolated_desktop or ""
+        # 每个线程记住自己有没有归位到微信那张桌面（见 _join_wechat_desktop）
+        self._desktop_state = threading.local()
 
         self._init()
 
@@ -530,6 +532,7 @@ class UiaSender(BaseSender):
         if self._auto is None:
             log.error("uiautomation 不可用，无法定位微信窗口")
             return False
+        self._join_wechat_desktop()
         if self._window_alive():
             self._ready = True
             try:
@@ -554,6 +557,26 @@ class UiaSender(BaseSender):
     # 窗口激活 / 键盘辅助
     # ================================================================
 
+    def _join_wechat_desktop(self) -> None:
+        """把执行发送的线程归位到微信所在的那张桌面。
+
+        隔离桌面模式下微信在另一张桌面上，而本进程的线程都在默认桌面上；修饰键
+        状态只共享给同桌面的线程，附着失败就等于 Ctrl 丢失（粘贴变成字面的 ``v``）。
+        同一个线程只归位一次，之后由它自己记着。
+        """
+        if not self.isolated_desktop:
+            return
+        if getattr(self._desktop_state, "name", "") == self.isolated_desktop:
+            return
+        if win32_windows.join_thread_to_desktop(self.isolated_desktop):
+            self._desktop_state.name = self.isolated_desktop
+            return
+        log.warning(
+            "执行线程没能归位到隔离桌面 %s（错误码 %d）：粘贴用的修饰键可能传不过去",
+            self.isolated_desktop,
+            ctypes.get_last_error(),
+        )
+
     def _attach_input(self):
         """附着到微信 UI 线程，使投递的鼠标/键盘消息能被 Qt 处理。
 
@@ -575,7 +598,11 @@ class UiaSender(BaseSender):
         try:
             self._tid_wx = user32.GetWindowThreadProcessId(hwnd, None)
             self._tid_me = kernel32.GetCurrentThreadId()
-            user32.AttachThreadInput(self._tid_me, self._tid_wx, True)
+            if not user32.AttachThreadInput(self._tid_me, self._tid_wx, True):
+                log.warning(
+                    f"附着微信输入队列失败（错误码 {ctypes.get_last_error()}）："
+                    "两个线程不在同一张桌面上时必然失败，修饰键与鼠标消息都会丢"
+                )
             user32.SetActiveWindow(hwnd)
             self._attached = True
             time.sleep(0.2)
@@ -1286,15 +1313,27 @@ class UiaSender(BaseSender):
             return True
         return False
 
+    def _reattach_input(self) -> bool:
+        """重新附着微信输入队列。
+
+        修饰键状态是线程自己的键态，只有共享输入队列时微信才看得见，`V` 才不会
+        变成字面字符；而发送流程里的前台还原会重新 Attach/Detach。粘贴是唯一
+        依赖修饰键的动作，所以每次粘贴前都重新附一次。
+        """
+        self._detach_input()
+        return self._attach_input()
+
     def _paste_clipboard(self, expect_image: bool) -> bool:
         """用伪造 Ctrl 键态的 Ctrl+V 把剪贴板内容贴进输入框。
 
         修饰键状态是线程级的，PostMessage 投递的 Ctrl 进不了微信线程的键态，
         V 会变成字面字符。AttachThreadInput 让两个线程共享输入状态，再用
         SetKeyboardState 把本线程的 Ctrl 置为按下，微信就能把随后的 V 解析成
-        Ctrl+V。粘贴结果回读校验，不符即当失败。
+        Ctrl+V（附着由 :meth:`_reattach_input` 在每次粘贴前重新建立）。粘贴结果
+        回读校验，不符即当失败。
         """
         user32 = self._user32_inst()
+        self._reattach_input()
         user32.SetKeyboardState.argtypes = [ctypes.c_char_p]
         state = bytearray(256)
         state[VK_CONTROL] = 0x80

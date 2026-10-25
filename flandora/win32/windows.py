@@ -34,6 +34,32 @@ CHAT_UI_MARKERS = ("通讯录", "聊天", "搜索")
 SCAN_MAX_DEPTH = 8
 SCAN_MAX_NODES = 500
 
+# 桌面对象的完整访问权（OpenDesktopW / CreateDesktopW 的第五个参数）
+DESKTOP_ALL_ACCESS = 0x000F01FF
+
+
+def join_thread_to_desktop(desktop_name: str) -> bool:
+    """把调用线程放到指定桌面上；成功或本来就在那张桌面时返回 True。
+
+    修饰键状态只共享给同一张桌面上的线程：``AttachThreadInput`` 要求两个线程在
+    同一张桌面，本进程的执行线程在默认桌面上、隔离桌面模式下的微信在另一张桌面上，
+    附着注定失败——Ctrl 传不过去，粘贴会变成字面的 ``v``。所以与微信打交道之前
+    先让线程归位。线程一旦创建过窗口或钩子就换不了桌面，用它的地方都是干净的线程。
+    """
+    if not desktop_name:
+        return True
+    user32 = ctypes.windll.user32
+    user32.OpenDesktopW.restype = wintypes.HANDLE
+    user32.SetThreadDesktop.restype = wintypes.BOOL
+    hdesk = user32.OpenDesktopW(desktop_name, 0, False, DESKTOP_ALL_ACCESS)
+    if not hdesk:
+        return False
+    try:
+        return bool(user32.SetThreadDesktop(hdesk))
+    finally:
+        # 线程已经引用着这张桌面，句柄可以还回去
+        user32.CloseDesktop(hdesk)
+
 
 def _process_name(pid: int) -> str:
     """按 PID 取进程可执行文件名（如 WeChat.exe）。"""

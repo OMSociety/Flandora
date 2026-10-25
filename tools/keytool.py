@@ -41,6 +41,12 @@ from flandora.wxkey.store import KeyStore, KeyStoreError  # noqa: E402
 
 log = logging.getLogger("wxkey.tool")
 
+# 面板按 UTF-8 逐行读 stdout 上的 JSON（见 flandora/wizard.py 起进程时给的 encoding）。
+# Windows 下子进程管道的默认编码跟的是控制台代码页（中文系统是 GBK），与面板的
+# 解码约定不一致，中文进度会整行变成乱码。stdout 是与面板约定的机器通道，这里钉死
+# 成 UTF-8；stderr 给人看，保持控制台自己的编码。
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
 EXIT_OK = 0
 EXIT_NOT_CAPTURED = 2
 EXIT_CANNOT_SAVE = 3

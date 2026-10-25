@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import sys
 import time
 import types
@@ -152,6 +153,24 @@ def test_keytool_command_points_to_tools(wiz):
     assert len(cmd) == 2 and cmd[0] == sys.executable, cmd
     assert cmd[1].endswith(os.path.join("tools", "keytool.py")), cmd
     assert os.path.isfile(cmd[1]), cmd
+
+
+def test_keytool_stdout_stays_utf8_under_other_console_codepages(wiz):
+    """取钥器的 stdout 与面板之间是 UTF-8 约定，不受控制台代码页影响。
+
+    中文 Windows 上子进程管道的默认编码是 GBK，而面板按 UTF-8 读（见 wizard 起进程
+    时给的 encoding）；这里把子进程的默认编码压成 GBK，要求它照样吐 UTF-8。
+    """
+    env = dict(os.environ, PYTHONIOENCODING="gbk")
+    proc = subprocess.run(
+        wiz.keytool_command() + ["--help"],
+        capture_output=True,
+        env=env,
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    text = proc.stdout.decode("utf-8")  # 不是 UTF-8 会在这里抛 UnicodeDecodeError
+    assert any(ord(ch) > 127 for ch in text), "帮助文本本身要有中文，否则这条断言验不到东西"
 
 
 def test_key_paths_follow_config_dir(wiz, tmp_path):

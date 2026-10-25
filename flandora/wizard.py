@@ -345,6 +345,7 @@ class Wizard:
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                     text=True,
+                    # 取钥器把 stdout 钉成 UTF-8（见 tools/keytool.py），这里按同一约定解码
                     encoding="utf-8",
                     errors="replace",
                     bufsize=1,

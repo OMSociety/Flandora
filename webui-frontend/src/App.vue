@@ -14,7 +14,7 @@ import Wizard from './pages/Wizard.vue'
 import DevPanel from './pages/DevPanel.vue'
 import Login from './pages/Login.vue'
 import { get } from './api'
-import { wsState, connectWS, on } from './ws'
+import { wsState, connectWS, closeWS, on } from './ws'
 import { startStatusPolling, stopStatusPolling, refreshStatus, setMessages, setLogs, addMessage, addLog, status } from './store'
 import { PAGE_MAP, pageFromHash } from './navigation'
 import { useTheme } from './useTheme'
@@ -82,20 +82,32 @@ function skipToMain(event) {
 // 面板设了密码时，未登录不拉数据也不连实时流：拿到的只会是 401。
 const auth = ref({ checked: false, enabled: false, authenticated: true })
 const authed = computed(() => !auth.value.enabled || auth.value.authenticated)
+const unsubscribers = []
 let booted = false
 
 function boot() {
   if (booted) return
   booted = true
   startStatusPolling()
-  on('msg', addMessage)
-  on('log', addLog)
-  on('snapshot', (data) => {
-    if (data.messages) setMessages(data.messages)
-    if (data.logs) setLogs(data.logs)
-  })
-  on('status', () => refreshStatus(true))
+  unsubscribers.push(
+    on('msg', addMessage),
+    on('log', addLog),
+    on('snapshot', (data) => {
+      if (data.messages) setMessages(data.messages)
+      if (data.logs) setLogs(data.logs)
+    }),
+    on('status', () => refreshStatus(true))
+  )
   connectWS()
+}
+
+// 切回登录页时要把轮询、实时流与订阅一起停掉：只换界面的话，后台会继续
+// 每 5 秒打一次 401，WS 也会无限重连，登录页上什么都看不到却一直在发请求。
+function shutdown() {
+  stopStatusPolling()
+  closeWS()
+  while (unsubscribers.length) unsubscribers.pop()()
+  booted = false
 }
 
 async function loadAuth() {
@@ -106,7 +118,8 @@ async function loadAuth() {
 }
 
 function onAuthRequired() {
-  auth.value = { ...auth.value, checked: true, enabled: true, authenticated: false }
+  auth.value = { checked: true, enabled: true, authenticated: false }
+  shutdown()
 }
 
 async function onLoggedIn() {
@@ -122,7 +135,7 @@ onMounted(async () => {
   await loadAuth()
 })
 onBeforeUnmount(() => {
-  stopStatusPolling()
+  shutdown()
   popOverlay(drawerOverlayId)
   window.removeEventListener('hashchange', onHashChange)
   window.removeEventListener('keydown', onKeydown)

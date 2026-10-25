@@ -166,8 +166,13 @@ def get_status() -> dict:
 
 
 def _read_config_file() -> dict:
-    with open(config.CONFIG_FILE, "r", encoding="utf-8-sig") as f:
-        return json.load(f)
+    """读盘上的 config.json；文件不在了（被删 / 还没生成）就当作空配置。"""
+    try:
+        with open(config.CONFIG_FILE, "r", encoding="utf-8-sig") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _write_config_file(cfg: dict):
@@ -306,16 +311,16 @@ def api_status():
 @app.post("/api/control")
 async def api_control(payload: dict):
     action = (payload or {}).get("action", "")
-    from main import _start_bridge, _stop_bridge
+    from .. import main as bridge_main
 
     if action == "start":
-        _start_bridge()
+        bridge_main.start_bridge()
     elif action == "stop":
-        _stop_bridge()
+        bridge_main.stop_bridge()
     elif action == "restart":
-        _stop_bridge()
+        bridge_main.stop_bridge()
         await asyncio.sleep(1.5)
-        _start_bridge()
+        bridge_main.start_bridge()
     elif action == "pause":
         state.paused.set()
         log.info("[WebUI] 已暂停")

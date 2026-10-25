@@ -7,6 +7,7 @@
 import asyncio
 import json
 import socket
+import threading
 
 import pytest
 from fastapi.responses import JSONResponse
@@ -86,7 +87,7 @@ def test_no_heartbeat_when_interval_is_zero(monkeypatch):
 def test_heartbeat_status_reflects_runtime(monkeypatch):
     class State:
         running = True
-        paused = False
+        paused = threading.Event()
         bridge_instance = object()
         sender_instance = object()
 
@@ -96,10 +97,10 @@ def test_heartbeat_status_reflects_runtime(monkeypatch):
     state.sender_instance = None
     assert ob_network.NetworkManager._heartbeat_status(state) == {"online": True, "good": False}
 
-    state.paused = True
+    state.paused.set()
     assert ob_network.NetworkManager._heartbeat_status(state) == {"online": False, "good": False}
 
-    state.paused = False
+    state.paused.clear()
     state.bridge_instance = None
     assert ob_network.NetworkManager._heartbeat_status(state) == {"online": False, "good": False}
 

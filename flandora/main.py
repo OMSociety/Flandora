@@ -14,7 +14,7 @@ from . import __version__, config, ob_ids, state, update_check, wechat_account
 from .bridge_core import Flandora
 from .ob_server import _run_ob_server
 from .senders import create_sender
-from .single_instance import acquire_mutex
+from .single_instance import BRIDGE_MUTEX_NAME, acquire_mutex
 
 log = logging.getLogger("flandora")
 
@@ -22,7 +22,7 @@ log = logging.getLogger("flandora")
 # ============ 启动 / 停止 ============
 
 
-def _start_bridge():
+def start_bridge():
     with state.run_lock:
         if state.running:
             return
@@ -62,7 +62,7 @@ def _start_bridge():
     log.info("[Web] 已启动")
 
 
-def _stop_bridge():
+def stop_bridge():
     with state.run_lock:
         state.running = False
 
@@ -201,7 +201,7 @@ def main() -> int:
     PID_FILE = os.path.join(config.data_dir(), "flandora.pid")
 
     # 判重交给内核对象；句柄存模块级变量，进程活着期间不能释放
-    _instance_mutex, _already_running = acquire_mutex()
+    _instance_mutex, _already_running = acquire_mutex(BRIDGE_MUTEX_NAME)
     if _already_running:
         log.error("已有一个 bridge 在运行")
         sys.exit(1)
@@ -231,7 +231,7 @@ def main() -> int:
         # 后台查一次新版，失败静默（见 update_check）
         update_check.check_async()
         start_account_watch()
-        _start_bridge()
+        start_bridge()
         if getattr(config, "WEBUI_AUTO_OPEN", True):
             threading.Thread(target=_auto_open_webui, daemon=True).start()
         if start_web() is False:

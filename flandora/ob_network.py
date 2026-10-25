@@ -27,6 +27,13 @@ from urllib.parse import parse_qs, urlparse
 import websockets
 from websockets.asyncio.server import serve
 
+from .action_catalog import (
+    RETCODE_AUTH_FAILED,
+    RETCODE_BAD_PARAM,
+    RETCODE_INTERNAL,
+    RETCODE_NOT_FOUND,
+)
+
 log = logging.getLogger("flandora")
 
 KIND_WS_SERVER = "ws_server"
@@ -298,7 +305,7 @@ class NetworkManager:
     @staticmethod
     def _heartbeat_status(state) -> dict:
         """心跳里的状态：桥接在跑且已挂上实例算在线，发送器就绪才算 good。"""
-        running = bool(getattr(state, "running", False)) and not bool(state.paused)
+        running = bool(getattr(state, "running", False)) and not state.paused.is_set()
         online = running and getattr(state, "bridge_instance", None) is not None
         good = online and getattr(state, "sender_instance", None) is not None
         return {"online": online, "good": good}
@@ -400,7 +407,7 @@ class NetworkManager:
                 return
             req_path = scope.get("path") or "/"
             if path != "/" and req_path != path:
-                await _asgi_json(send, 404, {"status": "failed", "retcode": 1404})
+                await _asgi_json(send, 404, {"status": "failed", "retcode": RETCODE_NOT_FOUND})
                 return
             headers = {
                 k.decode("latin-1").lower(): v.decode("latin-1")
@@ -411,7 +418,9 @@ class NetworkManager:
             }
             if token and headers.get("authorization", "") != f"Bearer {token}":
                 if query.get("access_token") != token:
-                    await _asgi_json(send, 401, {"status": "failed", "retcode": 1401})
+                    await _asgi_json(
+                        send, 401, {"status": "failed", "retcode": RETCODE_AUTH_FAILED}
+                    )
                     return
             body = b""
             if scope.get("method") == "POST":
@@ -425,17 +434,23 @@ class NetworkManager:
                 try:
                     payload = json.loads(body)
                 except ValueError:
-                    await _asgi_json(send, 400, {"status": "failed", "retcode": 1400})
+                    await _asgi_json(send, 400, {"status": "failed", "retcode": RETCODE_BAD_PARAM})
                     return
                 if not isinstance(payload, dict):
-                    await _asgi_json(send, 400, {"status": "failed", "retcode": 1400})
+                    await _asgi_json(send, 400, {"status": "failed", "retcode": RETCODE_BAD_PARAM})
                     return
             if not payload.get("action"):
                 # 没带 action 的 GET：把 query 里的参数当作动作参数
                 action = query.get("action") or ""
                 if not action:
                     await _asgi_json(
-                        send, 400, {"status": "failed", "retcode": 1400, "message": "缺少 action"}
+                        send,
+                        400,
+                        {
+                            "status": "failed",
+                            "retcode": RETCODE_BAD_PARAM,
+                            "message": "缺少 action",
+                        },
                     )
                     return
                 params = {k: v for k, v in query.items() if k not in ("action", "echo")}
@@ -651,7 +666,7 @@ async def _serve_action(ws, raw: str):
         log.error(f"[OB11] 处理 API 异常：{e}")
         resp = {
             "status": "failed",
-            "retcode": 1,
+            "retcode": RETCODE_INTERNAL,
             "data": {},
             "message": f"内部错误：{e}",
             "echo": data.get("echo", ""),

@@ -13,5 +13,8 @@
 # 系统临时目录的权限问题。
 pytest==9.1.1
 
+# 面板端点冒烟要用 fastapi.testclient，它依赖 httpx。
+httpx==0.28.1
+
 # lint 与格式化：CI 跑 ruff check 与 ruff format --check，本地提交前同样跑一遍。
 ruff==0.17.2

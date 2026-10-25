@@ -38,6 +38,8 @@ import threading
 import time
 from ctypes import wintypes
 
+from .win32 import windows as win32_windows
+
 log = logging.getLogger("wx_desktop")
 
 DESKTOP_ALL_ACCESS = 0x000F01FF
@@ -135,9 +137,7 @@ def default_desktop_has_wechat() -> bool:
     留在隔离桌面上的微信也算进来，重启时就会误判成「用户的微信开着」而拒绝启动。
     """
     try:
-        from .uia_sender import enum_wechat_windows
-
-        return bool(enum_wechat_windows())
+        return bool(win32_windows.enum_wechat_windows())
     except Exception as exc:  # noqa: BLE001
         log.warning("检查默认桌面上的微信窗口失败：%s", exc)
         return False
@@ -150,9 +150,7 @@ def quit_default_desktop_wechat() -> int:
     不会被静默杀掉——要腾出隔离实例的位置，必须由人来按这个按钮。
     """
     try:
-        from .uia_sender import enum_wechat_windows
-
-        pids = [w["pid"] for w in enum_wechat_windows()]
+        pids = [w["pid"] for w in win32_windows.enum_wechat_windows()]
     except Exception as exc:  # noqa: BLE001
         log.warning("查找默认桌面上的微信失败：%s", exc)
         return 0
@@ -290,9 +288,7 @@ class IsolatedDesktop:
         if not self.handle:
             return set()
         try:
-            from .uia_sender import enum_wechat_windows
-
-            return {w["pid"] for w in enum_wechat_windows(self.name)}
+            return {w["pid"] for w in win32_windows.enum_wechat_windows(self.name)}
         except Exception as exc:  # noqa: BLE001
             log.warning("枚举 %s 上的微信窗口失败：%s", self.name, exc)
             return set()
@@ -640,11 +636,7 @@ class DesktopManager:
             except Exception:
                 return None
         try:
-            from .uia_sender import enum_wechat_windows
-        except ImportError:
-            return None
-        try:
-            wins = enum_wechat_windows()
+            wins = win32_windows.enum_wechat_windows()
         except Exception:
             return None
         if not wins:
@@ -705,7 +697,7 @@ class DesktopManager:
         # 「已登录」按窗口内容判定，不看有没有历史登录记录——微信停在登录页时
         # 磁盘上的旧登录记录依然在，按记录判断会把登录页报成已登录。
         if win:
-            state = _window_state(win["hwnd"])
+            state = win32_windows.state_from_handle(win["hwnd"])
             info["state"] = state
             info["logged_in"] = state == "chat"
         else:
@@ -748,22 +740,6 @@ def _current_wxid() -> str:
         return getattr(acc, "wxid", "") or ""
     except Exception:
         return ""
-
-
-def _window_state(hwnd: int) -> str:
-    """窗口状态判定。真身是 `UiaSender._window_state`，这里只做懒加载转发。
-
-    多处需要这个判断（发送前、WebUI 状态），而它依赖一整套 LOGIN_TEXT_MARKERS
-    等常量，复制一份迟早会漂移。
-    """
-    try:
-        from .uia_sender import UiaSender
-    except ImportError:
-        return "unknown"
-    try:
-        return UiaSender.state_from_handle(hwnd)
-    except Exception:
-        return "unknown"
 
 
 _manager: DesktopManager | None = None

@@ -11,11 +11,12 @@ import os
 import time
 
 import pytest
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from flandora import config, ob_store, storage
-from flandora.runtime import RUNTIME
-from flandora.webui import app as webui_app
+from flandora.runtime import RUNTIME, events
+from flandora.webui.api import config as config_api
+from flandora.webui.api import storage as storage_api
 
 
 @pytest.fixture()
@@ -43,7 +44,7 @@ def workspace(monkeypatch, tmp_path):
 @pytest.fixture()
 def put_ready(monkeypatch, workspace):
     """PUT 只动临时目录里的那一份配置。"""
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
     return config.get_store()
 
 
@@ -309,7 +310,7 @@ def test_clear_empties_the_archive(workspace):
 def test_storage_endpoint_returns_the_overview(workspace):
     _account_dir(workspace)
 
-    got = webui_app.api_storage()
+    got = storage_api.api_storage()
 
     assert got["ok"] is True
     assert got["images"]["files"] == 2
@@ -317,7 +318,7 @@ def test_storage_endpoint_returns_the_overview(workspace):
 
 
 def test_clean_endpoint_rejects_an_unknown_target(workspace):
-    rest = webui_app.api_storage_clean({"target": "../etc"})
+    rest = storage_api.api_storage_clean({"target": "../etc"})
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
@@ -326,7 +327,7 @@ def test_clean_endpoint_rejects_an_unknown_target(workspace):
 def test_clean_endpoint_runs_a_known_target(workspace):
     _account_dir(workspace)
 
-    got = webui_app.api_storage_clean({"target": "images"})
+    got = storage_api.api_storage_clean({"target": "images"})
 
     assert got["ok"] is True
     assert got["target"] == "images"
@@ -334,13 +335,13 @@ def test_clean_endpoint_runs_a_known_target(workspace):
 
 
 def test_messages_endpoint_validates_days(workspace):
-    rest = webui_app.api_storage_messages({"action": "prune", "days": 0})
+    rest = storage_api.api_storage_messages({"action": "prune", "days": 0})
     assert isinstance(rest, JSONResponse) and rest.status_code == 400
 
-    rest = webui_app.api_storage_messages({"action": "prune", "days": "七天"})
+    rest = storage_api.api_storage_messages({"action": "prune", "days": "七天"})
     assert isinstance(rest, JSONResponse) and rest.status_code == 400
 
-    rest = webui_app.api_storage_messages({"action": "压缩"})
+    rest = storage_api.api_storage_messages({"action": "压缩"})
     assert isinstance(rest, JSONResponse) and rest.status_code == 400
 
 
@@ -349,7 +350,7 @@ def test_messages_endpoint_prunes(workspace):
     now = int(time.time())
     _seed(store, [now - 30 * 86400, now])
 
-    got = webui_app.api_storage_messages({"action": "prune", "days": 1})
+    got = storage_api.api_storage_messages({"action": "prune", "days": 1})
 
     assert got["ok"] is True
     assert got["removed_rows"] == 1
@@ -360,7 +361,7 @@ def test_messages_endpoint_prunes(workspace):
 
 
 def test_log_policy_applies_without_a_restart(put_ready):
-    got = webui_app.api_put_config({"log_max_mb": 4, "log_backup_count": 3}, webui_app.Response())
+    got = config_api.api_put_config({"log_max_mb": 4, "log_backup_count": 3}, Response())
 
     assert got["ok"] is True
     assert got["restart_required"] == []
@@ -377,7 +378,7 @@ def test_log_policy_range_is_enforced(put_ready):
         {"log_backup_count": 0},
         {"log_backup_count": 99},
     ):
-        rest = webui_app.api_put_config(dict(bad), webui_app.Response())
+        rest = config_api.api_put_config(dict(bad), Response())
         assert isinstance(rest, JSONResponse) and rest.status_code == 400
 
     assert put_ready.read_raw() == {}
@@ -385,14 +386,14 @@ def test_log_policy_range_is_enforced(put_ready):
 
 
 def test_log_policy_rejects_non_numbers(put_ready):
-    rest = webui_app.api_put_config({"log_max_mb": "八兆"}, webui_app.Response())
+    rest = config_api.api_put_config({"log_max_mb": "八兆"}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
 
 
 def test_config_endpoint_reports_effective_log_policy(workspace):
-    got = webui_app.api_get_config()
+    got = config_api.api_get_config()
 
     assert got["log_max_mb"] == 1
     assert got["log_backup_count"] == 2

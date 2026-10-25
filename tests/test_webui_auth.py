@@ -4,11 +4,14 @@ import asyncio
 import types
 
 import pytest
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from flandora import config
+from flandora.runtime import events
 from flandora.webui import app as webui_app
 from flandora.webui import auth
+from flandora.webui.api import auth as auth_api
+from flandora.webui.api import config as config_api
 
 
 class FakeRequest:
@@ -143,9 +146,9 @@ def test_static_pages_are_not_gated(monkeypatch):
 
 def test_login_with_right_password_sets_cookie(monkeypatch):
     monkeypatch.setattr(config, "WEBUI_PASSWORD", auth.hash_password("secret123"))
-    response = webui_app.Response()
+    response = Response()
 
-    rest = webui_app.api_login({"password": "secret123"}, response, FakeRequest())
+    rest = auth_api.api_login({"password": "secret123"}, response, FakeRequest())
 
     assert rest["ok"] is True
     cookie = response.headers["set-cookie"]
@@ -156,9 +159,9 @@ def test_login_with_right_password_sets_cookie(monkeypatch):
 
 def test_login_with_wrong_password_is_refused(monkeypatch):
     monkeypatch.setattr(config, "WEBUI_PASSWORD", auth.hash_password("secret123"))
-    response = webui_app.Response()
+    response = Response()
 
-    rest = webui_app.api_login({"password": "nope"}, response, FakeRequest())
+    rest = auth_api.api_login({"password": "nope"}, response, FakeRequest())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 401
@@ -169,8 +172,8 @@ def test_login_throttles_repeated_failures(monkeypatch):
     monkeypatch.setattr(config, "WEBUI_PASSWORD", auth.hash_password("secret123"))
 
     for _ in range(auth.LOGIN_MAX_FAILURES):
-        webui_app.api_login({"password": "nope"}, webui_app.Response(), FakeRequest())
-    rest = webui_app.api_login({"password": "secret123"}, webui_app.Response(), FakeRequest())
+        auth_api.api_login({"password": "nope"}, Response(), FakeRequest())
+    rest = auth_api.api_login({"password": "secret123"}, Response(), FakeRequest())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 429
@@ -180,22 +183,20 @@ def test_logout_drops_the_session(monkeypatch):
     monkeypatch.setattr(config, "WEBUI_PASSWORD", auth.hash_password("secret123"))
     token = auth.sessions.issue()
 
-    rest = webui_app.api_logout(
-        FakeRequest(cookies={auth.COOKIE_NAME: token}), webui_app.Response()
-    )
+    rest = auth_api.api_logout(FakeRequest(cookies={auth.COOKIE_NAME: token}), Response())
 
     assert rest["ok"] is True
     assert auth.sessions.valid(token) is False
 
 
 def test_auth_endpoint_reports_state(monkeypatch):
-    assert webui_app.api_auth(FakeRequest()) == {"enabled": False, "authenticated": True}
+    assert auth_api.api_auth(FakeRequest()) == {"enabled": False, "authenticated": True}
 
     monkeypatch.setattr(config, "WEBUI_PASSWORD", auth.hash_password("secret123"))
-    assert webui_app.api_auth(FakeRequest()) == {"enabled": True, "authenticated": False}
+    assert auth_api.api_auth(FakeRequest()) == {"enabled": True, "authenticated": False}
 
     token = auth.sessions.issue()
-    assert webui_app.api_auth(FakeRequest(cookies={auth.COOKIE_NAME: token})) == {
+    assert auth_api.api_auth(FakeRequest(cookies={auth.COOKIE_NAME: token})) == {
         "enabled": True,
         "authenticated": True,
     }
@@ -206,15 +207,15 @@ def test_auth_endpoint_reports_state(monkeypatch):
 
 @pytest.fixture()
 def saved(monkeypatch, tmp_path):
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
     with config.temporary(tmp_path / "config.json") as store:
         yield store
 
 
 def test_setting_password_stores_only_a_hash(saved):
-    response = webui_app.Response()
+    response = Response()
 
-    rest = webui_app.api_put_config({"webui_password": "secret123"}, response)
+    rest = config_api.api_put_config({"webui_password": "secret123"}, response)
 
     assert rest["ok"] is True
     stored = saved.read_raw()["webui_password"]
@@ -225,11 +226,11 @@ def test_setting_password_stores_only_a_hash(saved):
 
 
 def test_clearing_password_disables_login(saved):
-    webui_app.api_put_config({"webui_password": "secret123"}, webui_app.Response())
+    config_api.api_put_config({"webui_password": "secret123"}, Response())
     token = auth.sessions.issue()
     assert auth.enabled() is True
 
-    webui_app.api_put_config({"webui_password_clear": True}, webui_app.Response())
+    config_api.api_put_config({"webui_password_clear": True}, Response())
 
     assert saved.read_raw()["webui_password"] == ""
     assert config.WEBUI_PASSWORD == ""
@@ -238,7 +239,7 @@ def test_clearing_password_disables_login(saved):
 
 
 def test_bad_password_length_is_refused(saved):
-    rest = webui_app.api_put_config({"webui_password": "123"}, webui_app.Response())
+    rest = config_api.api_put_config({"webui_password": "123"}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
@@ -249,8 +250,8 @@ def test_password_set_flag_from_browser_is_ignored(saved, monkeypatch):
     hashed = auth.hash_password("secret123")
     monkeypatch.setattr(config, "WEBUI_PASSWORD", hashed)
 
-    webui_app.api_put_config(
-        {"webui_password_set": True, "group_name_map": {"g@chatroom": "群名"}}, webui_app.Response()
+    config_api.api_put_config(
+        {"webui_password_set": True, "group_name_map": {"g@chatroom": "群名"}}, Response()
     )
 
     # 面板只报「设没设」，不该把哈希当配置项写回去

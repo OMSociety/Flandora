@@ -33,13 +33,7 @@ from .ob_protocol import (
     push_event,
     render_message_event,
 )
-from .runtime import LIFECYCLE, RUNTIME
-
-try:
-    from .webui import monitor
-
-except Exception:
-    monitor = None
+from .runtime import LIFECYCLE, RUNTIME, events
 
 log = logging.getLogger("flandora")
 
@@ -160,16 +154,15 @@ class Flandora:
 
         message = self._entry_for(data)
 
-        # WebUI 监控：记录收到的消息（含图片/表情）
-        if monitor is not None:
-            monitor.record_inbound(
-                contact=(group_name_raw or source_name) if message.chat.is_group else source_name,
-                sender=data.get("senderName", "")
-                or data.get("sender", "")
-                or data.get("sourceName", ""),
-                kind="group" if message.chat.is_group else "private",
-                text=content,
-            )
+        # 面板监控：记录收到的消息（含图片/表情），事件总线在核心侧（runtime.events）
+        events.record_inbound(
+            contact=(group_name_raw or source_name) if message.chat.is_group else source_name,
+            sender=data.get("senderName", "")
+            or data.get("sender", "")
+            or data.get("sourceName", ""),
+            kind="group" if message.chat.is_group else "private",
+            text=content,
+        )
 
         # 图片与表情包都要先把本地文件解出来，交给独立线程做，避免挡住轮询
         if message.kind is ContentKind.IMAGE:
@@ -392,8 +385,7 @@ class Flandora:
             sent = push_event(event)
             if sent > 0:
                 log.info(f"已推送至 {sent} 个 OneBot 客户端 [{contact}]")
-                if monitor is not None:
-                    monitor.bump("pushed")
+                events.bump("pushed")
             else:
                 log.warning(f"无 OneBot 客户端在线 [{contact}]")
 

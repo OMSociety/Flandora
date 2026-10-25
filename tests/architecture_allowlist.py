@@ -11,13 +11,13 @@
   名单不许变成垃圾桶。
 
 现存条目都是非桥接生命周期的绑定：各模块的 ``log``；导入失败时的兜底
-``config = None`` / ``monitor = None``；各模块自管的惰性单例（配置 store、
-ID 层句柄、网络管理器、隔离桌面管理器、向导状态等）；面板的 ``app`` 与
-鉴权对象；事件总线与其转发开关。
+``config = None``；各模块自管的惰性单例（配置 store、ID 层句柄、网络管理器、
+隔离桌面管理器、向导状态等）；面板的 ``app``、鉴权对象与各业务组的 ``router``；
+核心侧事件总线及其日志转发开关。
 """
 
 MODULE_STATE: dict[str, frozenset[str]] = {
-    "flandora/bridge_core.py": frozenset({"log", "monitor"}),
+    "flandora/bridge_core.py": frozenset({"log"}),
     "flandora/config/__init__.py": frozenset({"_listeners", "_lock", "_store", "log"}),
     "flandora/config/logging_setup.py": frozenset({"_handler", "_stream"}),
     "flandora/config/store.py": frozenset({"log"}),
@@ -26,18 +26,30 @@ MODULE_STATE: dict[str, frozenset[str]] = {
         {"_contact_ids", "_message_ids", "_names", "_names_lock", "_singleton_lock", "log"}
     ),
     "flandora/ob_network.py": frozenset({"_manager", "_manager_lock", "log"}),
-    "flandora/ob_protocol.py": frozenset({"log", "monitor"}),
+    "flandora/ob_protocol.py": frozenset({"log"}),
     "flandora/ob_server.py": frozenset({"log"}),
     "flandora/ob_store.py": frozenset({"_store", "_store_lock", "log"}),
+    "flandora/runtime/events.py": frozenset({"_relay_attached", "log"}),
     "flandora/senders.py": frozenset({"config", "log"}),
     "flandora/single_instance.py": frozenset({"log"}),
     "flandora/storage.py": frozenset({"log"}),
     "flandora/uia_sender.py": frozenset({"config", "log"}),
     "flandora/update_check.py": frozenset({"log"}),
     "flandora/wechat_account.py": frozenset({"log"}),
+    "flandora/webui/api/auth.py": frozenset({"log", "router"}),
+    "flandora/webui/api/config.py": frozenset({"log", "router"}),
+    "flandora/webui/api/contacts.py": frozenset({"log", "router"}),
+    "flandora/webui/api/control.py": frozenset({"log", "router"}),
+    "flandora/webui/api/debug.py": frozenset({"log", "router"}),
+    "flandora/webui/api/desktop.py": frozenset({"router"}),
+    "flandora/webui/api/network.py": frozenset({"router"}),
+    "flandora/webui/api/storage.py": frozenset({"log", "router"}),
+    "flandora/webui/api/update.py": frozenset({"log", "router"}),
+    "flandora/webui/api/windows.py": frozenset({"log", "router"}),
+    "flandora/webui/api/wizard.py": frozenset({"router"}),
     "flandora/webui/app.py": frozenset({"app", "log"}),
     "flandora/webui/auth.py": frozenset({"sessions", "throttle"}),
-    "flandora/webui/monitor.py": frozenset({"_relay_attached", "bus", "log"}),
+    "flandora/webui/deps.py": frozenset({"log"}),
     "flandora/wizard.py": frozenset({"_wizard", "_wizard_lock", "log"}),
     "flandora/wx_crypto.py": frozenset({"log"}),
     "flandora/wx_desktop.py": frozenset(

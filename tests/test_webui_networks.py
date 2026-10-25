@@ -4,10 +4,11 @@
 """
 
 import pytest
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from flandora import config, ob_network
-from flandora.webui import app as webui_app
+from flandora.runtime import events
+from flandora.webui.api import config as config_api
 
 NODE = {
     "type": "ws_client",
@@ -20,13 +21,13 @@ NODE = {
 @pytest.fixture()
 def saved(monkeypatch, tmp_path):
     """配置落进临时目录；通用服务端设置按默认值（127.0.0.1:7999 无 token）。"""
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
     with config.temporary(tmp_path / "config.json") as store:
         yield store
 
 
 def test_valid_nodes_are_normalized_and_live(saved):
-    rest = webui_app.api_put_config({"ob_networks": [NODE]}, webui_app.Response())
+    rest = config_api.api_put_config({"ob_networks": [NODE]}, Response())
 
     assert rest["ok"] is True
     assert "ob_networks" in rest["restart_required"]
@@ -38,9 +39,7 @@ def test_valid_nodes_are_normalized_and_live(saved):
 
 
 def test_bad_node_is_refused_before_writing(saved):
-    rest = webui_app.api_put_config(
-        {"ob_networks": [{"type": "carrier-pigeon"}]}, webui_app.Response()
-    )
+    rest = config_api.api_put_config({"ob_networks": [{"type": "carrier-pigeon"}]}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
@@ -50,7 +49,7 @@ def test_bad_node_is_refused_before_writing(saved):
 
 
 def test_empty_list_falls_back_to_the_general_settings_entry(saved):
-    rest = webui_app.api_put_config({"ob_networks": []}, webui_app.Response())
+    rest = config_api.api_put_config({"ob_networks": []}, Response())
 
     assert rest["ok"] is True
     assert saved.read_raw()["ob_networks"] == []
@@ -63,9 +62,7 @@ def test_bad_entry_keeps_previous_nodes(saved, monkeypatch):
     previous = [ob_network.default_node("127.0.0.1", 7999, "")]
     monkeypatch.setattr(config, "OB_NETWORKS", previous)
 
-    rest = webui_app.api_put_config(
-        {"ob_networks": [dict(NODE, role="god-mode")]}, webui_app.Response()
-    )
+    rest = config_api.api_put_config({"ob_networks": [dict(NODE, role="god-mode")]}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert config.OB_NETWORKS[0]["type"] == "ws_server"

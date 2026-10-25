@@ -9,10 +9,11 @@ import json
 import socket
 
 import pytest
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from flandora import config, ob_network
-from flandora.webui import app as webui_app
+from flandora.runtime import events
+from flandora.webui.api import config as config_api
 
 
 def _free_port() -> int:
@@ -106,14 +107,14 @@ def test_heartbeat_status_reflects_runtime():
 
 @pytest.fixture()
 def saved_config(monkeypatch, tmp_path):
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
     with config.temporary(tmp_path / "config.json") as store:
         yield store
 
 
 @pytest.mark.parametrize("bad", [3, 5000, "abc", None])
 def test_save_refuses_bad_heartbeat(saved_config, bad):
-    rest = webui_app.api_put_config({"ob_heartbeat_seconds": bad}, webui_app.Response())
+    rest = config_api.api_put_config({"ob_heartbeat_seconds": bad}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
@@ -121,7 +122,7 @@ def test_save_refuses_bad_heartbeat(saved_config, bad):
 
 
 def test_save_accepts_zero_and_live_updates(saved_config):
-    rest = webui_app.api_put_config({"ob_heartbeat_seconds": 0}, webui_app.Response())
+    rest = config_api.api_put_config({"ob_heartbeat_seconds": 0}, Response())
 
     assert rest["ok"] is True
     assert "ob_heartbeat_seconds" in rest["restart_required"]

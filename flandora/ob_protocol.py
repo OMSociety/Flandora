@@ -41,12 +41,7 @@ from .domain.message import (
 )
 from .domain.send import MentionTarget, SendStatus
 from .ob_network import broadcast as push_event_broadcast
-from .runtime import RUNTIME
-
-try:
-    from .webui import monitor
-except Exception:
-    monitor = None
+from .runtime import RUNTIME, events
 
 log = logging.getLogger("flandora")
 
@@ -87,9 +82,8 @@ def _resolve_self_name() -> str:
 
 
 def _record_out(contact, is_group, text):
-    """WebUI 监控：记录发出的消息。"""
-    if monitor is not None:
-        monitor.record_outbound(contact, "group" if is_group else "private", text)
+    """面板监控：记录发出的消息（事件总线在核心侧 ``runtime.events``）。"""
+    events.record_outbound(contact, "group" if is_group else "private", text)
 
 
 def _safe_int(v):

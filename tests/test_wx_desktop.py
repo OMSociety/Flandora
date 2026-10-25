@@ -87,7 +87,7 @@ def test_default_desktop_check_uses_windows_not_processes():
 
     本程序留在隔离桌面上的微信也算 Weixin.exe，按进程判断会把重启挡下来。
     """
-    from flandora.uia_sender import enum_wechat_windows
+    from flandora.win32.windows import enum_wechat_windows
 
     assert wx_desktop.default_desktop_has_wechat() == bool(enum_wechat_windows())
 

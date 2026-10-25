@@ -10,12 +10,14 @@ import ssl
 import stat
 
 import pytest
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 
 from flandora import config
 from flandora import main as bridge_main
+from flandora.runtime import events
 from flandora.webui import app as webui_app
 from flandora.webui import auth
+from flandora.webui.api import config as config_api
 
 TEST_CERT = """-----BEGIN CERTIFICATE-----
 MIIDJzCCAg+gAwIBAgIUTU/SGZhWzCNVEVnFBuFgbiNXR2gwDQYJKoZIhvcNAQEL
@@ -72,7 +74,7 @@ OYVshiUs3yIMeTgylfBL/38=
 @pytest.fixture()
 def saved(monkeypatch, tmp_path):
     """配置与证书都落进临时目录，只拦运行期状态通知。"""
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
     auth.sessions.clear()
     with config.temporary(tmp_path / "config.json") as store:
         yield store
@@ -82,7 +84,7 @@ def saved(monkeypatch, tmp_path):
 
 
 def test_bind_host_whitelist(saved):
-    rest = webui_app.api_put_config({"web_bind_host": "192.168.1.5"}, webui_app.Response())
+    rest = config_api.api_put_config({"web_bind_host": "192.168.1.5"}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
@@ -90,7 +92,7 @@ def test_bind_host_whitelist(saved):
 
 
 def test_open_bind_needs_a_password_first(saved):
-    rest = webui_app.api_put_config({"web_bind_host": "0.0.0.0"}, webui_app.Response())
+    rest = config_api.api_put_config({"web_bind_host": "0.0.0.0"}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
@@ -98,9 +100,9 @@ def test_open_bind_needs_a_password_first(saved):
 
 
 def test_open_bind_allowed_once_password_is_set(saved):
-    webui_app.api_put_config({"webui_password": "secret123"}, webui_app.Response())
+    config_api.api_put_config({"webui_password": "secret123"}, Response())
 
-    rest = webui_app.api_put_config({"web_bind_host": "0.0.0.0"}, webui_app.Response())
+    rest = config_api.api_put_config({"web_bind_host": "0.0.0.0"}, Response())
 
     assert rest["ok"] is True
     assert "web_bind_host" in rest["restart_required"]
@@ -112,8 +114,8 @@ def test_open_bind_allowed_once_password_is_set(saved):
 
 
 def test_cert_pair_is_validated_and_written(saved):
-    rest = webui_app.api_put_config(
-        {"webui_tls_cert": TEST_CERT, "webui_tls_key": TEST_KEY}, webui_app.Response()
+    rest = config_api.api_put_config(
+        {"webui_tls_cert": TEST_CERT, "webui_tls_key": TEST_KEY}, Response()
     )
 
     assert rest["ok"] is True
@@ -130,8 +132,8 @@ def test_cert_pair_is_validated_and_written(saved):
 
 
 def test_broken_pem_is_refused_before_writing(saved):
-    rest = webui_app.api_put_config(
-        {"webui_tls_cert": "看起来像证书", "webui_tls_key": "看起来像私钥"}, webui_app.Response()
+    rest = config_api.api_put_config(
+        {"webui_tls_cert": "看起来像证书", "webui_tls_key": "看起来像私钥"}, Response()
     )
 
     assert isinstance(rest, JSONResponse)
@@ -141,7 +143,7 @@ def test_broken_pem_is_refused_before_writing(saved):
 
 
 def test_half_a_pair_is_refused(saved):
-    rest = webui_app.api_put_config({"webui_tls_cert": TEST_CERT}, webui_app.Response())
+    rest = config_api.api_put_config({"webui_tls_cert": TEST_CERT}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert "一起装" in rest.body.decode("utf-8")
@@ -149,7 +151,7 @@ def test_half_a_pair_is_refused(saved):
 
 
 def test_enabling_tls_without_certificate_is_refused(saved):
-    rest = webui_app.api_put_config({"webui_tls": True}, webui_app.Response())
+    rest = config_api.api_put_config({"webui_tls": True}, Response())
 
     assert isinstance(rest, JSONResponse)
     assert rest.status_code == 400
@@ -157,11 +159,9 @@ def test_enabling_tls_without_certificate_is_refused(saved):
 
 
 def test_enabling_tls_after_install(saved):
-    webui_app.api_put_config(
-        {"webui_tls_cert": TEST_CERT, "webui_tls_key": TEST_KEY}, webui_app.Response()
-    )
+    config_api.api_put_config({"webui_tls_cert": TEST_CERT, "webui_tls_key": TEST_KEY}, Response())
 
-    rest = webui_app.api_put_config({"webui_tls": True}, webui_app.Response())
+    rest = config_api.api_put_config({"webui_tls": True}, Response())
 
     assert rest["ok"] is True
     assert "webui_tls" in rest["restart_required"]
@@ -173,9 +173,7 @@ def test_tls_problem_follows_the_files_on_disk(saved, monkeypatch):
 
     assert config.webui_tls_problem() != ""
 
-    webui_app.api_put_config(
-        {"webui_tls_cert": TEST_CERT, "webui_tls_key": TEST_KEY}, webui_app.Response()
-    )
+    config_api.api_put_config({"webui_tls_cert": TEST_CERT, "webui_tls_key": TEST_KEY}, Response())
 
     assert config.webui_tls_problem() == ""
 
@@ -192,7 +190,7 @@ def _seed(saved, payload: dict) -> None:
 def test_backup_leaves_credentials_out_by_default(saved):
     _seed(saved, {"web_port": 4950, "webui_password": "hash", "ob_server_token": "tok"})
 
-    dump = webui_app.api_config_backup()
+    dump = config_api.api_config_backup()
 
     assert "webui_password" not in dump["config"]
     assert "ob_server_token" not in dump["config"]
@@ -203,7 +201,7 @@ def test_backup_leaves_credentials_out_by_default(saved):
 def test_backup_can_include_credentials(saved):
     _seed(saved, {"web_port": 4950, "ob_server_token": "tok"})
 
-    dump = webui_app.api_config_backup(include_sensitive=1)
+    dump = config_api.api_config_backup(include_sensitive=1)
 
     assert dump["config"]["ob_server_token"] == "tok"
     assert dump["excluded_sensitive"] == []
@@ -211,18 +209,18 @@ def test_backup_can_include_credentials(saved):
 
 
 def test_restore_refuses_files_that_are_not_backups(saved):
-    assert webui_app.api_config_restore({"hello": "world"}).status_code == 400
-    assert webui_app.api_config_restore({"config": {}}).status_code == 400
+    assert config_api.api_config_restore({"hello": "world"}).status_code == 400
+    assert config_api.api_config_restore({"config": {}}).status_code == 400
 
 
 def test_restore_refuses_values_that_fail_validation(monkeypatch, tmp_path):
     """备份里塞了非法值：拒绝并保持文件原样，不留半份配置。"""
     cfg_file = tmp_path / "config.json"
     cfg_file.write_text(json.dumps({"web_port": 4950}), encoding="utf-8")
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
 
     with config.temporary(cfg_file):
-        rest = webui_app.api_config_restore({"config": {"web_bind_host": "10.0.0.1"}})
+        rest = config_api.api_config_restore({"config": {"web_bind_host": "10.0.0.1"}})
 
         assert rest.status_code == 400
         assert "web_bind_host" in json.loads(rest.body)["error"]
@@ -234,10 +232,10 @@ def test_restore_merges_and_backs_up_the_old_file(monkeypatch, tmp_path):
     cfg_file.write_text(
         json.dumps({"web_port": 4950, "group_name_map": {"a@chatroom": "老群名"}}), encoding="utf-8"
     )
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
 
     with config.temporary(cfg_file):
-        rest = webui_app.api_config_restore(
+        rest = config_api.api_config_restore(
             {
                 "config": {"web_port": 9000, "group_name_map": {"a@chatroom": "新群名"}},
                 "include_sensitive": False,
@@ -259,10 +257,10 @@ def test_restore_merges_and_backs_up_the_old_file(monkeypatch, tmp_path):
 def test_restore_keeps_local_credentials_unless_asked(monkeypatch, tmp_path):
     cfg_file = tmp_path / "config.json"
     cfg_file.write_text(json.dumps({"webui_password": "local-hash"}), encoding="utf-8")
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
 
     with config.temporary(cfg_file):
-        rest = webui_app.api_config_restore(
+        rest = config_api.api_config_restore(
             {
                 "config": {"webui_password": "from-backup", "web_port": 9100},
                 "include_sensitive": False,
@@ -277,11 +275,11 @@ def test_restore_keeps_local_credentials_unless_asked(monkeypatch, tmp_path):
 def test_restore_with_credentials_replaces_password_and_sessions(monkeypatch, tmp_path):
     cfg_file = tmp_path / "config.json"
     cfg_file.write_text(json.dumps({"webui_password": "local-hash"}), encoding="utf-8")
-    monkeypatch.setattr(webui_app.monitor, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "notify_status", lambda: None)
     token = auth.sessions.issue()
 
     with config.temporary(cfg_file):
-        rest = webui_app.api_config_restore(
+        rest = config_api.api_config_restore(
             {"config": {"webui_password": "restored-hash"}, "include_sensitive": True}
         )
 
@@ -298,7 +296,7 @@ def test_config_response_reports_effective_listen_settings(saved, monkeypatch):
     monkeypatch.setattr(config, "WEB_BIND_HOST", "0.0.0.0")
     monkeypatch.setattr(config, "WEBUI_TLS", True)
 
-    cfg = webui_app.api_get_config()
+    cfg = config_api.api_get_config()
 
     assert cfg["web_bind_host"] == "0.0.0.0"
     assert cfg["webui_tls"] is True
@@ -309,7 +307,7 @@ def test_config_response_keeps_what_the_file_says(saved, monkeypatch):
     monkeypatch.setattr(config, "WEB_BIND_HOST", "0.0.0.0")
     monkeypatch.setattr(config, "WEBUI_TLS", True)
 
-    cfg = webui_app.api_get_config()
+    cfg = config_api.api_get_config()
 
     assert cfg["web_bind_host"] == "127.0.0.1"
     assert cfg["webui_tls"] is False

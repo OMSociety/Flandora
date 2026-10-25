@@ -13,7 +13,7 @@ import time
 from . import __version__, config, ob_ids, update_check, wechat_account
 from .bridge_core import Flandora
 from .ob_server import ONEBOT_SERVER
-from .runtime import LIFECYCLE, RUNTIME
+from .runtime import LIFECYCLE, RUNTIME, events
 from .senders import create_sender
 from .single_instance import BRIDGE_MUTEX_NAME, acquire_mutex
 
@@ -208,13 +208,8 @@ def main() -> int:
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
 
-    # WebUI 实时日志转发（尽早挂上，捕获启动日志）
-    try:
-        from .webui import monitor
-
-        monitor.attach_log_relay()
-    except Exception:
-        pass
+    # 面板实时日志转发（尽早挂上，捕获启动日志）
+    events.attach_log_relay()
 
     try:
         log.info("=" * 50)

@@ -33,6 +33,7 @@ from .action_catalog import (
     RETCODE_INTERNAL,
     RETCODE_NOT_FOUND,
 )
+from .runtime import events
 
 log = logging.getLogger("flandora")
 
@@ -716,12 +717,8 @@ def _post_json(url: str, body: dict, headers: dict, timeout_ms: int) -> int:
 
 
 def _notify_status():
-    try:
-        from .webui import monitor
-
-        monitor.notify_status()
-    except Exception:  # noqa: BLE001
-        pass
+    """入口连接/断开都要让面板刷新状态；事件总线在核心侧，不再回调表现层。"""
+    events.notify_status()
 
 
 # ============ 进程内单例 ============

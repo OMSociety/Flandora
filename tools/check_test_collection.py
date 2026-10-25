@@ -18,6 +18,15 @@ import re
 import subprocess
 import sys
 
+# Windows 上 stdout 可能不是 UTF-8（控制台默认 GBK、CI runner 默认 cp1252），
+# 直接 print 中文会抛 UnicodeEncodeError 并把退出码变成 1——那样这个闸会把
+# 「全部通过」误报成失败。重新绑定成 UTF-8，无法编码的字符转义输出而不中断。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+    except (AttributeError, ValueError):  # 非文本流，或被重定向到不支持的对象
+        pass
+
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TESTS_DIR = os.path.join(ROOT, "tests")
 

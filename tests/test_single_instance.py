@@ -148,5 +148,17 @@ def main() -> int:
     return 0 if failed == 0 else 1
 
 
+def _utf8_streams():
+    """stdout 在非 UTF-8 环境（GBK 控制台、cp1252 CI）下打印中文会抛
+    UnicodeEncodeError，退出码变成 1，看起来像测试失败。重新绑定成 UTF-8 并有损转义。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
+        except (AttributeError, ValueError):
+            pass
+
+
 if __name__ == "__main__":
+    _utf8_streams()
     raise SystemExit(main())

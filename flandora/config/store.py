@@ -51,6 +51,7 @@ class Settings:
     WECHAT_HWND: int = 0
     WECHAT_FILES_ROOT: str = ""
     ALLOW_FOREGROUND_STEAL: bool = False
+    SEND_KEY: str = "auto"
     GROUP_NAME_MAP: Any = field(default_factory=dict)
     WX_KEY_FILE: str = ""
     WX_WORK_DIR: str = ""

@@ -118,6 +118,8 @@ class UiaSender(BaseSender):
     # 会话项的名字是多行文本：会话名 / 最后一条消息摘要 / 时间。
     SESSION_CELL_CLASS = "mmui::ChatSessionCell"
     INPUT_FIELD_CLASS = "mmui::ChatInputField"
+    # 输入框右下角的「发送」按钮：只认精确名字（输入栏里另有「发送表情」等按钮）
+    SEND_BUTTON_NAMES = ("发送", "发送(S)", "Send")
     SEARCH_FIELD_CLASS = "mmui::XSearchField"
     SEARCH_RESULT_CLASS = "mmui::SearchContentCellView"
     # 搜索结果项实测类名是 mmui::XTableCell（搜狗网络结果与「功能」动作项也是
@@ -668,57 +670,99 @@ class UiaSender(BaseSender):
             user32.PostMessageW(hwnd, WM_KEYUP, mod, KEYUP_LPARAM)
             time.sleep(0.02)
 
-    def _post_send_key(self, kind: str) -> None:
-        """按指定的发送键把输入框里的内容发出去。
+    def _send_button(self):
+        """输入框右下角的「发送」按钮；没有打开会话时返回 None。
 
-        ``kind`` 是 "enter" 或 "ctrl_enter"。微信允许把发送键改成 Ctrl+回车，
-        此时单按回车只会插一个换行。
+        输入栏里另有「发送表情」「发送文件」这类按钮，按名字前缀认会认错，所以
+        只认精确的名字。
         """
-        if kind != "ctrl_enter":
-            self._post_key(VK_RETURN)
-            return
-        # Ctrl 的键态要伪造：PostMessage 投递的修饰键进不了微信线程的键态，
-        # 与剪贴板粘贴同一个原因（见 _paste_clipboard）
-        user32 = self._user32_inst()
-        user32.SetKeyboardState.argtypes = [ctypes.c_char_p]
-        state = bytearray(256)
-        state[VK_CONTROL] = 0x80
-        state[VK_LCONTROL] = 0x80
-        try:
-            user32.SetKeyboardState(bytes(state))
-            self._post_key(VK_RETURN, VK_CONTROL)
-        finally:
-            state[VK_CONTROL] = 0
-            state[VK_LCONTROL] = 0
+        for _, node in self._walk():
             try:
-                user32.SetKeyboardState(bytes(state))
-            except Exception:  # noqa: BLE001
-                pass
+                if node.ControlTypeName != "ButtonControl":
+                    continue
+                name = (node.Name or "").strip()
+            except Exception:
+                continue
+            if name in self.SEND_BUTTON_NAMES:
+                return node
+        return None
+
+    def _click_send_button(self) -> bool:
+        """点「发送」按钮发出去。
+
+        微信「设置 → 快捷键」里把发送键改成 Ctrl+回车之后，回车只会在正文里插
+        换行；点按钮与按键设置无关，是这条路径最稳的入口。找不到按钮时说明当前
+        界面没有会话输入区（未登录、窗口没打开），直接返回 False。
+        """
+        button = self._send_button()
+        if button is None:
+            log.error("找不到微信的「发送」按钮，本次发送已取消")
+            return False
+        try:
+            log.debug(
+                "点「发送」按钮：name=%r class=%r rect=%s",
+                button.Name,
+                button.ClassName,
+                button.BoundingRectangle,
+            )
+        except Exception:  # noqa: BLE001
+            pass
+        return self._post_click(button)
+
+    def _configured_send_mode(self) -> str:
+        """配置里指定的发送方式：auto / enter / button。
+
+        每次发送都读一次配置，面板里改完立刻生效，不必重启桥接；配置读不出来或
+        取值不认识时按 auto 处理，与默认行为一致。
+        """
+        try:
+            mode = str(getattr(config, "SEND_KEY", "auto") or "auto").strip().lower()
+        except Exception:  # noqa: BLE001
+            return "auto"
+        return mode if mode in ("auto", "enter", "button") else "auto"
 
     def _press_send(self) -> None:
-        """用当前认定的发送键发送（默认回车，试出来是 Ctrl+回车就记住）。"""
-        self._post_send_key(self._send_key or "enter")
+        """用当前认定的方式发送。
 
-    def _retry_send_as_ctrl_enter(self, contact: str, text: str, summary_before: str) -> bool:
-        """回车没发出去时，按 Ctrl+回车再发一次，成功了就把结论记住。
+        配置里指定了 enter / button 就照办；auto 时用试出来的结论（默认回车）。
+        """
+        mode = self._configured_send_mode()
+        if mode == "auto":
+            mode = self._send_key or "enter"
+        if mode == "button":
+            self._click_send_button()
+            return
+        self._post_key(VK_RETURN)
+
+    def _may_retry_by_button(self) -> bool:
+        """这一轮发送失败后还能不能再点「发送」按钮试。
+
+        配置里固定了发送方式就照办、不再猜；auto 时按键发送落空，说明微信的发送键
+        不是回车，改点按钮试一次，已经试成过就不必再试。
+        """
+        return self._configured_send_mode() == "auto" and self._send_key != "button"
+
+    def _retry_by_send_button(self, contact: str, text: str, summary_before: str) -> bool:
+        """按键没发出去时，改点「发送」按钮再发一次，成功了就把结论记住。
 
         微信允许把发送键改成 Ctrl+回车，那时回车只在正文里插一个换行、消息留在
         输入框里。这里不读微信的设置，直接按结果判定：清空输入框（回车插进去的
-        那个换行也一并清掉）、重新输入、按 Ctrl+回车，摘要更新了就是这种配置。
-        每次进程只试一次，之后一律按 Ctrl+回车发送。
+        那个换行也一并清掉）、重新输入、点「发送」按钮，摘要更新了就是按钮这条路
+        走得通。每次进程只试一次，之后一律点按钮发送。
         """
         if not self._clear_input():
             return False
         if not self._type_text(text):
             self._clear_input()
             return False
-        self._post_send_key("ctrl_enter")
+        if not self._click_send_button():
+            return False
         self._release_foreground()
         time.sleep(0.8)
         if not self._confirm_sent(contact, text, summary_before):
             return False
-        self._send_key = "ctrl_enter"
-        log.info("回车发不出去、Ctrl+回车发得出去：微信的发送键是 Ctrl+回车，后续照此发送")
+        self._send_key = "button"
+        log.info("按键发不出去、点「发送」按钮发得出去：后续改用按钮发送")
         return True
 
     def _post_char(self, ch: str) -> None:
@@ -1188,9 +1232,7 @@ class UiaSender(BaseSender):
                 time.sleep(0.6)
 
                 if not self._confirm_sent(contact, text, summary_before):
-                    # 微信若把发送键改成了 Ctrl+回车，这一回落空就是那种情况：
-                    # 换按 Ctrl+回车再试一次，成了就把这条配置记住
-                    if self._send_key != "ctrl_enter" and self._retry_send_as_ctrl_enter(
+                    if self._may_retry_by_button() and self._retry_by_send_button(
                         contact, text, summary_before
                     ):
                         log.info(f"[UIA成功] {contact}: {text[:50]}")

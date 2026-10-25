@@ -338,6 +338,7 @@ python -m flandora_mcp.server --selftest
 | `wechat_exe` | 字符串 | 空 | 微信主程序路径，留空自动探测（含注册表登记的安装路径） |
 | `wechat_hwnd` | 整数 | `0` | 指定要驱动的窗口句柄，`0` 取第一个；一台机器登录多个微信时才手填 |
 | `allow_foreground_steal` | 布尔 | `false` | 仅在 `isolated_desktop` 为 `false` 时有意义。默认 `false` 时发送整体不可用；设为 `true` 后可用，代价是每条消息发出时前台短暂切到微信（实测切回耗时 3–11 毫秒） |
+| `send_key` | 字符串 | `auto` | 发送消息用哪种方式。`auto` 先按回车，没发出去就清掉输入框、重新输入后点「发送」按钮，成功即记住；`enter` 固定按回车；`button` 固定点按钮。微信「设置 → 快捷键」里把发送键换成 `Ctrl+回车` 之后回车只会插换行，点按钮与那条设置无关，这时选 `button` 省掉一次失败 |
 
 ### 图片
 

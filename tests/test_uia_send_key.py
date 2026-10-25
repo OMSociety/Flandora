@@ -1,7 +1,8 @@
-"""发送键：默认回车；微信把发送键改成 Ctrl+回车时，按结果试出来并记住。
+"""发送方式：默认回车；回车发不出去就改点「发送」按钮，并记住结论。
 
-真实微信里这条设置改过之后，单按回车只会插一个换行、消息留在输入框里。这里的
-用例只验按键选择与重试判定，不启动微信。
+真实微信里把发送键换成 Ctrl+回车之后，单按回车只会插一个换行、消息留在输入框里；
+点输入框右下角的「发送」按钮与这条设置无关。配置里的 send_key 可以直接指定方式，
+auto 才走「试一次并记住」。这里的用例只验分发与重试判定，不启动微信。
 """
 
 from __future__ import annotations
@@ -9,36 +10,33 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from flandora.uia_sender import VK_CONTROL, VK_RETURN, UiaSender  # noqa: E402
-
-
-class FakeUser32:
-    """只记录被置成按下的键态，不做真实调用。"""
-
-    def __init__(self):
-        self.states: list[bytes] = []
-        # 用普通函数而不是绑定方法：生产代码会往它上面挂 argtypes
-        self.SetKeyboardState = lambda state: self.states.append(bytes(state))
+from flandora import config  # noqa: E402
+from flandora.uia_sender import VK_RETURN, UiaSender  # noqa: E402
 
 
 def make_sender() -> UiaSender:
     sender = object.__new__(UiaSender)
     sender._send_key = ""
     sender._hwnd = 1
-    sender._user32 = FakeUser32()
     box = {"text": ""}
     sender._posted: list[tuple[int, tuple[int, ...]]] = []
+    sender._clicked = 0
     sender._typed: list[str] = []
 
     sender._input_text = lambda: box["text"]  # type: ignore[method-assign]
     sender._input_box = lambda: None  # type: ignore[method-assign]
-    sender._user32_inst = lambda: sender._user32  # type: ignore[method-assign]
     sender._release_foreground = lambda: None  # type: ignore[method-assign]
 
     def post_key(vk: int, *mods: int) -> None:
         sender._posted.append((vk, mods))
+
+    def click_button() -> bool:
+        sender._clicked += 1
+        return True
 
     def clear_input() -> bool:
         box["text"] = ""
@@ -50,9 +48,21 @@ def make_sender() -> UiaSender:
         return True
 
     sender._post_key = post_key  # type: ignore[method-assign]
+    sender._click_send_button = click_button  # type: ignore[method-assign]
     sender._clear_input = clear_input  # type: ignore[method-assign]
     sender._type_text = type_text  # type: ignore[method-assign]
     return sender
+
+
+@pytest.fixture
+def send_mode():
+    """把配置里的 send_key 钉成指定值，用例结束恢复（删掉覆盖项即回默认）。"""
+
+    def apply(mode: str) -> None:
+        config.SEND_KEY = mode
+
+    yield apply
+    del config.SEND_KEY
 
 
 def test_default_send_is_a_plain_enter():
@@ -61,45 +71,76 @@ def test_default_send_is_a_plain_enter():
     sender._press_send()
 
     assert sender._posted == [(VK_RETURN, ())]
+    assert sender._clicked == 0
 
 
-def test_ctrl_enter_fakes_the_ctrl_state():
+def test_learned_button_mode_clicks_instead_of_pressing_enter():
     sender = make_sender()
-    sender._send_key = "ctrl_enter"
+    sender._send_key = "button"
 
     sender._press_send()
 
-    assert sender._posted == [(VK_RETURN, (VK_CONTROL,))], "发送时要带修饰键"
-    states = sender._user32.states
-    assert states[0][VK_CONTROL] == 0x80, "投递前先把 Ctrl 键态置为按下"
-    assert states[-1][VK_CONTROL] == 0, "发完要把键态还原"
+    assert sender._clicked == 1, "记住是按钮之后就直接点按钮"
+    assert sender._posted == []
 
 
-def test_retry_switches_to_ctrl_enter_and_remembers_it():
+def test_config_can_pin_the_send_mode(send_mode):
+    send_mode("button")
     sender = make_sender()
-    sent: list[str] = []
+    sender._press_send()
+    assert sender._clicked == 1
 
-    def confirm(contact: str, text: str, before: str) -> bool:
-        return bool(sent)
+    pinned = make_sender()
+    send_mode("enter")
+    pinned._send_key = "button"
+    pinned._press_send()
+    assert pinned._posted == [(VK_RETURN, ())], "配置指定回车时不再用记住的按钮"
+    assert pinned._clicked == 0
 
-    def post_send_key(kind: str) -> None:
-        sent.append(kind)
 
-    sender._confirm_sent = confirm  # type: ignore[method-assign]
-    sender._post_send_key = post_send_key  # type: ignore[method-assign]
+def test_unknown_config_value_falls_back_to_auto(send_mode):
+    send_mode("whatever")
+    sender = make_sender()
 
-    assert sender._retry_send_as_ctrl_enter("文件传输助手", "你好", "") is True
-    assert sent == ["ctrl_enter"], "重试要用 Ctrl+回车"
-    assert sender._send_key == "ctrl_enter", "试成了就记住，后面不必再试"
+    assert sender._configured_send_mode() == "auto"
+
+
+def test_auto_may_retry_but_pinned_does_not(send_mode):
+    sender = make_sender()
+
+    send_mode("auto")
+    assert sender._may_retry_by_button() is True
+    sender._send_key = "button"
+    assert sender._may_retry_by_button() is False, "已经试成过就不必再试"
+
+    pinned = make_sender()
+    send_mode("enter")
+    assert pinned._may_retry_by_button() is False, "配置固定了方式就不再猜"
+
+
+def test_retry_clicks_the_button_and_remembers_it():
+    sender = make_sender()
+    sender._confirm_sent = lambda contact, text, before: sender._clicked > 0  # type: ignore[method-assign]
+
+    assert sender._retry_by_send_button("文件传输助手", "你好", "") is True
+    assert sender._clicked == 1, "重试走的是点按钮"
+    assert sender._send_key == "button", "试成了就记住，后面不必再试"
     assert sender._typed == ["你好"], "回车留下的换行要先清掉再重新输入"
 
 
-def test_retry_gives_up_when_ctrl_enter_does_not_send():
+def test_retry_gives_up_when_the_button_does_not_send():
     sender = make_sender()
     sender._confirm_sent = lambda *a: False  # type: ignore[method-assign]
 
-    assert sender._retry_send_as_ctrl_enter("文件传输助手", "你好", "") is False
-    assert sender._send_key == "", "没试成就不能记成 Ctrl+回车"
+    assert sender._retry_by_send_button("文件传输助手", "你好", "") is False
+    assert sender._send_key == "", "没试成就不能记成按钮"
+
+
+def test_retry_stops_when_the_button_is_missing():
+    sender = make_sender()
+    sender._click_send_button = lambda: False  # type: ignore[method-assign]
+
+    assert sender._retry_by_send_button("文件传输助手", "你好", "") is False
 
 
 def test_failure_hint_clears_leftover_text():

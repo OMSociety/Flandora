@@ -27,6 +27,8 @@ KIND_SECRET = "SECRET"
 # web_bind_host 只认回环与全网卡：桥接没有别的网卡语义，写错地址只会让人以为面板没起
 ALLOWED_BIND_HOSTS = ("127.0.0.1", "0.0.0.0")
 MESSAGE_FORMATS = ("array", "string")
+# 发送方式：auto 先按回车发，发不出去再点「发送」按钮并记住结论
+SEND_KEYS = ("auto", "enter", "button")
 
 _HOT = frozenset({KIND_HOT})
 _RESTART = frozenset({KIND_RESTART})
@@ -140,6 +142,21 @@ def _clean_message_format(value: Any, strict: bool, context: Mapping) -> Cleaned
     return Cleaned(
         "array",
         warnings=(f"ob_message_format={raw!r} 不认识，已按 array 处理（可选：array / string）",),
+    )
+
+
+def _clean_send_key(value: Any, strict: bool, context: Mapping) -> Cleaned:
+    raw = _as_text(value).strip().lower() or "auto"
+    if raw in SEND_KEYS:
+        return Cleaned(raw)
+    if strict:
+        raise ConfigError("send_key 只能是 auto、enter 或 button")
+    return Cleaned(
+        "auto",
+        warnings=(
+            f"send_key={raw!r} 不认识，已按 auto 处理"
+            "（可选：auto = 自动试出来 / enter = 回车 / button = 点发送按钮）",
+        ),
     )
 
 
@@ -394,6 +411,18 @@ FIELDS: tuple[Field, ...] = (
         "微信只要收到投递进来的鼠标或键盘消息就会升到前台，所以这个开关管的是整个发送"
         "通道，不是只影响图片。开了 isolated_desktop 之后不再需要：那种模式下前台切换"
         "只发生在另一张桌面上。",
+    ),
+    Field(
+        key="send_key",
+        attr="SEND_KEY",
+        kinds=_HOT,
+        default="auto",
+        clean=_clean_send_key,
+        desc="发送消息时用哪种方式。auto（默认）先按回车，没发出去就清掉输入框、重新"
+        "输入后点输入框右下角的「发送」按钮，成功就记住、后续照此发送；enter 固定按回车；"
+        "button 固定点「发送」按钮。微信「设置 → 快捷键」里可以把发送键换成 Ctrl+回车，"
+        "换了之后回车只会插一个换行、消息留在输入框里——点按钮与这条设置无关，所以选 "
+        "button 就不必每次都等一次失败。",
     ),
     Field(
         key="group_name_map",

@@ -31,10 +31,11 @@ if REPO_ROOT not in sys.path:
 from flandora import config  # noqa: E402
 from flandora.config import fields  # noqa: E402
 
-# HOT 字段就是这七项：改完立刻生效，不需要重启桥接
+# HOT 字段就是这几项：改完立刻生效，不需要重启桥接
 HOT_KEYS = {
     "wechat_hwnd",
     "group_name_map",
+    "send_key",
     "webui_password",
     "log_max_mb",
     "log_backup_count",
@@ -93,6 +94,7 @@ def test_strict_validation_refuses_the_same_values():
     cases = [
         ("web_bind_host", "10.0.0.1", "web_bind_host 只能是 127.0.0.1 或 0.0.0.0"),
         ("ob_message_format", "json", "ob_message_format 只能是 array 或 string"),
+        ("send_key", "alt_enter", "send_key 只能是 auto、enter 或 button"),
         ("ob_heartbeat_seconds", 3, "ob_heartbeat_seconds 取 0（不发心跳）或 5–3600 秒"),
         ("log_max_mb", 2048, "日志单份上限取 1–1024（MB）"),
         ("log_backup_count", 99, "日志保留份数取 1–20"),

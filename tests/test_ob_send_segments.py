@@ -166,6 +166,32 @@ def test_video_without_file_reports_failure(monkeypatch, isolated_ids):
     assert "视频缺少 file" in resp["message"]
 
 
+def test_send_by_handle_instead_of_id(monkeypatch, isolated_ids):
+    """user_id 直接填 wxid 也能发，客户端不必自己先去换 ID。"""
+    sender = FakeSender()
+    _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": "wxid_zhangsan", "message": "在吗"},
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.texts == [("张三", "在吗")]
+
+
+def test_send_to_unknown_id_reports_failure(monkeypatch, isolated_ids):
+    """没分配过的整数 ID 必须报错，不能拿这个数字去微信里搜。"""
+    sender = FakeSender()
+    _prepare(monkeypatch, sender)
+    free = next(n for n in range(1, 5000) if ob_ids.handle_of(n) is None)
+    resp = _call({"action": "send_private_msg", "params": {"user_id": free, "message": "在吗"}})
+    assert resp["status"] == "failed"
+    assert resp["retcode"] == action_catalog.RETCODE_NOT_FOUND
+    assert "未知的 user_id" in resp["message"]
+    assert sender.texts == []
+
+
 def test_record_segment_is_sent_as_file(monkeypatch, isolated_ids, tmp_path):
     sender = FakeSender()
     uid = _prepare(monkeypatch, sender)

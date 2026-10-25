@@ -164,7 +164,8 @@ async def _handle_ob_api(data: dict):
 
     if action in ("send_msg", "send_private_msg", "send_group_msg"):
         is_group = action == "send_group_msg" or params.get("message_type") == "group"
-        target_id = params.get("group_id" if is_group else "user_id", 0)
+        target_key = "group_id" if is_group else "user_id"
+        target = params.get(target_key, 0)
         message = params.get("message", [])
         try:
             message = ob_segments.normalize_message(
@@ -176,31 +177,41 @@ async def _handle_ob_api(data: dict):
             return _failure(
                 "message 为空，没有可发送的内容", action_catalog.RETCODE_BAD_PARAM, echo
             )
-        contact_handle = ob_ids.handle_of(target_id) or ""
-        contact = ob_ids.lookup_name(target_id) or ""
-        if not target_id:
-            return _failure("缺少 user_id / group_id", action_catalog.RETCODE_BAD_PARAM, echo)
+        if target in (None, "", 0):
+            return _failure(f"缺少 {target_key}", action_catalog.RETCODE_BAD_PARAM, echo)
+        # 目标既可以是整数 ID，也可以是微信标识（wxid / xxx@chatroom）。整数认不出来
+        # 就是没分配过的 ID，如实报错：拿这个数字去微信里搜只会搜到别人。
+        contact_handle = ob_ids.resolve_handle(target)
+        if contact_handle is None:
+            return _failure(
+                f"未知的 {target_key}：{target!r}（填 Flandora 分配过的整数 ID，"
+                "或直接填 wxid / xxx@chatroom）",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        known_id = ob_ids.find_contact_id(contact_handle)
+        contact = ob_ids.lookup_name(known_id) if known_id is not None else ""
         # 群聊：微信搜索框搜不到 @chatroom ID，必须有群名。
         # 名字来源按「本次运行收到的群消息 → 本地库群名册」取，配置里的映射只作覆盖。
         if is_group:
-            if not contact and contact_handle:
+            if not contact:
                 contact = await asyncio.to_thread(_group_name, contact_handle)
             mapped_name = config.GROUP_NAME_MAP.get(contact_handle) or config.GROUP_NAME_MAP.get(
-                str(target_id)
+                str(target)
             )
             if mapped_name:
                 contact = mapped_name
-                log.info(f"[OB11] 群名映射: {target_id} -> {mapped_name}")
+                log.info(f"[OB11] 群名映射: {contact_handle} -> {mapped_name}")
             if not contact:
                 return _failure(
-                    f"无法定位群 {target_id}：本地库里没有这个群，也没有收到过它的消息。"
+                    f"无法定位群 {contact_handle}：本地库里没有这个群，也没有收到过它的消息。"
                     "让该群发一条消息即可自动学会群名，或在 config.json 的 group_name_map 中手动指定。",
                     action_catalog.RETCODE_BAD_PARAM,
                     echo,
                 )
         else:
             # 私聊：缓存里的备注名优先，其次按 wxid 搜索（微信能搜到好友的 wxid）
-            contact = contact or contact_handle or str(target_id)
+            contact = contact or contact_handle
 
         # 客户端段 → 领域段：base64 内联数据与客户端附件在这一步落成本地文件，
         # 解不出来的段如实记账，之后再规划动作。
@@ -245,12 +256,8 @@ async def _handle_ob_api(data: dict):
 
         # message_id 必须是真实发出去的号：客户端拿它做回复引用与撤回，
         # 顺手给的假号会让「撤回自己刚发的消息」永远找不到目标。
-        # 会话键要非空才分配得出来：私聊只给了整数 user_id、名字索引里又没有它的
-        # handle 时，退回用整数 ID 当键，编号仍然按会话递增。
         if sent_count:
-            resp_data["data"] = {
-                "message_id": ob_ids.allocate_message_id(contact_handle or str(target_id))
-            }
+            resp_data["data"] = {"message_id": ob_ids.allocate_message_id(contact_handle)}
 
         # 一段都没发出去时必须回报失败，否则调用方会以为消息已送达并把它记进上下文。
         if not sent_count:
@@ -310,9 +317,36 @@ async def _handle_ob_api(data: dict):
         # record 段目前以 mp3 文件形式投递，因此这里如实回 false。
         resp_data["data"] = {"yes": False}
 
+    elif action == "get_contact_id":
+        handle = str(params.get("handle", "")).strip()
+        if not handle:
+            return _failure("handle 不能为空", action_catalog.RETCODE_BAD_PARAM, echo)
+        resp_data["data"] = {"handle": handle, "id": ob_ids.contact_id(handle)}
+
+    elif action == "get_contact_handle":
+        oid = params.get("id")
+        handle = ob_ids.resolve_handle(oid)
+        if handle is None:
+            return _failure(
+                f"未知的 id：{oid!r}（这个 ID 不是 Flandora 分配过的联系人）",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        resp_data["data"] = {"id": ob_ids.contact_id(handle), "handle": handle}
+
+    elif action == "get_contact_ids":
+        mapping = ob_ids.contact_ids().items()
+        resp_data["data"] = {
+            "count": len(mapping),
+            "items": [
+                {"handle": handle, "id": oid}
+                for handle, oid in sorted(mapping.items(), key=lambda kv: kv[1])
+            ],
+        }
+
     elif action == "get_group_info":
         gid = params.get("group_id")
-        handle = ob_ids.handle_of(gid) if isinstance(gid, int) else None
+        handle = ob_ids.resolve_handle(gid)
         if not handle:
             return _failure(
                 f"未知的 group_id：{gid}（这个 ID 不是 Flandora 分配过的群）",
@@ -346,7 +380,7 @@ async def _handle_ob_api(data: dict):
 
     elif action in ("get_stranger_info", "get_friend_info"):
         uid = params.get("user_id")
-        handle = ob_ids.handle_of(uid) if isinstance(uid, int) else None
+        handle = ob_ids.resolve_handle(uid)
         if not handle:
             return _failure(
                 f"未知的 user_id：{uid}（这个 ID 不是 Flandora 分配过的联系人）",
@@ -364,7 +398,7 @@ async def _handle_ob_api(data: dict):
 
     elif action in ("get_group_member_list", "get_group_member_info"):
         gid = params.get("group_id")
-        ghandle = ob_ids.handle_of(gid) if isinstance(gid, int) else None
+        ghandle = ob_ids.resolve_handle(gid)
         if not ghandle:
             return _failure(
                 f"未知的 group_id：{gid}（这个 ID 不是 Flandora 分配过的群）",
@@ -382,7 +416,7 @@ async def _handle_ob_api(data: dict):
             resp_data["data"] = [_member_object(ob_ids.contact_id(ghandle), m) for m in members]
         else:
             uid = params.get("user_id")
-            handle = ob_ids.handle_of(uid) if isinstance(uid, int) else None
+            handle = ob_ids.resolve_handle(uid)
             found = next((m for m in members if handle and m["username"] == handle), None)
             if found is None:
                 return _failure(
@@ -414,7 +448,7 @@ async def _handle_ob_api(data: dict):
         is_g = action == "get_group_msg_history"
         key = "group_id" if is_g else "user_id"
         target = params.get(key)
-        handle = ob_ids.handle_of(target) if isinstance(target, int) else None
+        handle = ob_ids.resolve_handle(target)
         if not handle:
             return _failure(
                 f"未知的 {key}：{target}（这个 ID 不是 Flandora 分配过的会话）",
@@ -522,10 +556,16 @@ def render_message_event(message: Message, message_format: str) -> dict:
     if message.chat.is_group:
         group_id = ob_ids.contact_id(message.chat.handle)
         event["group_id"] = group_id
+        # 微信那边的原始群标识：客户端要按标识存取（例如写进自己的白名单）时不必再查一次
+        event["group_wxid"] = message.chat.handle
     event["user_id"] = user_id
     event["message"] = rendered if message_format == "array" else raw_cq
     event["raw_message"] = raw_cq
-    event["sender"] = {"user_id": user_id, "nickname": message.sender.nickname or str(user_id)}
+    event["sender"] = {
+        "user_id": user_id,
+        "nickname": message.sender.nickname or str(user_id),
+        "wxid": message.sender.handle or "",
+    }
     if message.chat.is_group:
         event["group_name"] = message.chat.name or str(event["group_id"])
         # 是否真实 @ 了机器人：由客户端决定要不要响应，桥接只如实标记

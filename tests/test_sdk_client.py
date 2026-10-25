@@ -196,6 +196,14 @@ def test_ws_send_group_msg_normalizes_chain(bridge):
     ]
 
 
+def test_ws_send_by_handle_keeps_the_handle(bridge):
+    with FlandoraWS(f"ws://127.0.0.1:{bridge.port}", timeout=5) as client:
+        client.send_private_msg(" wxid_zhangsan ", "hi")
+        client.send_group_msg("50071592949@chatroom", "hi")
+    assert bridge.received[-2]["params"]["user_id"] == "wxid_zhangsan"
+    assert bridge.received[-1]["params"]["group_id"] == "50071592949@chatroom"
+
+
 def test_ws_connect_refused_is_transport_error():
     client = FlandoraWS("ws://127.0.0.1:1", timeout=0.5)
     with pytest.raises(TransportError):

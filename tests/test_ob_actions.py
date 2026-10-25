@@ -50,10 +50,25 @@ def test_missing_required_param_is_reported():
 
 
 def test_wrong_param_type_is_reported():
-    resp = _call({"action": "send_group_msg", "params": {"group_id": "abc", "message": []}})
+    resp = _call({"action": "send_group_msg", "params": {"group_id": {"a": 1}, "message": []}})
     assert resp["status"] == "failed"
     assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
     assert "group_id" in resp["message"]
+
+
+def test_handle_is_accepted_where_id_is_expected():
+    """user_id / group_id 可以直接填微信标识，校验要放行（解析在派发层做）。"""
+    assert (
+        action_catalog.validate_params("send_private_msg", {"user_id": "wxid_abc", "message": []})
+        == []
+    )
+    assert (
+        action_catalog.validate_params(
+            "send_group_msg", {"group_id": "123@chatroom", "message": []}
+        )
+        == []
+    )
+    assert action_catalog.validate_params("send_private_msg", {"user_id": "", "message": []}) != []
 
 
 def test_bool_is_not_accepted_as_int():
@@ -89,3 +104,33 @@ def test_can_send_record_is_honest():
     resp = _call({"action": "can_send_record"})
     assert resp["status"] == "ok"
     assert resp["data"]["yes"] is False
+
+
+def test_contact_id_actions_round_trip(isolated_ids):
+    """标识 ↔ 整数 ID 既能在动作面互查，也能整表导出。"""
+    resp = _call({"action": "get_contact_id", "params": {"handle": "wxid_zhangsan"}})
+    assert resp["status"] == "ok"
+    oid = resp["data"]["id"]
+    assert resp["data"] == {"handle": "wxid_zhangsan", "id": oid}
+
+    resp = _call({"action": "get_contact_handle", "params": {"id": oid}})
+    assert resp["status"] == "ok"
+    assert resp["data"] == {"id": oid, "handle": "wxid_zhangsan"}
+
+    resp = _call({"action": "get_contact_ids"})
+    assert resp["status"] == "ok"
+    assert resp["data"] == {"count": 1, "items": [{"handle": "wxid_zhangsan", "id": oid}]}
+
+
+def test_get_contact_handle_reports_unknown_id(isolated_ids):
+    free = next(n for n in range(1, 5000) if isolated_ids.handle_of(n) is None)
+    resp = _call({"action": "get_contact_handle", "params": {"id": free}})
+    assert resp["status"] == "failed"
+    assert resp["retcode"] == action_catalog.RETCODE_NOT_FOUND
+    assert "未知的 id" in resp["message"]
+
+
+def test_get_contact_id_needs_a_handle(isolated_ids):
+    resp = _call({"action": "get_contact_id", "params": {"handle": "   "}})
+    assert resp["status"] == "failed"
+    assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM

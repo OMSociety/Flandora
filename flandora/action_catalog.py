@@ -9,6 +9,8 @@
   客户端确实没有对应能力（例如群管理、群文件）的，理由写在 ``wip`` 里如实返回给
   调用方，而不是让它以为操作生效了。
 - ``read_only`` 只描述「有没有副作用」，MCP 的只读模式据此拒绝写动作。
+- ``id`` 类型是 OneBot 的 ``user_id`` / ``group_id``：填整数 ID，也可以直接填微信标识
+  （wxid、``xxx@chatroom``），由派发层统一解析，客户端不必自己去换。
 - 参数声明只做存在性与类型校验；业务校验（例如群名映射、文件是否存在）留在各自
   handler 里。
 """
@@ -45,7 +47,10 @@ CATEGORIES = (
     CAT_EXTEND,
 )
 
-PARAM_TYPES = ("int", "string", "bool", "float", "list", "dict", "message")
+PARAM_TYPES = ("int", "id", "string", "bool", "float", "list", "dict", "message")
+
+# 类型的中文说法：`id` 是这一层的专用类型，报错时说清楚它接受什么
+TYPE_LABELS = {"id": "整数 ID 或微信标识（wxid / xxx@chatroom）"}
 
 
 @dataclass(frozen=True)
@@ -144,6 +149,25 @@ ACTIONS: tuple[Action, ...] = (
         summary="是否支持发送语音",
         read_only=True,
     ),
+    Action(
+        name="get_contact_id",
+        category=CAT_INFO,
+        summary="微信标识换成 OneBot 整数 ID（没见过的标识会分配一个并落盘）",
+        params=(P("handle", "string", required=True, desc="wxid 或 xxx@chatroom"),),
+    ),
+    Action(
+        name="get_contact_handle",
+        category=CAT_INFO,
+        summary="OneBot 整数 ID 反查微信标识",
+        params=(P("id", "id", required=True),),
+        read_only=True,
+    ),
+    Action(
+        name="get_contact_ids",
+        category=CAT_INFO,
+        summary="列出全部「微信标识 ↔ 整数 ID」映射",
+        read_only=True,
+    ),
     # ---------------------------------------------------------------- 消息
     Action(
         name="send_msg",
@@ -151,8 +175,8 @@ ACTIONS: tuple[Action, ...] = (
         summary="发送消息，按 message_type 自动选择私聊或群聊",
         params=(
             P("message_type", "string", required=True, desc="private 或 group"),
-            P("user_id", "int", desc="私聊对象"),
-            P("group_id", "int", desc="群聊对象"),
+            P("user_id", "id", desc="私聊对象"),
+            P("group_id", "id", desc="群聊对象"),
             P("message", "message", required=True, desc="消息段数组或 CQ 码字符串"),
             P("auto_escape", "bool", default=False, desc="为真时按纯文本发送，不解析 CQ 码"),
         ),
@@ -162,7 +186,7 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_MESSAGE,
         summary="发送私聊消息",
         params=(
-            P("user_id", "int", required=True),
+            P("user_id", "id", required=True),
             P("message", "message", required=True),
             P("auto_escape", "bool", default=False),
         ),
@@ -172,7 +196,7 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_MESSAGE,
         summary="发送群消息",
         params=(
-            P("group_id", "int", required=True),
+            P("group_id", "id", required=True),
             P("message", "message", required=True),
             P("auto_escape", "bool", default=False),
         ),
@@ -197,7 +221,7 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_MESSAGE,
         summary="拉取群聊历史消息",
         params=(
-            P("group_id", "int", required=True),
+            P("group_id", "id", required=True),
             P("count", "int", default=20, desc="最多 100 条"),
         ),
         read_only=True,
@@ -207,7 +231,7 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_MESSAGE,
         summary="拉取私聊历史消息",
         params=(
-            P("user_id", "int", required=True),
+            P("user_id", "id", required=True),
             P("count", "int", default=20, desc="最多 100 条"),
         ),
         read_only=True,
@@ -217,7 +241,7 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_MESSAGE,
         summary="发送群聊合并转发",
         params=(
-            P("group_id", "int", required=True),
+            P("group_id", "id", required=True),
             P("messages", "list", required=True),
         ),
         implemented=False,
@@ -228,7 +252,7 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_MESSAGE,
         summary="发送私聊合并转发",
         params=(
-            P("user_id", "int", required=True),
+            P("user_id", "id", required=True),
             P("messages", "list", required=True),
         ),
         implemented=False,
@@ -262,21 +286,21 @@ ACTIONS: tuple[Action, ...] = (
         name="get_stranger_info",
         category=CAT_FRIEND,
         summary="获取任意联系人资料",
-        params=(P("user_id", "int", required=True), P("no_cache", "bool", default=False)),
+        params=(P("user_id", "id", required=True), P("no_cache", "bool", default=False)),
         read_only=True,
     ),
     Action(
         name="get_friend_info",
         category=CAT_FRIEND,
         summary="获取好友资料（get_stranger_info 的别名）",
-        params=(P("user_id", "int", required=True),),
+        params=(P("user_id", "id", required=True),),
         read_only=True,
     ),
     Action(
         name="send_like",
         category=CAT_FRIEND,
         summary="给好友资料页点赞",
-        params=(P("user_id", "int", required=True), P("times", "int", default=1)),
+        params=(P("user_id", "id", required=True), P("times", "int", default=1)),
         implemented=False,
         wip=NOT_QQ,
     ),
@@ -284,7 +308,7 @@ ACTIONS: tuple[Action, ...] = (
         name="delete_friend",
         category=CAT_FRIEND,
         summary="删除好友",
-        params=(P("user_id", "int", required=True),),
+        params=(P("user_id", "id", required=True),),
         implemented=False,
         wip=NOT_QQ,
     ),
@@ -292,7 +316,7 @@ ACTIONS: tuple[Action, ...] = (
         name="set_friend_remark",
         category=CAT_FRIEND,
         summary="设置好友备注",
-        params=(P("user_id", "int", required=True), P("remark", "string", required=True)),
+        params=(P("user_id", "id", required=True), P("remark", "string", required=True)),
         implemented=False,
         wip=NOT_QQ,
     ),
@@ -308,14 +332,14 @@ ACTIONS: tuple[Action, ...] = (
         name="get_group_info",
         category=CAT_GROUP_INFO,
         summary="获取群资料（群名与成员数来自本地库）",
-        params=(P("group_id", "int", required=True), P("no_cache", "bool", default=False)),
+        params=(P("group_id", "id", required=True), P("no_cache", "bool", default=False)),
         read_only=True,
     ),
     Action(
         name="get_group_member_list",
         category=CAT_GROUP_INFO,
         summary="获取群成员列表（含群主标记）",
-        params=(P("group_id", "int", required=True), P("no_cache", "bool", default=False)),
+        params=(P("group_id", "id", required=True), P("no_cache", "bool", default=False)),
         read_only=True,
     ),
     Action(
@@ -323,8 +347,8 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_GROUP_INFO,
         summary="获取单个群成员资料",
         params=(
-            P("group_id", "int", required=True),
-            P("user_id", "int", required=True),
+            P("group_id", "id", required=True),
+            P("user_id", "id", required=True),
             P("no_cache", "bool", default=False),
         ),
         read_only=True,
@@ -333,7 +357,7 @@ ACTIONS: tuple[Action, ...] = (
         name="get_group_at_all_remain",
         category=CAT_GROUP_INFO,
         summary="查询剩余 @全体成员 次数",
-        params=(P("group_id", "int", required=True),),
+        params=(P("group_id", "id", required=True),),
         read_only=True,
         implemented=False,
         wip=NOT_QQ,
@@ -342,7 +366,7 @@ ACTIONS: tuple[Action, ...] = (
         name="get_group_honor_info",
         category=CAT_GROUP_INFO,
         summary="获取群荣誉（龙王、群聊之火等）",
-        params=(P("group_id", "int", required=True), P("type", "string", default="all")),
+        params=(P("group_id", "id", required=True), P("type", "string", default="all")),
         read_only=True,
         implemented=False,
         wip=NOT_QQ,
@@ -361,8 +385,8 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_GROUP_ADMIN,
         summary="踢出群成员",
         params=(
-            P("group_id", "int", required=True),
-            P("user_id", "int", required=True),
+            P("group_id", "id", required=True),
+            P("user_id", "id", required=True),
             P("reject_add_request", "bool", default=False),
         ),
         implemented=False,
@@ -373,8 +397,8 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_GROUP_ADMIN,
         summary="禁言群成员",
         params=(
-            P("group_id", "int", required=True),
-            P("user_id", "int", required=True),
+            P("group_id", "id", required=True),
+            P("user_id", "id", required=True),
             P("duration", "int", default=1800, desc="秒，0 表示解除"),
         ),
         implemented=False,
@@ -384,7 +408,7 @@ ACTIONS: tuple[Action, ...] = (
         name="set_group_whole_ban",
         category=CAT_GROUP_ADMIN,
         summary="全员禁言",
-        params=(P("group_id", "int", required=True), P("enable", "bool", default=True)),
+        params=(P("group_id", "id", required=True), P("enable", "bool", default=True)),
         implemented=False,
         wip=NOT_QQ,
     ),
@@ -393,8 +417,8 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_GROUP_ADMIN,
         summary="设置或取消群管理员",
         params=(
-            P("group_id", "int", required=True),
-            P("user_id", "int", required=True),
+            P("group_id", "id", required=True),
+            P("user_id", "id", required=True),
             P("enable", "bool", default=True),
         ),
         implemented=False,
@@ -405,8 +429,8 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_GROUP_ADMIN,
         summary="设置群名片",
         params=(
-            P("group_id", "int", required=True),
-            P("user_id", "int", required=True),
+            P("group_id", "id", required=True),
+            P("user_id", "id", required=True),
             P("card", "string", default="", desc="空字符串表示清除"),
         ),
         implemented=False,
@@ -416,7 +440,7 @@ ACTIONS: tuple[Action, ...] = (
         name="set_group_name",
         category=CAT_GROUP_ADMIN,
         summary="修改群名",
-        params=(P("group_id", "int", required=True), P("group_name", "string", required=True)),
+        params=(P("group_id", "id", required=True), P("group_name", "string", required=True)),
         implemented=False,
         wip=NOT_QQ,
     ),
@@ -424,7 +448,7 @@ ACTIONS: tuple[Action, ...] = (
         name="set_group_leave",
         category=CAT_GROUP_ADMIN,
         summary="退出群聊或解散群",
-        params=(P("group_id", "int", required=True), P("is_dismiss", "bool", default=False)),
+        params=(P("group_id", "id", required=True), P("is_dismiss", "bool", default=False)),
         implemented=False,
         wip=NOT_QQ,
     ),
@@ -433,8 +457,8 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_GROUP_ADMIN,
         summary="设置群头衔",
         params=(
-            P("group_id", "int", required=True),
-            P("user_id", "int", required=True),
+            P("group_id", "id", required=True),
+            P("user_id", "id", required=True),
             P("special_title", "string", default=""),
         ),
         implemented=False,
@@ -444,7 +468,7 @@ ACTIONS: tuple[Action, ...] = (
         name="set_group_anonymous",
         category=CAT_GROUP_ADMIN,
         summary="开启或关闭匿名聊天",
-        params=(P("group_id", "int", required=True), P("enable", "bool", default=True)),
+        params=(P("group_id", "id", required=True), P("enable", "bool", default=True)),
         implemented=False,
         wip=NOT_QQ,
     ),
@@ -452,7 +476,7 @@ ACTIONS: tuple[Action, ...] = (
         name="set_group_anonymous_ban",
         category=CAT_GROUP_ADMIN,
         summary="禁言匿名成员",
-        params=(P("group_id", "int", required=True), P("flag", "string", default="")),
+        params=(P("group_id", "id", required=True), P("flag", "string", default="")),
         implemented=False,
         wip=NOT_QQ,
     ),
@@ -488,8 +512,8 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_EXTEND,
         summary="拍一拍",
         params=(
-            P("user_id", "int", required=True),
-            P("group_id", "int", default=0, desc="0 表示私聊窗口"),
+            P("user_id", "id", required=True),
+            P("group_id", "id", default=0, desc="0 表示私聊窗口"),
         ),
         implemented=False,
         wip="拍一拍要双击成员头像，UIA 无法稳定定位头像；见 docs/needs-user.md",
@@ -498,7 +522,7 @@ ACTIONS: tuple[Action, ...] = (
         name="friend_poke",
         category=CAT_EXTEND,
         summary="拍一拍好友（send_poke 的别名）",
-        params=(P("user_id", "int", required=True),),
+        params=(P("user_id", "id", required=True),),
         implemented=False,
         wip="拍一拍要双击成员头像，UIA 无法稳定定位头像；见 docs/needs-user.md",
     ),
@@ -522,7 +546,7 @@ ACTIONS: tuple[Action, ...] = (
         name="get_essence_msg_list",
         category=CAT_EXTEND,
         summary="获取群精华消息列表",
-        params=(P("group_id", "int", required=True),),
+        params=(P("group_id", "id", required=True),),
         read_only=True,
         implemented=False,
         wip=NOT_QQ,
@@ -602,6 +626,11 @@ def lookup(name: str) -> Action | None:
 
 _TYPE_CHECKS = {
     "int": lambda v: isinstance(v, int) and not isinstance(v, bool),
+    # user_id / group_id：既能填 OneBot 整数 ID，也能填微信那边的原始标识。
+    # 只查「是不是整数或非空字符串」，ID 认不认得出来留给派发层（那里才知道上下文）。
+    "id": lambda v: (
+        (isinstance(v, int) and not isinstance(v, bool)) or (isinstance(v, str) and bool(v.strip()))
+    ),
     "string": lambda v: isinstance(v, str),
     "bool": lambda v: isinstance(v, bool),
     "float": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
@@ -629,7 +658,10 @@ def validate_params(action: Action | str, params: dict | None) -> list[str]:
             continue
         check = _TYPE_CHECKS[p.type]
         if not check(values[p.name]):
-            errors.append(f"参数 {p.name} 应为 {p.type}，收到 {type(values[p.name]).__name__}")
+            errors.append(
+                f"参数 {p.name} 应为 {TYPE_LABELS.get(p.type, p.type)}，"
+                f"收到 {type(values[p.name]).__name__}"
+            )
     return errors
 
 

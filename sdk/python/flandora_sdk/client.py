@@ -40,23 +40,30 @@ def _check(action: str, payload: Any) -> Any:
     return payload.get("data")
 
 
+def _contact(value: int | str) -> int | str:
+    """ID 参数：整数原样传，微信标识去掉首尾空白后传，怎么解析由 Flandora 决定。"""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    return str(value).strip()
+
+
 class _Actions:
     """放在客户端上的便捷方法；真正干活的是 `self.call`。"""
 
     def call(self, action: str, **params: Any) -> Any:  # pragma: no cover - 由子类实现
         raise NotImplementedError
 
-    def send_private_msg(self, user_id: int, message: Any, **extra: Any) -> Any:
+    def send_private_msg(self, user_id: int | str, message: Any, **extra: Any) -> Any:
         return self.call(
             "send_private_msg",
-            user_id=int(user_id),
+            user_id=_contact(user_id),
             message=msg.normalize(message),
             **extra,
         )
 
-    def send_group_msg(self, group_id: int, message: Any, **extra: Any) -> Any:
+    def send_group_msg(self, group_id: int | str, message: Any, **extra: Any) -> Any:
         return self.call(
-            "send_group_msg", group_id=int(group_id), message=msg.normalize(message), **extra
+            "send_group_msg", group_id=_contact(group_id), message=msg.normalize(message), **extra
         )
 
     def send_msg(self, message_type: str, message: Any, **target: Any) -> Any:

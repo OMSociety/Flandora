@@ -62,6 +62,52 @@
       "params": []
     },
     {
+      "name": "get_contact_id",
+      "aliases": [],
+      "category": "信息",
+      "summary": "微信标识换成 OneBot 整数 ID（没见过的标识会分配一个并落盘）",
+      "readOnly": false,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "handle",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": "wxid 或 xxx@chatroom"
+        }
+      ]
+    },
+    {
+      "name": "get_contact_handle",
+      "aliases": [],
+      "category": "信息",
+      "summary": "OneBot 整数 ID 反查微信标识",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "id",
+          "type": "id",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_contact_ids",
+      "aliases": [],
+      "category": "信息",
+      "summary": "列出全部「微信标识 ↔ 整数 ID」映射",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": []
+    },
+    {
       "name": "send_msg",
       "aliases": [],
       "category": "消息",
@@ -79,14 +125,14 @@
         },
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": false,
           "default": null,
           "desc": "私聊对象"
         },
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": false,
           "default": null,
           "desc": "群聊对象"
@@ -118,7 +164,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -150,7 +196,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -218,7 +264,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -243,7 +289,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -268,7 +314,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -293,7 +339,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -371,7 +417,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -396,7 +442,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -414,7 +460,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -439,7 +485,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -457,7 +503,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -500,7 +546,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -525,7 +571,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -550,14 +596,14 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
         },
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -582,7 +628,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -600,7 +646,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -635,14 +681,14 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
         },
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -667,14 +713,14 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
         },
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -699,7 +745,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -724,14 +770,14 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
         },
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -756,14 +802,14 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
         },
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -788,7 +834,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -813,7 +859,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -838,14 +884,14 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
         },
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -870,7 +916,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -895,7 +941,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -991,14 +1037,14 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
         },
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": false,
           "default": 0,
           "desc": "0 表示私聊窗口"
@@ -1016,7 +1062,7 @@
       "params": [
         {
           "name": "user_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""
@@ -1070,7 +1116,7 @@
       "params": [
         {
           "name": "group_id",
-          "type": "int",
+          "type": "id",
           "required": true,
           "default": null,
           "desc": ""

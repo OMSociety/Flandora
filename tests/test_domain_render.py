@@ -77,6 +77,9 @@ def test_group_name_loses_the_member_count_suffix(isolated_ids, monkeypatch):
     assert event["message_type"] == "group"
     assert isinstance(event["group_id"], int)
     assert isinstance(event["user_id"], int)
+    # 微信那边的原始标识一并给出去，客户端要按标识存东西时不必再查一次
+    assert event["group_wxid"] == "12345678@chatroom"
+    assert event["sender"]["wxid"] == "wxid_zhangsan"
 
 
 def test_is_mentioned_comes_from_the_raw_text(isolated_ids, monkeypatch):
@@ -94,9 +97,11 @@ def test_private_event_has_no_group_fields(isolated_ids, monkeypatch):
     event = pushed[0]
     assert event["message_type"] == "private"
     assert "group_id" not in event
+    assert "group_wxid" not in event
     assert "group_name" not in event
     assert "is_mentioned" not in event
     assert event["sender"]["nickname"] == "李四"
+    assert event["sender"]["wxid"] == "wxid_lisi"
 
 
 def test_sender_nickname_falls_back_to_the_integer_id(isolated_ids):

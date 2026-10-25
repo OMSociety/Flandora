@@ -125,6 +125,11 @@ class ContactIds:
                 candidate = candidate % ID_MAX + 1 if candidate < ID_MAX else ID_MIN
             raise RuntimeError(f"连续 {_PROBE_LIMIT} 个候选 ID 都被占用，{self.path} 可能已损坏")
 
+    def find(self, handle: str) -> int | None:
+        """查标识已分配的整数 ID，查不到返回 None（不分配）。"""
+        with self._lock:
+            return self._by_handle.get(handle)
+
     def handle(self, oid: int) -> str | None:
         """整数 ID 反查微信标识，查不到返回 None。"""
         with self._lock:
@@ -284,6 +289,37 @@ def contact_id(handle: str) -> int:
 def handle_of(oid: int) -> str | None:
     """OneBot 整数 ID → 微信标识。"""
     return contact_ids().handle(oid)
+
+
+def find_contact_id(handle: str) -> int | None:
+    """查标识已分配的整数 ID，查不到返回 None（不分配）。"""
+    return contact_ids().find(handle)
+
+
+def resolve_handle(value: object) -> str | None:
+    """把客户端给的「整数 ID 或微信标识」解析成微信标识，解析不出来返回 None。
+
+    数字按 OneBot 的 ``user_id`` / ``group_id`` 反查（认不出来就是没分配过的 ID）；
+    其余字符串本身就是微信标识（wxid、``xxx@chatroom``），原样返回，因此还没见过的
+    好友也能按标识直接发消息。纯数字字符串两边都像，先按标识查表：表里有的永远优先，
+    不会因为长得像数字就被当成别人的整数 ID。
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return handle_of(value)
+    if not isinstance(value, str):
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    if find_contact_id(text) is not None:
+        return text
+    digits = text[1:] if text[:1] in "+-" else text
+    if digits.isdigit():
+        oid = int(text)
+        return handle_of(oid) if ID_MIN <= oid <= ID_MAX else None
+    return text
 
 
 def ensure_message_id(talker: str, local_id: int, **kwargs) -> int:

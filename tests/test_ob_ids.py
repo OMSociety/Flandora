@@ -96,6 +96,39 @@ def test_empty_handle_is_rejected(tmp_path):
         ids.get("")
 
 
+def test_resolve_handle_accepts_both_shapes(isolated_ids):
+    """客户端可以给整数 ID，也可以直接给微信标识。"""
+    oid = isolated_ids.contact_id("wxid_zhangsan")
+    assert isolated_ids.resolve_handle(oid) == "wxid_zhangsan"
+    assert isolated_ids.resolve_handle(str(oid)) == "wxid_zhangsan"
+    assert isolated_ids.resolve_handle("wxid_zhangsan") == "wxid_zhangsan"
+    # 没见过的标识原样返回：还没打过照面的好友也能按 wxid 发消息
+    assert isolated_ids.resolve_handle("wxid_never_seen") == "wxid_never_seen"
+
+
+def test_resolve_handle_rejects_unknown_id(isolated_ids):
+    """没分配过的整数 ID 解析不出来：调用方要如实报错，不能拿这个数字去微信里搜。"""
+    free = next(n for n in range(1, 5000) if isolated_ids.handle_of(n) is None)
+    assert isolated_ids.resolve_handle(free) is None
+    assert isolated_ids.resolve_handle(str(free)) is None
+
+
+def test_resolve_handle_prefers_known_numeric_handle(isolated_ids):
+    """微信号可以全是数字：表里已有的标识优先于同名的整数 ID。"""
+    isolated_ids.contact_id("12345")
+    assert isolated_ids.resolve_handle("12345") == "12345"
+
+
+def test_resolve_handle_rejects_bad_shapes(isolated_ids):
+    for value in (None, True, "", "   ", [], 0):
+        assert isolated_ids.resolve_handle(value) is None
+
+
+def test_find_contact_id_does_not_allocate(isolated_ids):
+    assert isolated_ids.find_contact_id("wxid_nobody") is None
+    assert isolated_ids.contact_ids().items() == {}
+
+
 def test_message_id_ensure_is_idempotent(tmp_path):
     ids = MessageIds(str(tmp_path / "msg.db"))
     try:

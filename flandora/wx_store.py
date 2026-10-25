@@ -728,7 +728,7 @@ class WxStore:
         pattern = os.path.join(self.data_dir, "cache", "*", "Message", talker, "Bubble", name)
         return sorted(p for p in glob.glob(pattern) if os.path.isfile(p))
 
-    def _resolve_image(self, msg_md5: str, local_id: int = 0) -> str:
+    def _resolve_image(self, msg_md5: str, local_id: int = 0, *, talker: str = "") -> str:
         """按 md5 找到对应的 .dat 文件路径。
 
         磁盘文件名用的是**资源库里的 md5**，不一定等于消息 XML 里的 md5，所以按
@@ -738,6 +738,10 @@ class WxStore:
         2. 消息 XML 的 md5 直接匹配文件名；
         3. 用 `message_resource.db` 把 (会话, local_id) 映射到资源 md5 再匹配
            ——XML 的 md5 与资源 md5 在实测里并不相同，这是补上的关键一环。
+
+        第三级必须带会话：`message_local_id` 只是会话内的序号，不同会话会撞号
+        （实测 local_id=15 同时命中 filehelper 与当前会话），漏掉会话就会把别的
+        会话的同号图片推出去。
         """
         attach = os.path.join(self.data_dir, "msg", "attach")
         if not os.path.isdir(attach):
@@ -762,23 +766,32 @@ class WxStore:
         if hit:
             return hit
 
-        for cand in self._resource_md5s(local_id):
+        for cand in self._resource_md5s(local_id, talker=talker):
             hit = find(cand)
             if hit:
                 return hit
         raise WxStoreError(f"找不到图片文件（md5={msg_md5}, local_id={local_id}）")
 
-    def _resource_md5s(self, local_id: int) -> list[str]:
-        """资源库里与某条消息相关的 md5 候选。"""
-        if not local_id:
+    def _resource_md5s(self, local_id: int, *, talker: str = "") -> list[str]:
+        """资源库里与某条消息相关的 md5 候选（只认这条消息所在的会话）。"""
+        if not local_id or not talker:
+            # 没有会话就无从判断这份资源属于谁：宁可空手而归（图片退回占位符），
+            # 也不拿别的会话的同号图片顶上。
             return []
         try:
             con = self._con("message_resource.db")
         except WxStoreError:
             return []
         try:
+            row = con.execute(
+                "SELECT rowid FROM ChatName2Id WHERE user_name=?", (talker,)
+            ).fetchone()
+            if row is None:
+                return []
             rows = con.execute(
-                "SELECT packed_info FROM MessageResourceInfo WHERE message_local_id=?", (local_id,)
+                "SELECT packed_info FROM MessageResourceInfo"
+                " WHERE message_local_id=? AND chat_id=?",
+                (local_id, int(row[0])),
             ).fetchall()
         except sqlite3.Error:
             return []
@@ -806,7 +819,7 @@ class WxStore:
         self.image_xor_key = wx_image.sniff_xor_key(sample, self.image_key)
         return self.image_xor_key
 
-    def extract_image(self, msg_md5: str, local_id: int = 0) -> str | None:
+    def extract_image(self, msg_md5: str, local_id: int = 0, *, talker: str = "") -> str | None:
         """把一条图片消息还原成可读文件，返回落地路径；失败返回 None。
 
         解出来的图片放在工作目录的 `images/` 下，按 md5 命名并缓存：同一张图
@@ -819,7 +832,7 @@ class WxStore:
         if not self.image_ready():
             return None
         try:
-            src = self._resolve_image(msg_md5, local_id)
+            src = self._resolve_image(msg_md5, local_id, talker=talker)
         except WxStoreError as e:
             log.debug("定位图片失败：%s", e)
             return None

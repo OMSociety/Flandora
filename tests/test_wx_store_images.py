@@ -185,3 +185,44 @@ def test_extracted_image_is_cached(tmp_path):
     _write(_sibling(root, "_h.dat"), _make_dat(JPEG[:5] + b"\x09" * 100))
     assert store.extract_image(MD5) == first
     assert _extracted_bytes(first) == JPEG
+
+
+OTHER = "b" * 32
+
+
+def _resource_db(root: str, rows: list[tuple[str, str]]) -> None:
+    """造一个最小的 message_resource.db：每一行是 (会话名, 该会话里 local_id=15 的资源 md5)。"""
+    con = sqlite3.connect(os.path.join(root, "message_resource.db"))
+    con.execute("CREATE TABLE IF NOT EXISTS ChatName2Id (user_name TEXT, update_time INTEGER)")
+    con.execute(
+        "CREATE TABLE IF NOT EXISTS MessageResourceInfo"
+        " (message_id INTEGER, chat_id INTEGER, message_local_id INTEGER, packed_info BLOB)"
+    )
+    for index, (user_name, md5) in enumerate(rows, start=1):
+        con.execute("INSERT INTO ChatName2Id (user_name, update_time) VALUES (?, 0)", (user_name,))
+        con.execute(
+            "INSERT INTO MessageResourceInfo (message_id, chat_id, message_local_id, packed_info)"
+            " VALUES (0, ?, 15, ?)",
+            (index, b'\x12"\n ' + md5.encode()),
+        )
+    con.commit()
+    con.close()
+
+
+def test_resource_lookup_is_scoped_to_the_talker(tmp_path):
+    """local_id 只是会话内序号：别的会话的同号资源不能拿来顶替（真机踩过）。"""
+    root = _account(tmp_path)
+    _resource_db(root, [("other_talker", OTHER), (TALKER, MD5)])
+    _write(_main_path(root), _make_dat(JPEG))
+    _write(os.path.join(os.path.dirname(_main_path(root)), f"{OTHER}.dat"), _make_dat(PNG))
+    out = _store(root).extract_image("f" * 32, 15, talker=TALKER)
+    assert out and out.endswith(".jpg"), out
+    assert _extracted_bytes(out) == JPEG
+
+
+def test_missing_talker_disables_the_resource_fallback(tmp_path):
+    """拿不到会话就别猜：宁可退回占位符，也不推别的会话的同号资源。"""
+    root = _account(tmp_path)
+    _resource_db(root, [("other_talker", OTHER)])
+    _write(os.path.join(os.path.dirname(_main_path(root)), f"{OTHER}.dat"), _make_dat(PNG))
+    assert _store(root).extract_image("f" * 32, 15) is None

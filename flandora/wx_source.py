@@ -213,7 +213,7 @@ class WxLocalSource:
         # 图片的正文换成路径（分派与展示都用得到），表情的正文保留占位符+md5，
         # 由 process_emoji_message 决定要不要用描述替换。
         if msg["kind"] in ("image", "emoji"):
-            path = self._image_path_for(msg)
+            path = self._image_path_for(msg, username)
             if path:
                 data["imagePath"] = path
                 if msg["kind"] == "image":
@@ -221,8 +221,12 @@ class WxLocalSource:
                     data["content"] = f"{IMAGE_PLACEHOLDER} {path}"
         return data
 
-    def _image_path_for(self, msg) -> str:
-        """按消息内容里的 md5 还原图片。失败返回空串。"""
+    def _image_path_for(self, msg, talker: str = "") -> str:
+        """按消息内容里的 md5 还原图片。失败返回空串。
+
+        `talker` 是这条消息所在的会话：资源库里的消息序号是会话内的，缺了它就会
+        把别的会话的同号图片当成这条消息的图。
+        """
         if not self.store.image_ready():
             return ""
         body = msg.get("raw") or msg.get("text") or ""
@@ -230,7 +234,8 @@ class WxLocalSource:
         if not m:
             return ""
         try:
-            return self.store.extract_image(m.group(1).lower(), int(msg.get("local_id") or 0)) or ""
+            md5 = m.group(1).lower()
+            return self.store.extract_image(md5, int(msg.get("local_id") or 0), talker=talker) or ""
         except Exception as exc:  # noqa: BLE001 - 单张图失败不该影响整条消息
             log.debug("图片还原失败：%s", exc)
             return ""

@@ -48,8 +48,12 @@ class Store(Protocol):
     def image_ready(self) -> bool:
         """图片密钥是否就绪（没就绪时图片只有占位符）。"""
 
-    def extract_image(self, msg_md5: str, local_id: int = 0) -> str | None:
-        """把图片的 .dat 解成本地文件，返回路径；解不出返回 None。"""
+    def extract_image(self, msg_md5: str, local_id: int = 0, *, talker: str = "") -> str | None:
+        """把图片的 .dat 解成本地文件，返回路径；解不出返回 None。
+
+        `talker` 是消息所在会话：本地库里的消息序号只在会话内唯一，缺了它就可能
+        定位到别的会话的同号图片。
+        """
 
     def refresh(self, force: bool = False) -> bool:
         """重新解密并载入本地库。

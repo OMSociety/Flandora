@@ -694,7 +694,7 @@ class BridgeManagerApp:
             self.root.after(500, self._poll_status)
 
     def _count_clients(self) -> int:
-        """7999 上 MaiBot 客户端连接数（Established 数）"""
+        """7999 上客户端连接数（Established 数）"""
         if not IS_WINDOWS:
             return 0
         try:

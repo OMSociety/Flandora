@@ -1,6 +1,6 @@
 ---
 name: Flandora
-description: 微信与 MaiBot 桥接控制台，微信绿 + 白/黑明暗主题的运维界面
+description: 微信与 OneBot 桥接控制台，微信绿 + 白/黑明暗主题的运维界面
 colors:
   primary: "#07c160"
   primary-strong: "#0b7f46"

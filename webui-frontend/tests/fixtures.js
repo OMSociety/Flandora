@@ -207,7 +207,7 @@ export async function mockApi(page, options = {}) {
     ] })
     if (url.pathname === '/api/logs') return json({ logs: [
       { ts: 1, level: 'INFO', text: '2026-10-24 09:30:01 [INFO] OneBot WebSocket listening on 127.0.0.1:7999' },
-      { ts: 2, level: 'INFO', text: '2026-10-24 09:30:03 [INFO] MaiBot adapter connected (1 client)' },
+      { ts: 2, level: 'INFO', text: '2026-10-24 09:30:03 [INFO] OneBot client connected (1 client)' },
       { ts: 3, level: 'WARNING', text: '2026-10-24 09:30:09 [WARNING] Example diagnostic entry for layout verification' },
       { ts: 4, level: 'ERROR', text: '2026-10-24 09:30:12 [ERROR] Example recoverable connection error' },
     ] })

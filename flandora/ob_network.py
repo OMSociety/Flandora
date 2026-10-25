@@ -2,9 +2,9 @@
 
 一个桥接实例可以同时挂多个入口，每个入口一行配置（``ob_networks``）：
 
-- ``ws_server``：等客户端连进来（最常用，MaiBot 一类正向 WS 客户端）。
+- ``ws_server``：等客户端连进来（最常用，机器人框架作为正向 WS 客户端）。
 - ``http_server``：暴露 HTTP API，客户端每次 POST 一个动作。
-- ``ws_client``：主动连到机器人框架的 WS 服务端（AstrBot / NoneBot2 的反向 WS）。
+- ``ws_client``：主动连到框架的 WS 服务端（框架侧只开反向 WS 接入时用）。
 - ``http_client``：把事件 POST 到框架的 HTTP 端点（Event 上报）。
 
 每种入口都有 ``role``：``api`` 只处理动作请求，``event`` 只推事件，``universal``

@@ -12,7 +12,7 @@ web
 
 ## Product Purpose
 
-将个人微信的消息收发射成标准 OneBot v11 通道，供 MaiBot 使用。WebUI 使本机桥接的运行、诊断和首次配置可以在一个控制台内完成。
+将个人微信的消息收发映射成标准 OneBot v11 通道，供 OneBot v11 客户端使用。WebUI 使本机桥接的运行、诊断和首次配置可以在一个控制台内完成。
 
 ## Positioning
 
@@ -20,7 +20,7 @@ web
 
 ## Operating Context
 
-本地 Windows 桌面与浏览器；微信 4.x、MaiBot 及其微信适配器。高频工作是查看连接与收发状态、检索消息日志、保存配置；低频但高风险的工作是窗口绑定、取钥、启停与重启。
+本地 Windows 桌面与浏览器；微信 4.x 与各类 OneBot v11 客户端。高频工作是查看连接与收发状态、检索消息日志、保存配置；低频但高风险的工作是窗口绑定、取钥、启停与重启。
 
 ## Capabilities and Constraints
 
@@ -28,7 +28,7 @@ web
 
 ## Brand Commitments
 
-产品名 Flandora，描述为「微信 ↔ 麦麦 桥接控制台」。本次视觉参考为用户指定的 SnowLuma WebUI；主题采用绿色与白色／黑色，默认跟随系统，并允许手动切换明暗。
+产品名 Flandora，描述为「微信 ↔ OneBot 桥接控制台」。本次视觉参考为用户指定的 SnowLuma WebUI；主题采用绿色与白色／黑色，默认跟随系统，并允许手动切换明暗。
 
 ## Evidence on Hand
 

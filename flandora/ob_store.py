@@ -73,6 +73,12 @@ _COLUMNS = (
 )
 
 
+def _local_hour_start(ts: float) -> int:
+    """本地时区下 ``ts`` 所在那一小时的起点（Unix 秒）。"""
+    lt = time.localtime(ts)
+    return int(time.mktime((lt.tm_year, lt.tm_mon, lt.tm_mday, lt.tm_hour, 0, 0, 0, 0, -1)))
+
+
 class MessageStore:
     """推送过的事件按 ``message_id`` 存档，可按 ID 取、按会话列、按文本搜。"""
 
@@ -210,6 +216,62 @@ class MessageStore:
             "oldest": int(row["oldest"] or 0),
             "newest": int(row["newest"] or 0),
         }
+
+    # ---------- 面板统计（按 time 聚合，读的是长期事实） ----------
+
+    def counts_since(self, since: float) -> dict:
+        """``since`` 之后的条数：``events`` 是全部推送事件，``messages`` 只算消息类。
+
+        面板的「今日消息」用它：消息类对应「接收消息」，全部对应「已推送事件」。
+        """
+        with self._lock:
+            row = self._con.execute(
+                "SELECT COUNT(*) AS events,"
+                " SUM(CASE WHEN post_type = 'message' THEN 1 ELSE 0 END) AS messages"
+                " FROM messages WHERE time >= ?",
+                (int(since),),
+            ).fetchone()
+        return {"events": int(row["events"] or 0), "messages": int(row["messages"] or 0)}
+
+    def hourly_messages_since(self, since: float) -> dict:
+        """``since`` 之后按小时分桶的消息条数，键是那一小时的起点（本地时区，Unix 秒）。"""
+        with self._lock:
+            rows = self._con.execute(
+                "SELECT time FROM messages WHERE time >= ? AND post_type = 'message'",
+                (int(since),),
+            ).fetchall()
+        buckets: dict[int, int] = {}
+        for row in rows:
+            start = _local_hour_start(row["time"])
+            buckets[start] = buckets.get(start, 0) + 1
+        return buckets
+
+    def active_chats_since(self, since: float, limit: int = 10) -> list:
+        """``since`` 之后发消息最多的会话，多的在前。
+
+        群按 ``group_id`` 归并、私聊按 ``user_id`` 归并（私聊取负号，与群 ID 不撞）。
+        名称只取存档里写下的群名/昵称：查不到就是空串，由调用方拿 ``id`` 去名字
+        索引里再问一次——存档不替上层决定显示什么。
+        """
+        limit = max(1, min(int(limit or 10), 100))
+        with self._lock:
+            rows = self._con.execute(
+                "SELECT group_id, group_name, user_id, nickname FROM messages"
+                " WHERE time >= ? AND post_type = 'message'",
+                (int(since),),
+            ).fetchall()
+        chats: dict[int, dict] = {}
+        for row in rows:
+            group_id = int(row["group_id"] or 0)
+            user_id = int(row["user_id"] or 0)
+            key = group_id if group_id else -user_id
+            item = chats.get(key)
+            if item is None:
+                name = str(row["group_name"] or "") if group_id else str(row["nickname"] or "")
+                chats[key] = {"name": name, "id": group_id or user_id, "count": 1}
+            else:
+                item["count"] += 1
+        return sorted(chats.values(), key=lambda c: (-c["count"], c["id"]))[:limit]
 
     # ---------- 清理（只由使用者显式触发，见模块说明） ----------
 

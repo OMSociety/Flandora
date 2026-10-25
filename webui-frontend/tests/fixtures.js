@@ -196,7 +196,7 @@ export async function mockApi(page, options = {}) {
       return json({ ok: true, action: body.action, ...(answers[body.action] || {}) })
     }
     if (url.pathname === '/api/stats') return json({
-      counters: { recv: 128, pushed: 116, sent: 42 },
+      today: { recv: 128, pushed: 116 },
       hourly: Array.from({ length: 24 }, (_, i) => ({ hour: String(i), in: (i * 7) % 21, out: (i * 3) % 12 })),
       top_contacts: [{ contact: '文件传输助手', count: 46 }, { contact: '周末读书会', count: 31 }, { contact: '桥接测试群', count: 18 }],
     })

@@ -159,3 +159,48 @@ def test_archive_failure_does_not_block_push(isolated_store, monkeypatch):
     monkeypatch.setattr(ob_protocol, "push_event_broadcast", lambda e: pushed.append(e) or 1)
     assert ob_protocol.push_event(_event(78)) == 1
     assert pushed[0]["message_id"] == 78
+
+
+def _at(mid: int, when: float, **kwargs) -> dict:
+    """把时间换成指定值：面板统计按 ``time`` 聚合，用例要能自己挑时刻。"""
+    event = _event(mid, **kwargs)
+    event["time"] = int(when)
+    return event
+
+
+def test_counts_since_separates_messages_from_all_events(tmp_path):
+    store = _store(tmp_path)
+    store.save_event(_at(1, 1000))
+    store.save_event(_at(2, 2000))
+    store.save_event({"message_id": 3, "time": 2500, "post_type": "notice"})
+    assert store.counts_since(0) == {"events": 3, "messages": 2}
+    assert store.counts_since(1500) == {"events": 2, "messages": 1}
+    assert store.counts_since(9999) == {"events": 0, "messages": 0}
+    store.close()
+
+
+def test_hourly_messages_bucket_by_local_hour(tmp_path):
+    store = _store(tmp_path)
+    hour = ob_store._local_hour_start(1792952400)
+    store.save_event(_at(1, hour + 10))
+    store.save_event(_at(2, hour + 20))
+    store.save_event(_at(3, hour + 3600))
+    store.save_event({"message_id": 4, "time": hour + 30, "post_type": "notice"})
+    assert store.hourly_messages_since(0) == {hour: 2, hour + 3600: 1}
+    assert store.hourly_messages_since(hour + 100) == {hour + 3600: 1}
+    store.close()
+
+
+def test_active_chats_merges_group_and_private_separately(tmp_path):
+    store = _store(tmp_path)
+    store.save_event(_at(1, 100, group=100))
+    store.save_event(_at(2, 200, group=100))
+    store.save_event(_at(3, 300, user=7))
+    store.save_event(_at(4, 400, group=200, user=8))
+    store.save_event({"message_id": 5, "time": 500, "post_type": "notice"})
+
+    chats = store.active_chats_since(0)
+    assert [(c["id"], c["count"]) for c in chats] == [(100, 2), (7, 1), (200, 1)]
+    assert [c["name"] for c in chats] == ["测试群", "张三", "测试群"]
+    assert [c["id"] for c in store.active_chats_since(0, limit=1)] == [100]
+    store.close()

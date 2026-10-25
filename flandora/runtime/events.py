@@ -87,11 +87,6 @@ class EventBus:
         with self._lock:
             return dict(self.counters)
 
-    def messages_and_counters(self) -> tuple[list[dict], dict[str, int]]:
-        """统计页要的两份视图：同一把锁下取出，计数与消息列表不会来自两个时刻。"""
-        with self._lock:
-            return list(self.messages), dict(self.counters)
-
     def panel_snapshot(self) -> dict:
         """面板新连接的首帧：历史日志与最近消息在同一把锁下取出。"""
         with self._lock:

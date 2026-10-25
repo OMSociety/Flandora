@@ -8,7 +8,7 @@ import Modal from '../components/Modal.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import AppIcon from '../components/AppIcon.vue'
 
-const stats = ref({ counters: {}, hourly: [], top_contacts: [] })
+const stats = ref({ today: {}, hourly: [], top_contacts: [] })
 const busy = ref(false)
 const winModal = ref(false)
 const windows = ref([])
@@ -64,7 +64,7 @@ async function applyControl(action) {
 }
 async function loadStats() {
   const res = await get('/api/stats')
-  if (res.ok && res.data) stats.value = { counters: res.data.counters || {}, hourly: res.data.hourly || [], top_contacts: res.data.top_contacts || [] }
+  if (res.ok && res.data) stats.value = { today: res.data.today || {}, hourly: res.data.hourly || [], top_contacts: res.data.top_contacts || [] }
   else toast('加载消息统计失败', 'error')
 }
 onMounted(() => { loadStats() })
@@ -94,11 +94,11 @@ onMounted(() => { loadStats() })
     <div class="dashboard-grid">
       <div class="main-column">
         <section class="card activity-card">
-          <div class="section-head"><h3 class="card-title">今日消息</h3><span class="section-note">{{ fmt(status.counters.recv) }} 次接收</span></div>
-          <div class="metric-grid"><div><strong>{{ fmt(status.counters.recv) }}</strong><span><i class="metric-dot received"></i>接收消息</span></div><div><strong>{{ fmt(status.counters.pushed) }}</strong><span><i class="metric-dot pushed"></i>已推送事件</span></div><div><strong>{{ fmt(status.counters.sent) }}</strong><span><i class="metric-dot sent"></i>发送消息</span></div></div>
+          <div class="section-head"><h3 class="card-title">今日消息</h3><span class="section-note">{{ fmt(stats.today.recv) }} 次接收</span></div>
+          <div class="metric-grid"><div><strong>{{ fmt(stats.today.recv) }}</strong><span><i class="metric-dot received"></i>接收消息</span></div><div><strong>{{ fmt(stats.today.pushed) }}</strong><span><i class="metric-dot pushed"></i>已推送事件</span></div><div><strong>{{ fmt(status.counters.sent) }}</strong><span><i class="metric-dot sent"></i>发送（本次运行）</span></div></div>
           <div v-if="status.counters.dropped > 0" class="drop-note"><AppIcon name="CircleAlert" :size="14" />{{ fmt(status.counters.dropped) }} 条消息被丢弃</div>
         </section>
-        <section class="card chart-card"><div class="section-head"><h3 class="card-title">24 小时消息量</h3><span class="section-note">按小时统计</span></div><HourlyBarChart :data="stats.hourly" /><div v-if="!stats.hourly?.length" class="chart-empty">暂无可展示的消息统计</div></section>
+        <section class="card chart-card"><div class="section-head"><h3 class="card-title">24 小时消息量</h3><span class="section-note">按小时统计 · 发送为本次运行</span></div><HourlyBarChart :data="stats.hourly" /><div v-if="!stats.hourly?.length" class="chart-empty">暂无可展示的消息统计</div></section>
       </div>
       <aside class="side-column">
         <section class="card contacts-card"><div class="section-head"><h3 class="card-title">活跃联系人</h3><AppIcon name="MoreHorizontal" :size="17" /></div><div v-if="stats.top_contacts?.length" class="contacts"><div v-for="(c, i) in stats.top_contacts" :key="i" class="contact-row"><span class="rank">{{ String(i + 1).padStart(2, '0') }}</span><span class="cname">{{ c.contact }}</span><span class="ccount">{{ fmt(c.count) }}</span></div></div><div v-else class="empty"><AppIcon name="MessagesSquare" :size="24" /><span>开始对话后，活跃联系人会显示在这里。</span></div></section>

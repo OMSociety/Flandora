@@ -31,11 +31,7 @@ import threading
 import time
 from ctypes import wintypes
 
-try:
-    from . import config
-except Exception:
-    config = None
-
+from . import config
 from .win32 import windows as win32_windows
 
 log = logging.getLogger("flandora")

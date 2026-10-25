@@ -8,22 +8,18 @@
 
 import logging
 
+from . import config
 from .uia_sender import UiaSender
-
-try:
-    from . import config
-except Exception:
-    config = None
 
 log = logging.getLogger("flandora")
 
 
 def create_sender():
     """创建 UIA 消息发送器"""
-    allow_steal = bool(getattr(config, "ALLOW_FOREGROUND_STEAL", False))
+    allow_steal = bool(config.ALLOW_FOREGROUND_STEAL)
     desktop = ""
-    if bool(getattr(config, "ISOLATED_DESKTOP", False)):
-        desktop = getattr(config, "ISOLATED_DESKTOP_NAME", "FlandoraSandbox")
+    if bool(config.ISOLATED_DESKTOP):
+        desktop = config.ISOLATED_DESKTOP_NAME
         log.info(
             "使用 UIA 发送消息（隔离桌面 %s：微信在前台切换只发生在该桌面，不会打扰用户的桌面）",
             desktop,

@@ -138,6 +138,7 @@ def _sender(user32=None):
     sender._last_error = ""
     sender._fg_before = 0
     sender._attached = False
+    sender.isolated_desktop = ""  # 默认走「同桌面」那套（隔离桌面的行为单独测）
     target = user32 if user32 is not None else _User32()
     sender._user32_inst = lambda: _Dll(target)
     return sender
@@ -275,6 +276,18 @@ def test_mismatch_window_handles_a_missing_tail():
     info = uia_sender.mismatch_window("abcdef\n", "abcdef")
     assert "第 6 个字起不同" in info
     assert "长度 7/6" in info
+
+
+def test_isolated_desktop_never_touches_the_foreground(caplog):
+    """隔离桌面里只有微信一个窗口、没人看：不还前台，也不报警。"""
+    sender = _sender()
+    sender.isolated_desktop = "FlandoraSandbox"
+    sender._fg_before = 424242
+    sender._raise_window = lambda hwnd: pytest_fail("隔离桌面模式不该再动前台")
+    sender._foreground_window = lambda: 999
+    with caplog.at_level(logging.WARNING, logger="flandora"):
+        sender._release_foreground()
+    assert not [r for r in caplog.records if "前台没有还给原窗口" in r.getMessage()]
 
 
 def test_a_failed_foreground_restore_is_reported_once(caplog):

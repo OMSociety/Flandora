@@ -749,9 +749,14 @@ class UiaSender(BaseSender):
         投递输入会把微信升到前台；发完立刻还回去，用户看到的是一次短暂切换而不是
         前台被占住。发送前的前台本来就是微信、或那个窗口已经关掉时无需处理。
 
+        隔离桌面模式下不还：那张桌面上只有微信一个窗口、没人看，没有「被占住的前台」
+        要还，还不上时还要白等 1 秒轮询。
+
         还原失败不影响发送结果。失败时把「发送前的前台」清掉：一次发送里每步投递
         之后都会调这里，同一次失败没必要重复报，也不用再试。
         """
+        if self.isolated_desktop:
+            return
         if not hwnd or hwnd == self._hwnd:
             return
         if self._foreground_window() == hwnd:

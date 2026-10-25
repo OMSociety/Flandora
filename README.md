@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/assets/readme/hero.svg" width="100%" alt="Flandora 把微信个人号接成标准的 OneBot v11 服务端" />
+  <img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/assets/readme/hero.svg" width="100%" alt="Flandora 把微信个人号接成 OneBot v11 服务端" />
 </p>
 
 <p align="center">
@@ -21,19 +21,10 @@
 
 Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录的瞬间截获本机数据库口令，只读解密聊天库收取消息，并以账号本人身份在隔离桌面上投递回复，对外提供 [OneBot v11](https://github.com/botuniverse/onebot-11) 正向 WebSocket 服务端与浏览器控制台。
 
-> **提示**：Flandora 是独立的第三方项目，与腾讯 / 微信无隶属或授权关系。项目仅供学习与技术研究，请遵守《微信软件许可及服务协议》及适用法律；以自动化方式驱动自己的客户端存在账号被限制或封禁的风险，软件按「现状」提供，使用风险自负。详见[使用边界与许可](#使用边界与许可)。
-
-## 核心能力
-
-| 场景 | 能力 |
-| --- | --- |
-| 收件 | 登录瞬间取钥；解密副本只读轮询；私聊与群聊的文本、图片、表情、语音占位；群消息全量上报 |
-| 发送 | 文本、图片、文件、群内 @ 提及、语音（mp3 卡片）与视频（文件形式）；默认在隔离桌面投递；发送前清空输入框并核对回显 |
-| OneBot v11 | 四类网络入口（WS / HTTP 服务端、反向 WS、HTTP 上报）可同时开启；消息段与 CQ 码双向编解码；`is_mentioned` 如实标记是否被 @ |
-| 群与身份 | 群内按发言人拆分 `user_id`；群名映射；多昵称识别 |
-| 取钥 | 四步向导：免责声明、数据库口令、图片密钥、校验；口令与密钥由 Windows DPAPI 加密落盘；重启后自动认出盘上已就位的口令与密钥，不会退回重取 |
-| 隔离桌面 | 微信跑在独立的 Windows 桌面上；重启后接管仍在运行的实例；需要时由你点按钮结束 |
-| 控制台 | 仪表盘、消息记录、节点配置、微信画面、取钥向导、运行日志、调试面板、系统设置；明暗两套主题 |
+> [!CAUTION]
+> Flandora 是独立的第三方项目，与腾讯 / 微信无隶属或授权关系。项目仅供学习与技术研究，请遵守《微信软件许可及服务协议》及适用法律；以自动化方式驱动自己的客户端存在账号被限制或封禁的风险，软件按「现状」提供，使用风险自负。详见[使用边界与许可](#使用边界与许可)。
+>
+> **Disclaimer:** Flandora is an independent third-party project, not affiliated with or authorized by Tencent / WeChat. It is provided for study and research only, "as is" and without warranty, and you are responsible for complying with the applicable laws and the WeChat terms of service.
 
 ## 快速开始
 
@@ -56,8 +47,6 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
   "token": ""
 }
 ```
-
-> **提示**：程序没有购买代码签名证书，Windows SmartScreen 会拦一次：点「更多信息」→「仍要运行」。便携包的四个 exe 必须放在同一目录，建议放在不含中文和空格的路径。
 
 > **提示**：`ob_server_token` 与客户端 `token` 必须一致。留空表示不校验鉴权，此时服务端只监听 `127.0.0.1`；要让别的机器连进来，改 `ob_server_host`、在防火墙放行 7999，并务必填一串随机 token。
 
@@ -87,11 +76,6 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 ## 鸣谢与致谢
 
-- [WeChat-Onebot-Bridge](https://github.com/jessiongod/wechat-onebot-bridge)：本仓库的前身与上游，收件、发送与 OneBot 协议层的早期设计来自这个项目
-- [WeFlow](https://github.com/hicccc77/WeFlow)：上游的收件链路基于它的本地微信数据接口；本仓库改为只读解密本地库，不再依赖它运行
-- [OneBot v11](https://github.com/botuniverse/onebot-11)：对外提供的事件与动作遵循这份协议规范
-- [SnowLuma](https://github.com/SnowLuma/SnowLuma)：优秀的 OneBot v11 服务端实现，反向 WebSocket 的入口形态、连接角色与握手细节参考了它的做法
-
-<p align="center">
-  <a href="https://github.com/OMSociety/Flandora/graphs/contributors"><img src="https://contrib.rocks/image?repo=OMSociety/Flandora" alt="Flandora 贡献者" /></a>
-</p>
+- [WeChat-Onebot-Bridge](https://github.com/jessiongod/wechat-onebot-bridge)：本仓库的前身，部分早期设计来自这个项目
+- [OneBot v11](https://github.com/botuniverse/onebot-11)：事件与动作遵循的协议规范
+- [SnowLuma](https://github.com/SnowLuma/SnowLuma)：优秀的 OneBot v11 服务端实现，本项目多有参考

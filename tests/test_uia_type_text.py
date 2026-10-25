@@ -296,8 +296,8 @@ def test_a_failed_foreground_restore_is_reported_once(caplog):
     sender._fg_before = 424242
     sender._raise_window = lambda hwnd: False
     sender._foreground_window = lambda: 999
-    sender._window_alive = lambda hwnd: True
-    sender._window_class = lambda hwnd: "FakeWindowClass"
+    sender._hwnd_alive = lambda hwnd: True
+    sender._hwnd_class = lambda hwnd: "FakeWindowClass"
     with caplog.at_level(logging.WARNING, logger="flandora"):
         sender._release_foreground()
         sender._release_foreground()
@@ -313,8 +313,8 @@ def test_foreground_restore_says_when_the_target_is_gone(caplog):
     sender._fg_before = 424242
     sender._raise_window = lambda hwnd: False
     sender._foreground_window = lambda: 999
-    sender._window_alive = lambda hwnd: False
-    sender._window_class = lambda hwnd: ""
+    sender._hwnd_alive = lambda hwnd: False
+    sender._hwnd_class = lambda hwnd: ""
     with caplog.at_level(logging.WARNING, logger="flandora"):
         sender._release_foreground()
     line = next(r.getMessage() for r in caplog.records if "前台没有还给原窗口" in r.getMessage())

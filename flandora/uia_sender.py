@@ -682,8 +682,8 @@ class UiaSender(BaseSender):
             return 0
 
     @classmethod
-    def _window_alive(cls, hwnd: int) -> bool:
-        """窗口句柄是否还指向一个存在的窗口。"""
+    def _hwnd_alive(cls, hwnd: int) -> bool:
+        """指定窗口句柄是否还指向一个存在的窗口（注意与实例方法 _window_alive 区分）。"""
         if not hwnd:
             return False
         try:
@@ -692,8 +692,8 @@ class UiaSender(BaseSender):
             return False
 
     @classmethod
-    def _window_class(cls, hwnd: int) -> str:
-        """窗口类名（日志里认人用），取不到返回空串。"""
+    def _hwnd_class(cls, hwnd: int) -> str:
+        """指定窗口的类名（日志里认人用），取不到返回空串。"""
         try:
             buf = ctypes.create_unicode_buffer(256)
             cls._user32_inst().GetClassNameW(hwnd, buf, 256)
@@ -766,8 +766,8 @@ class UiaSender(BaseSender):
         self._fg_before = 0
         log.warning(
             f"前台没有还给原窗口（消息本身已发出）：目标 hwnd={hwnd}"
-            f"（类名 {self._window_class(hwnd) or '取不到'}、"
-            f"{'还在' if self._window_alive(hwnd) else '已不存在'}），"
+            f"（类名 {self._hwnd_class(hwnd) or '取不到'}、"
+            f"{'还在' if self._hwnd_alive(hwnd) else '已不存在'}），"
             f"当前前台 hwnd={self._foreground_window()}"
         )
 

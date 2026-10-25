@@ -16,6 +16,9 @@
 ``__version__ = "1.2.3"``、pyproject 的 ``version = "1.2.3"``）。出现在管理清单与豁免清单
 之外的文件里就算漂移：那意味着又多出一份手工维护的版本号。
 
+虚拟环境目录不属于扫描范围：venv/virtualenv 都会在根目录写 ``pyvenv.cfg``，按这个标记跳过，
+里面第三方包的版本字符与本项目的发布版本无关。
+
 用法：
 
     python tools/sync_version.py           写：把各处对齐到包内版本
@@ -146,6 +149,11 @@ EXEMPT_PREFIXES: tuple[tuple[str, str], ...] = (
 )
 
 
+def _is_virtualenv(path: str) -> bool:
+    """目录是不是 Python 虚拟环境（venv 与 virtualenv 都写 pyvenv.cfg）。"""
+    return os.path.isfile(os.path.join(path, "pyvenv.cfg"))
+
+
 def _read(root: str, rel: str) -> str:
     with open(os.path.join(root, rel), encoding="utf-8") as fh:
         return fh.read()
@@ -241,7 +249,11 @@ def check(root: str = ROOT) -> list[str]:
     # 4. 全仓库扫描：管理清单与豁免清单之外不许再出现发布版本字面量
     managed = _managed_paths()
     for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(d for d in dirnames if d not in SCAN_SKIP_DIRS)
+        dirnames[:] = sorted(
+            d
+            for d in dirnames
+            if d not in SCAN_SKIP_DIRS and not _is_virtualenv(os.path.join(dirpath, d))
+        )
         for name in sorted(filenames):
             if os.path.splitext(name)[1] not in SCAN_SUFFIXES:
                 continue

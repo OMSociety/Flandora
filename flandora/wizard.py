@@ -494,7 +494,7 @@ class Wizard:
             self._img_stop = threading.Event()
             self._steps[STEP_IMAGEKEY] = StepState(
                 state="running",
-                message="扫描已开始——请在上面的画面里点开一张没看过的图片",
+                message="扫描已开始——请在「微信画面」里点开一张没看过的图片",
                 started_at=time.time(),
             )
             self._img_thread = threading.Thread(
@@ -532,7 +532,7 @@ class Wizard:
         with self._lock:
             step = self._steps[STEP_IMAGEKEY]
             if step.state == "running":
-                step.message = f"已扫 {rounds} 轮——请在画面里点开一张没看过的图片"
+                step.message = f"已扫 {rounds} 轮——请在「微信画面」里点开一张没看过的图片"
 
     def _finish_imagekey(self, state: str, message: str) -> None:
         with self._lock:

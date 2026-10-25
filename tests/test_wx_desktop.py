@@ -169,7 +169,39 @@ def test_switch_off_does_not_claim_isolated_running(desktop_cfg):
         assert st["logged_in"] is False, st
 
 
-# ===== 5. 进程级单例 =====
+# ===== 5. 主窗口挑选 =====
+
+
+def test_main_window_ignores_the_image_viewer():
+    """查看器与主窗口同进程同类名，只能按标题区分；挑错会让截图与点击落到查看器。"""
+    windows = [
+        {
+            "hwnd": 1,
+            "class": "Qt51514QWindowIcon",
+            "title": "图片和视频",
+            "width": 1550,
+            "height": 912,
+        },
+        {"hwnd": 2, "class": "Qt51514QWindowIcon", "title": "微信", "width": 990, "height": 766},
+    ]
+
+    picked = wx_desktop.pick_main_window(windows)
+
+    assert picked["hwnd"] == 2, picked
+
+
+def test_main_window_falls_back_to_the_largest_when_title_is_unfamiliar():
+    """标题一时认不出时退回按面积取最大，不至于一个窗口都挑不出来。"""
+    windows = [
+        {"hwnd": 1, "class": "Qt51514QWindowIcon", "title": "", "width": 320, "height": 240},
+        {"hwnd": 2, "class": "Qt51514QWindowIcon", "title": "", "width": 990, "height": 766},
+    ]
+
+    assert wx_desktop.pick_main_window(windows)["hwnd"] == 2
+    assert wx_desktop.pick_main_window([]) is None
+
+
+# ===== 6. 进程级单例 =====
 
 
 def test_manager_is_process_singleton():

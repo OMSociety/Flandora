@@ -110,6 +110,21 @@ class DesktopError(Exception):
     """隔离桌面操作失败。消息面向终端用户。"""
 
 
+#: 微信主窗口的类名与标题。图片查看器（标题「图片和视频」）与主窗口同进程同类名，
+#: 只能靠标题区分；选错的后果是实况截图与转发点击都落到查看器上。
+MAIN_WINDOW_CLASS = "Qt51514QWindowIcon"
+MAIN_WINDOW_TITLES = ("微信", "Weixin")
+
+
+def pick_main_window(windows: list[dict]) -> dict | None:
+    """从候选窗口里挑主窗口：先按标题认，认不出来再挑最大的那个。"""
+    titled = [w for w in windows if str(w.get("title", "")).strip() in MAIN_WINDOW_TITLES]
+    pool = titled or windows
+    if not pool:
+        return None
+    return max(pool, key=lambda w: w["width"] * w["height"])
+
+
 class WeChatAlreadyRunning(DesktopError):
     """默认桌面上已有微信在跑，隔离实例会停在登录窗。"""
 
@@ -331,14 +346,14 @@ class IsolatedDesktop:
         """等到主窗口出现（登录页也算），返回窗口信息。"""
         deadline = time.time() + timeout
         while time.time() < deadline:
-            wins = [
+            candidates = [
                 w
                 for w in self.windows()
-                if w["class"] == "Qt51514QWindowIcon" and w["width"] > 50 and w["height"] > 50
+                if w["class"] == MAIN_WINDOW_CLASS and w["width"] > 50 and w["height"] > 50
             ]
-            if wins:
-                wins.sort(key=lambda w: -(w["width"] * w["height"]))
-                return wins[0]
+            pick = pick_main_window(candidates)
+            if pick is not None:
+                return pick
             time.sleep(0.5)
         return None
 

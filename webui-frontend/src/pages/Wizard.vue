@@ -146,7 +146,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); if (tickTimer) clearInt
 
         <section class="card wizard-card" :class="{ inactive: current === 'disclaimer' }">
           <div class="section-head"><div class="wizard-title"><span class="section-number">2</span><h3>获取数据库口令</h3></div><span :class="chipClass(dbkey.state)">{{ chipText(dbkey.state) }}</span></div>
-          <p class="step-description">口令只在微信重新登录时出现。启动取钥器后，在下方微信画面中重新登录一次。</p>
+          <p class="step-description">口令只在微信重新登录时出现。启动取钥器后，在「微信画面」里重新登录一次。</p>
           <div class="key-status"><div><span>口令文件</span><strong :class="{ ready: dbKey.present }">{{ dbKey.present ? '已就绪' : '尚未获取' }}</strong></div><div v-if="dbKey.present"><span>对应账号</span><strong :class="{ warning: !dbKey.matches_current }">{{ shortWxid(dbKey.wxid) }}</strong></div><div v-if="dbKey.dll_version"><span>取钥时的微信</span><strong>{{ dbKey.dll_version }}</strong></div></div>
           <p v-if="dbKey.present && !dbKey.matches_current" class="account-warning">与当前登录的 {{ shortWxid(dbKey.current_wxid) }} 不一致，请使用机器人账号重新取钥。</p>
           <div v-if="dbKey.error" class="err">{{ dbKey.error }}</div>
@@ -157,7 +157,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); if (tickTimer) clearInt
 
         <section class="card wizard-card" :class="{ inactive: current === 'disclaimer' || current === 'dbkey' }">
           <div class="section-head"><div class="wizard-title"><span class="section-number">3</span><h3>获取图片密钥</h3></div><span :class="chipClass(imagekey.state)">{{ chipText(imagekey.state) }}</span></div>
-          <p class="step-description">密钥只在微信解码图片的那几秒存在。开始扫描后，请在下方微信画面里点开一张此前没看过的图片。</p>
+          <p class="step-description">密钥只在微信解码图片的那几秒存在。开始扫描后，请在「微信画面」里点开一张此前没看过的图片。</p>
           <div v-if="!imagekeyRunning && imagekey.state !== 'ok'" class="scan-guide">
             <p><strong>双击图片后会弹出独立窗口，画面里看不到变化，这是正常的。</strong>实况画面只截取微信主窗口，图片查看器是另一个窗口；扫描在后台进行，键一被解出来就会自动停止。</p>
             <p>如果点了没反应，多半是这张图已经缓存过：换一个没打开过的会话，或找一张更早、没翻过的图片再双击。</p>

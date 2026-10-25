@@ -23,6 +23,7 @@ import re
 import subprocess
 import threading
 import time
+import zlib
 from ctypes import wintypes
 from typing import Callable, Optional
 
@@ -36,11 +37,15 @@ MEM_COMMIT = 0x1000
 PAGE_NOACCESS = 0x01
 PAGE_GUARD = 0x100
 RW_FLAGS = 0x04 | 0x08 | 0x40 | 0x80
-SCAN_INTERVAL = 2.0
+SCAN_INTERVAL = 0.5
 
-# 边界锚定的 ASCII 串：避免从长串里截出伪候选
-RE_KEY16 = re.compile(rb"(?<![A-Za-z0-9])[A-Za-z0-9]{16}(?![A-Za-z0-9])")
-RE_KEY32 = re.compile(rb"(?<![A-Za-z0-9])[A-Za-z0-9]{32}(?![A-Za-z0-9])")
+# 判定样本的选定结果按 attach 目录缓存：attach 树很大，每次重选都要 stat 一遍。
+_SAMPLE_CACHE: dict[str, tuple[bytes, str]] = {}
+
+# 候选提取：先按「连续字母数字串」切，再只对落单的 16/32 字符串试解密。
+# 带前后锚的正则要 11 秒才扫完 366 MB，换成这里的连续串匹配是 3 秒；密钥只在解码
+# 那几秒驻留内存，一轮扫描的耗时直接决定能不能撞上，所以这里用快的。
+RE_RUN = re.compile(rb"[A-Za-z0-9]{16,}")
 
 
 class ImageKeyError(Exception):
@@ -104,17 +109,61 @@ def attach_dir(root: Optional[str] = None) -> str:
 
 
 def sample_block(attach: str) -> tuple[bytes, str]:
-    """取任一 V2 文件的 AES 段前 16 字节，作为判定候选密钥的基准。"""
-    files = glob.glob(os.path.join(attach, "*", "**", "Img", "*.dat"), recursive=True)
-    for f in sorted(files, key=os.path.getmtime, reverse=True)[:300]:
+    """取任一 V2 文件的 AES 段前 16 字节，作为判定候选密钥的基准。
+
+    只在最近几个月的目录里找、并记住上一次选中的文件：整个 attach 树有十万个
+    文件，逐个 stat 一遍要十几秒，而向导一启动就要拿它判「已有密钥还能不能用」。
+    """
+    cached = _SAMPLE_CACHE.get(attach)
+    if cached is not None and os.path.isfile(cached[1]):
+        return cached[0], cached[1]
+    for f in _recent_image_files(attach):
         try:
             with open(f, "rb") as fh:
                 head = fh.read(31)
         except OSError:
             continue
         if len(head) >= 31 and head[:6] == wx_image.MAGIC:
+            _SAMPLE_CACHE[attach] = (head[15:31], f)
             return head[15:31], f
     raise NoSample("本地没有可用的 V2 图片样本，先在微信里收几张图再试")
+
+
+def _recent_image_files(attach: str, keep: int = 600) -> list[str]:
+    """按月份目录名倒序列出最近的图片文件，不再遍历整棵树。"""
+    months: list[str] = []
+    try:
+        for acct in os.scandir(attach):
+            if not acct.is_dir():
+                continue
+            try:
+                for month in os.scandir(acct.path):
+                    if month.is_dir():
+                        months.append(month.path)
+            except OSError:
+                continue
+    except OSError:
+        return []
+    months.sort(reverse=True)
+    out: list[str] = []
+    for path in months[:6]:
+        try:
+            with os.scandir(os.path.join(path, "Img")) as it:
+                files = [e.path for e in it if e.name.endswith(".dat")]
+        except OSError:
+            continue
+        files.sort(key=_mtime, reverse=True)
+        out.extend(files)
+        if len(out) >= keep:
+            break
+    return out[:keep]
+
+
+def _mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
 
 
 def rw_regions(handle) -> list[tuple[int, int]]:
@@ -142,29 +191,56 @@ def rw_regions(handle) -> list[tuple[int, int]]:
     return out
 
 
-def scan(handle, regions, block: bytes) -> Optional[bytes]:
-    """扫一轮，返回能解开基准密文的密钥。"""
+def candidates(data: bytes):
+    """从一块内存里切出可能的密钥串：落单的 16 字符，或 32 字符的前一半。
+
+    32 个连续字母数字更可能是「16 字节密钥 + 相邻噪声」，所以取前 16 个字符试；
+    更长的连续串里即使嵌着密钥也切不出来，与按边界锚定的取法一致（实测密钥是
+    16 字节的独立 ASCII 串）。
+    """
+    for match in RE_RUN.finditer(data):
+        run = match.group()
+        size = len(run)
+        if size == 16:
+            yield run
+        elif size == 32:
+            yield run[:16]
+
+
+def scan(
+    handle,
+    regions,
+    block: bytes,
+    seen: Optional[set] = None,
+    memorized: Optional[dict] = None,
+) -> Optional[bytes]:
+    """扫一轮，返回能解开基准密文的密钥。
+
+    区域按地址从高到低扫：刚解码的图会在堆顶附近新分配缓冲区，命中通常落在前面
+    几十 MB 内，比按地址升序快得多。
+
+    ``seen`` 跨轮复用：同一段内存里同样的串不必每轮重试一次 AES。``memorized``
+    记录每块内存上一轮的校验和，内容没变就整块跳过——一轮的开销因此从「读满
+    500 MB 再切候选」降到「算校验和 + 只处理变过的块」，否则一轮要四五秒，赶不上
+    解码那几秒。
+    """
     k32 = ctypes.windll.kernel32
-    seen: set[bytes] = set()
-    for base, size in regions:
+    tried = seen if seen is not None else set()
+    for base, size in sorted(regions, key=lambda r: -r[0]):
         buf = ctypes.create_string_buffer(size)
         got = ctypes.c_size_t(0)
         if not k32.ReadProcessMemory(handle, ctypes.c_void_p(base), buf, size, ctypes.byref(got)):
             continue
         data = buf.raw[: got.value]
-        for m in RE_KEY32.finditer(data):
-            s = m.group()
-            for cand in (s[:16], s):
-                if cand in seen:
-                    continue
-                seen.add(cand)
-                if _works(cand, block):
-                    return cand
-        for m in RE_KEY16.finditer(data):
-            cand = m.group()
-            if cand in seen:
+        if memorized is not None:
+            stamp = zlib.crc32(data)
+            if memorized.get(base) == stamp:
                 continue
-            seen.add(cand)
+            memorized[base] = stamp
+        for cand in candidates(data):
+            if cand in tried:
+                continue
+            tried.add(cand)
             if _works(cand, block):
                 return cand
     return None
@@ -225,16 +301,20 @@ def scan_for_key(
     block, src = sample_block(attach)
     say(f"判定样本：{os.path.basename(src)}")
     handles = open_weixin()
+    # 解码发生在最大的那个进程里（主进程），先扫它，命中率更高
+    ordered = sorted(handles, key=lambda ph: -sum(size for _b, size in rw_regions(ph[1])))
     deadline = time.time() + seconds
     rounds = 0
     found: Optional[bytes] = None
+    seen: set[bytes] = set()
+    memos: dict[int, dict[int, int]] = {}
     try:
         while time.time() < deadline and found is None:
             if stop is not None and stop.is_set():
                 break
             rounds += 1
-            for pid, h in handles:
-                key = scan(h, rw_regions(h), block)
+            for pid, h in ordered:
+                key = scan(h, rw_regions(h), block, seen, memos.setdefault(pid, {}))
                 if key:
                     found = key
                     say(f"找到 AES 密钥（pid={pid}）")

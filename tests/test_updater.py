@@ -1,5 +1,6 @@
 """updater 的离线测试：网络与文件系统都用假的，不触网。"""
 
+import hashlib
 import json
 import os
 import zipfile
@@ -7,6 +8,9 @@ import zipfile
 import pytest
 
 from flandora import updater
+
+# 体积校验的下限是 1 MiB，占位文件必须真的够大，否则 extract() 会按「不完整」拒绝
+_FAKE_EXE = b"MZ" + b"\0" * (updater.MIN_EXE_BYTES - 2)
 
 
 class FakeResponse:
@@ -62,6 +66,26 @@ def test_latest_release_reads_tag_and_asset(monkeypatch):
     assert info["tag"] == "v1.3.0"
     assert info["asset"].endswith("/releases/download/v1.3.0/Flandora-v1.3.0.zip")
     assert info["asset"].startswith("https://github.com/OMSociety/Flandora")
+    # 假发布页没有 .sha256 资源，字段存在但为空
+    assert info["sha256"] is None
+
+
+def test_asset_sha256_reads_sibling_file(monkeypatch):
+    digest = "ab" * 32
+    monkeypatch.setattr(
+        updater, "_fetch", lambda url, timeout: f"{digest}  Flandora-v1.3.0.zip\n".encode()
+    )
+    assert updater.asset_sha256("https://example.invalid/Flandora-v1.3.0.zip") == digest
+
+
+def test_asset_sha256_absent_returns_none(monkeypatch):
+    def boom(url, timeout):
+        raise OSError("404")
+
+    monkeypatch.setattr(updater, "_fetch", boom)
+    assert updater.asset_sha256("https://example.invalid/Flandora-v1.3.0.zip") is None
+    monkeypatch.setattr(updater, "_fetch", lambda url, timeout: b"no hash here")
+    assert updater.asset_sha256("https://example.invalid/Flandora-v1.3.0.zip") is None
 
 
 def test_latest_release_without_versions_raises(monkeypatch):
@@ -109,6 +133,25 @@ def test_download_wraps_network_errors(monkeypatch, tmp_path):
     assert not os.path.exists(str(tmp_path / "pkg.zip.part"))
 
 
+def test_download_accepts_matching_sha256(monkeypatch, tmp_path):
+    body = b"x" * 1000
+    monkeypatch.setattr(updater, "_opener", lambda request, timeout: FakeResponse(body))
+    dest = str(tmp_path / "pkg.zip")
+    updater.download(
+        "https://example.invalid/pkg.zip", dest, expected_sha256=hashlib.sha256(body).hexdigest()
+    )
+    assert os.path.isfile(dest)
+
+
+def test_download_rejects_sha256_mismatch(monkeypatch, tmp_path):
+    monkeypatch.setattr(updater, "_opener", lambda request, timeout: FakeResponse(b"x" * 1000))
+    dest = str(tmp_path / "pkg.zip")
+    with pytest.raises(updater.UpdateError, match="sha256 不一致"):
+        updater.download("https://example.invalid/pkg.zip", dest, expected_sha256="00" * 32)
+    assert not os.path.exists(dest)
+    assert not os.path.exists(dest + ".part")
+
+
 def test_safe_members_rejects_escaping_paths(tmp_path):
     path = _make_zip(tmp_path / "bad.zip", {"../evil.exe": b"x"})
     with zipfile.ZipFile(path) as archive:
@@ -117,13 +160,17 @@ def test_safe_members_rejects_escaping_paths(tmp_path):
 
 
 def test_extract_finds_payload_root_and_rejects_junk(tmp_path):
-    good = _make_zip(tmp_path / "good.zip", {"Flandora.exe": b"MZ"})
+    good = _make_zip(tmp_path / "good.zip", {"Flandora.exe": _FAKE_EXE})
     root = updater.extract(good, str(tmp_path / "out"))
     assert os.path.isfile(os.path.join(root, "Flandora.exe"))
 
     junk = _make_zip(tmp_path / "junk.zip", {"readme.txt": b"hello"})
     with pytest.raises(updater.UpdateError, match="没有找到 Flandora.exe"):
         updater.extract(junk, str(tmp_path / "junk-out"))
+
+    tiny = _make_zip(tmp_path / "tiny.zip", {"Flandora.exe": b"MZ"})
+    with pytest.raises(updater.UpdateError, match="不完整"):
+        updater.extract(tiny, str(tmp_path / "tiny-out"))
 
     broken = tmp_path / "broken.zip"
     broken.write_bytes(b"not a zip at all")
@@ -133,7 +180,7 @@ def test_extract_finds_payload_root_and_rejects_junk(tmp_path):
 
 def test_stage_pending_and_clear(monkeypatch, tmp_path):
     monkeypatch.setattr(updater.config, "data_dir", lambda: str(tmp_path))
-    archive = _make_zip(tmp_path / "pkg.zip", {"Flandora.exe": b"MZ"})
+    archive = _make_zip(tmp_path / "pkg.zip", {"Flandora.exe": _FAKE_EXE})
     info = updater.stage(archive, "1.4.0")
     assert os.path.isdir(info["staging"])
     loaded = updater.pending()
@@ -166,12 +213,37 @@ def test_swap_script_contains_paths_and_rollback(monkeypatch, tmp_path):
         "app_dir": str(tmp_path / "app"),
     }
     script = updater.swap_script(info)
-    assert ("$target = '%s'" % (tmp_path / "app")) in script
-    assert ("$staging = '%s'" % (tmp_path / "staging")) in script
+    assert ('$target = "%s"' % (tmp_path / "app")) in script
+    assert ('$staging = "%s"' % (tmp_path / "staging")) in script
     assert "Wait-Process" in script and "Start-Process" in script
     assert "回滚" in script
+    # 拉起新版本后要观察存活，进程提前退出算失败
+    assert "Get-Process" in script and f"$grace = {updater.STARTUP_GRACE_SECONDS}" in script
+    assert "-LiteralPath" in script
     path = updater.write_swap_script(info)
     assert os.path.isfile(path) and path.endswith("apply-1.4.0.ps1")
+
+
+def test_swap_script_escapes_awkward_paths(monkeypatch, tmp_path):
+    monkeypatch.setattr(updater.config, "data_dir", lambda: str(tmp_path))
+    target = "C:\\a'b\"c$d`e"
+    info = {"version": "1.4.0", "staging": str(tmp_path / "staging"), "app_dir": target}
+    script = updater.swap_script(info)
+    # 双引号串里：反引号→``、引号→`"、美元符→`$
+    expected = '"C:\\a\'b`"c`$d``e"'
+    assert f"$target = {expected}" in script
+    assert "$target = '" not in script
+
+
+def test_write_swap_script_uses_single_crlf(monkeypatch, tmp_path):
+    monkeypatch.setattr(updater.config, "data_dir", lambda: str(tmp_path))
+    info = {"version": "1.4.0", "staging": str(tmp_path / "s"), "app_dir": str(tmp_path / "a")}
+    with open(updater.write_swap_script(info), "rb") as fh:
+        raw = fh.read()
+    # PowerShell 5.1 认 BOM；换行只该有一个 CR（写盘时不能再翻译一次）
+    assert raw.startswith(b"\xef\xbb\xbf")
+    assert b"\r\r\n" not in raw
+    assert raw.count(b"\r\n") >= 5
 
 
 def test_can_write_app_dir_is_true_for_repo():

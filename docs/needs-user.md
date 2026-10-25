@@ -10,7 +10,8 @@
 
 ## 1. @ 指定成员
 
-- 现状：`flandora/uia_sender.py` 的 `send_mention_text` 已实现完整路径，机制已在真机上验证过，尚未发过真实消息。
+- 现状：**已完成**（2026-10-24 真机验证）。`flandora/uia_sender.py` 的 `send_mention_text` 是完整路径，
+  下面是验证过程与仍需遵守的细节，不需要再安排实验。
 - 已验证（在「别管了八卦群」里只输入 `@`、不发送）：
   1. 弹层是**独立的顶层窗口**，类名 `Qt51514QWindowToolSaveBits`、标题 `Weixin`，与搜索弹层同类；`enum_process_windows` 的前后差集能稳定拿到它。
   2. 弹层内部：`GroupControl mmui::ChatMentionList` → `ListControl mmui::XTableView` → `ListItemControl mmui::XTableCell`，每项的 `Name` 就是成员显示名（如 `斯兰德Slandre`、`小苏打`）。

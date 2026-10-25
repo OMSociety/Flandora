@@ -60,16 +60,24 @@ def test_update_check_failure_is_a_502(monkeypatch):
 
 def test_update_download_stages_archive(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
+    digest = "ab" * 32
     monkeypatch.setattr(
         updater,
         "latest_release",
-        lambda timeout=None: {"version": "9.9.9", "tag": "v9.9.9", "url": "u", "asset": "a"},
+        lambda timeout=None: {
+            "version": "9.9.9",
+            "tag": "v9.9.9",
+            "url": "u",
+            "asset": "a",
+            "sha256": digest,
+        },
     )
     seen = {}
 
-    def fake_download(url, dest, progress=None, timeout=None):
+    def fake_download(url, dest, progress=None, timeout=None, expected_sha256=None):
         seen["url"] = url
         seen["dest"] = dest
+        seen["sha256"] = expected_sha256
         open(dest, "wb").write(b"zip")
         return dest
 
@@ -83,6 +91,7 @@ def test_update_download_stages_archive(monkeypatch, tmp_path):
     assert data["ok"] is True and data["pending"]["version"] == "9.9.9"
     assert seen["url"] == "a" and seen["staged"] == "9.9.9"
     assert seen["dest"].endswith("Flandora-v9.9.9.zip")
+    assert seen["sha256"] == digest
 
 
 def test_update_download_reports_no_newer_version(monkeypatch, tmp_path):

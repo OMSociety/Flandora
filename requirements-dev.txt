@@ -1,6 +1,6 @@
 # 开发与 CI 的完整依赖：桥接运行期 + 托盘管理器运行期 + 测试与 lint。
 #
-# 安装：.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+# 安装：python -m pip install -r requirements-dev.txt（若自建虚拟环境，先激活）
 #
 # 运行期依赖的版本区间写在各自清单里（flandora/ 与 manager/），这里只补
 # 开发工具，避免同一批版本号维护在两处。终端用户不需要这个文件——
@@ -18,3 +18,8 @@ httpx==0.28.1
 
 # lint 与格式化：CI 跑 ruff check 与 ruff format --check，本地提交前同样跑一遍。
 ruff==0.17.2
+
+# 依赖漏洞扫描（只查运行期清单 flandora/requirements.txt）。CI 用 -X utf8 跑：
+# 本仓库的 requirements 带中文注释，pip-audit 的解析器按系统 locale 读文件，
+# Windows 上非 UTF-8 代码页会直接解码失败。
+pip-audit==2.10.1

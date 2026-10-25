@@ -18,7 +18,7 @@
 ## 使用
 
 1. **首次启动**：双击启动器。发布包里是根目录的 `启动.bat`，源码树里是 `manager\start.bat`；
-   也可以直接跑 `.venv\Scripts\python.exe manager\bridge_manager.py`
+   也可以直接跑 `python manager\bridge_manager.py`
 2. **完全退出**：右键托盘图标 → 退出（或主窗口右下角"退出"按钮）
 
 > 关闭主窗口 = 最小化到托盘，bridge 仍在后台运行。
@@ -34,14 +34,13 @@
 
 ## 依赖
 
-- 开发与打包统一用 Python 3.13（仓库根下的 `.venv`）；源码运行 3.10 及以上，只在 3.13 上验证过。
-  打包版免安装。
+- 开发与打包统一用 Python 3.13；源码运行 3.10 及以上，只在 3.13 上验证过。打包版免安装。
 - tkinter（系统自带）
 - Pillow + pystray（托盘图标）
 
 ```powershell
-# 安装（在仓库根执行，用项目自己的虚拟环境）
-.venv\Scripts\python.exe -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r manager\requirements.txt
+# 安装（在仓库根执行；若自建虚拟环境，先激活）
+python -m pip install -i https://pypi.tuna.tsinghua.edu.cn/simple -r manager\requirements.txt
 ```
 
 > 打包后无需 Python 环境。源码运行时 `bridge_manager.py` 会自动探测系统 Python。

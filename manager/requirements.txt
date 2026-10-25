@@ -1,7 +1,7 @@
 # 桌面托盘管理器（manager/）的运行期依赖。
 #
-# 与 bridge 共用同一个解释器与虚拟环境：仓库根下的 .venv（Python 3.13）。
-# 安装：.venv\Scripts\python.exe -m pip install -r manager\requirements.txt
+# 与 bridge 共用同一个解释器（Python 3.13）。
+# 安装：python -m pip install -r manager/requirements.txt（若自建虚拟环境，先激活）
 #
 # tkinter 是标准库（对话框与文件选择器），Windows 官方安装包自带，无需在此声明。
 

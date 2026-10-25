@@ -70,7 +70,7 @@ def _download_and_stage() -> dict:
     if not update_check.is_newer(info["version"], __version__):
         raise updater.UpdateError(f"当前已经是 {__version__}，没有更新的版本")
     archive = os.path.join(updater.updates_dir(), f"Flandora-v{info['version']}.zip")
-    updater.download(info["asset"], archive)
+    updater.download(info["asset"], archive, expected_sha256=info.get("sha256"))
     return updater.stage(archive, info["version"])
 
 

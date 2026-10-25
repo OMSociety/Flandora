@@ -21,10 +21,7 @@
 
 Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录的瞬间截获本机数据库口令，只读解密聊天库收取消息，并以账号本人身份在隔离桌面上投递回复，对外提供 [OneBot v11](https://github.com/botuniverse/onebot-11) 正向 WebSocket 服务端与浏览器控制台。
 
-> [!CAUTION]
-> Flandora 是独立的第三方项目，与腾讯 / 微信无隶属或授权关系。项目仅供学习与技术研究，请遵守《微信软件许可及服务协议》及适用法律；以自动化方式驱动自己的客户端存在账号被限制或封禁的风险，软件按「现状」提供，使用风险自负。详见[使用边界与许可](#使用边界与许可)。
->
-> **Disclaimer:** Flandora is independent of Tencent / WeChat and is provided for study and research only, "as is" and without warranty.
+> **提示**：Flandora 是独立的第三方项目，与腾讯 / 微信无隶属或授权关系。项目仅供学习与技术研究，请遵守《微信软件许可及服务协议》及适用法律；以自动化方式驱动自己的客户端存在账号被限制或封禁的风险，软件按「现状」提供，使用风险自负。详见[使用边界与许可](#使用边界与许可)。
 
 ## 核心能力
 
@@ -35,7 +32,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | OneBot v11 | 四类网络入口（WS / HTTP 服务端、反向 WS、HTTP 上报）可同时开启；消息段与 CQ 码双向编解码；`is_mentioned` 如实标记是否被 @ |
 | 群与身份 | 群内按发言人拆分 `user_id`；群名映射；多昵称识别 |
 | 取钥 | 四步向导：免责声明、数据库口令、图片密钥、校验；口令与密钥由 Windows DPAPI 加密落盘；重启后自动认出盘上已就位的口令与密钥，不会退回重取 |
-| 隔离桌面 | 微信跑在独立的 Windows 桌面上；重启后接管仍在运行的实例；需要时由你点button结束 |
+| 隔离桌面 | 微信跑在独立的 Windows 桌面上；重启后接管仍在运行的实例；需要时由你点按钮结束 |
 | 控制台 | 仪表盘、消息记录、节点配置、微信画面、取钥向导、运行日志、调试面板、系统设置；明暗两套主题 |
 
 ## 运行链路
@@ -68,11 +65,9 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 }
 ```
 
-> [!NOTE]
-> 程序没有购买代码签名证书，Windows SmartScreen 会拦一次：点「更多信息」→「仍要运行」。便携包的四个 exe 必须放在同一目录，建议放在不含中文和空格的路径。
+> **提示**：程序没有购买代码签名证书，Windows SmartScreen 会拦一次：点「更多信息」→「仍要运行」。便携包的四个 exe 必须放在同一目录，建议放在不含中文和空格的路径。
 
-> [!WARNING]
-> `ob_server_token` 与客户端 `token` 必须一致。留空表示不校验鉴权，此时服务端只监听 `127.0.0.1`；要让别的机器连进来，改 `ob_server_host`、在防火墙放行 7999，并务必填一串随机 token。
+> **提示**：`ob_server_token` 与客户端 `token` 必须一致。留空表示不校验鉴权，此时服务端只监听 `127.0.0.1`；要让别的机器连进来，改 `ob_server_host`、在防火墙放行 7999，并务必填一串随机 token。
 
 ## ID 约定
 
@@ -193,7 +188,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 消息段构造器与 CQ 码编解码，错误按「桥接说动作失败」和「连不上」分成两类。源码在 `sdk/python/`：
 
 ```powershell
-.venv\Scripts\python.exe -m pip install -e sdk\python
+python -m pip install -e sdk\python
 ```
 
 ```python
@@ -219,8 +214,8 @@ client.run_forever()
 （不需要桥接在线），`read` 模式可调只读动作，`write` 模式才能发消息。源码在 `mcp/python/`：
 
 ```powershell
-.venv\Scripts\python.exe -m pip install -e mcp\python
-.venv\Scripts\python.exe -m flandora_mcp.server --selftest
+python -m pip install -e mcp\python
+python -m flandora_mcp.server --selftest
 ```
 
 客户端配置、三种模式与工具清单见 [mcp/python/README.md](mcp/python/README.md)。
@@ -358,11 +353,15 @@ client.run_forever()
 
 - 启动时会查一次 GitHub 发布订阅，有新版本就在仪表盘「版本与更新」里标出来；只提示，不自动下载。
 - 「下载并暂存」把 `Flandora-v<版本>.zip` 下载到 `data/updates/` 并解压到 `staging-<版本>/`，全程不碰正在运行的程序目录。
+  发布页若附带 `Flandora-v<版本>.zip.sha256`，下载后按它核对摘要，不一致就删掉重试；没有哈希时退到「zip 内 `Flandora.exe` 存在且大小合理」，并在日志里写明未校验哈希。
 - 「安装并重启」只对打包安装可用：程序写一个等本进程退出的 PowerShell 脚本
   （`data/updates/apply-<版本>.ps1`），退出后脚本把旧文件挪进 `backup-<版本>/`、覆盖新文件并重新启动；
-  任一步失败就把备份挪回去，命令行里能看到原因。
+  新版本拉起后脚本观察 20 秒，进程提前退出就当作失败并把备份拷回去，命令行里能看到原因。
 - 程序目录不可写时（通常装在 `Program Files` 下）面板会拒绝安装并提示以管理员身份运行那个脚本。
-- 源码运行（`.venv` + `run_bridge.py`）没有可替换的安装目录，面板如实提示在仓库里 `git pull` 后重装依赖。
+- 源码运行（`run_bridge.py`）没有可替换的安装目录，面板如实提示在仓库里 `git pull` 后重装依赖。
+
+发布版本号只有一份手写来源：`flandora/__init__.py` 的 `__version__`。`build.py` 与安装脚本都从它读，
+SDK 与 MCP 包的版本由 `python tools/sync_version.py` 同步；改动版本后跑一次同步脚本，CI 用 `--check` 挡住漏改。
 
 ## 数据落点
 
@@ -387,7 +386,7 @@ client.run_forever()
 - **发送必然触发微信自身的窗口消息处理**：已逐项实测否证十几种「不惊动它」的投递方式（PostMessage、SendMessageTimeout、UIA SetValue、SetFocus、Invoke、SetActiveWindow、完全附着线程等），任何向微信投递的输入都会让它升到前台，这是微信自身行为；隔离桌面是绕开它的办法，不是修好了它。
 - **一个微信号只能被一份实例驱动**：要跑多个号，用 `isolated_desktop_name` 给每份实例配不同桌面名，并用不同的 `ob_server_port`。
 - **视频以文件形式发送**：视频段走文件通道发出，对方一定能收到；呈现成文件卡片还是视频气泡取决于微信客户端。
-- **@ 提及尚未在真机上验证**：成员弹层的定位方式已在代码里实现并加了失败保护，但弹层是不是独立顶层窗口，需要在真机上看，实验步骤见 [`docs/needs-user.md`](docs/needs-user.md)。
+- **@ 提及已在真机验证**：2026-10-24 在测试群里真发过一条带提及的消息，落库内容带 U+2005 分隔符（真提及而非纯文本），返回 `retcode=0` 与 `message_id`。过程记录与仍需注意的细节见 [`docs/needs-user.md`](docs/needs-user.md)。
 - **撤回与拍一拍未接通**：两者都要求精确点中某条消息气泡或某个头像，UIA 目前拿不到稳定的定位方式，动作如实返回 `1404`。
 - **未在全新安装的 Windows 上验证过**：开发与测试都在一台已经装了很多东西的机器上完成。
 
@@ -395,29 +394,34 @@ client.run_forever()
 
 ## 开发
 
-需要 Python 3.13 与 Node.js（构建前端时）。以下命令在仓库根执行：
+需要 Python 3.13 与 Node.js（构建前端时）。以下命令在仓库根执行，`python` 指 3.13 的解释器：
 
 ```powershell
-# 装依赖（运行期 + 测试 + ruff，一份清单装全）
-.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+# 装依赖（运行期 + 测试 + ruff + 依赖漏洞扫描，一份清单装全）
+python -m pip install -r requirements-dev.txt
 
-# 语法检查、lint、后端测试
-.venv\Scripts\python.exe -m compileall -q flandora manager
-.venv\Scripts\python.exe -m ruff check .
-.venv\Scripts\python.exe -m ruff format --check .
-.venv\Scripts\python.exe -m pytest tests -q
+# 语法检查、lint、后端测试、测试收集闸
+python -m compileall -q flandora manager sdk mcp tools
+python -m ruff check .
+python -m ruff format --check .
+python -m pytest tests -q
+python tools/check_test_collection.py
+
+# 版本号单一来源与打包前校验（CI 同款）
+python tools/sync_version.py --check
+python build.py --check
 
 # SDK（可选：在自己的项目里用它当客户端）
-.venv\Scripts\python.exe -m pip install -e sdk\python
+python -m pip install -e sdk\python
 
 # MCP 服务（可选：给 AI 客户端用）
-.venv\Scripts\python.exe -m pip install -e mcp\python
+python -m pip install -e mcp\python
 
 # 从源码起桥接
-.venv\Scripts\python.exe run_bridge.py
+python run_bridge.py
 ```
 
-这些命令与 CI（`.github/workflows/ci.yml`）同源，提交前本地跑绿即可。CI 另外会重新生成一次 `sdk/python/flandora_sdk/_catalog.json` 并核对无差异（动作目录改了没同步快照会红）。
+这些命令与 CI（`.github/workflows/ci.yml`）同源，提交前本地跑绿即可。CI 另外会重新生成一次 `sdk/python/flandora_sdk/_catalog.json` 并核对无差异（动作目录改了没同步快照会红）；`package` job 会真的跑一遍 `build.py` 并断言载荷清单，发行链接不必等到发版当天才发现打包断了。
 
 前端在 `webui-frontend/`（Vue 3 + Vite）：
 
@@ -431,20 +435,23 @@ npm run build   # 产物写入 flandora\webui\dist
 打包发行版：
 
 ```powershell
-.venv\Scripts\python.exe build.py
+python build.py
 ```
 
-产物在 `dist\`：`Flandora-v1.0.0.zip` 与 `Flandora-v1.0.0-setup.exe`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
+产物在 `dist\`：`Flandora-v<版本>.zip` 与 `Flandora-v<版本>-setup.exe`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
 
-> [!TIP]
-> 打包前会检查 `flandora/webui/dist/index.html`：不存在才调用 npm 构建，已存在就原样打包。改过 `webui-frontend/` 就先自己 `npm run build`，否则旧界面会被打进安装包。
+> **提示**：打包前会按 mtime 判断 `flandora/webui/dist/index.html` 是否比前端源码旧：旧了才调用 npm 重建。想直接复用现有产物就加 `--skip-web`，它会打印两边的时间；产物缺失时该参数会直接报错，不会打出没有界面的包。
 
-取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。工程约定、目录边界与验收口径见 [`AGENTS.md`](AGENTS.md)。
+取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。代码结构、依赖规则与扩展点见
+[`docs/architecture.md`](docs/architecture.md)，工程约定与验收口径见 [`AGENTS.md`](AGENTS.md)。
+
+## 验收
+
+自动化测试看的是「同样的输入产生同样的输出」；UIA、真机微信与真实的 OneBot 客户端连接只能用清单验。发布前或改动收件、发送、桌面、更新链路后，按 [`docs/smoke-test.md`](docs/smoke-test.md) 走一遍，每一步都给了可观察的判据，最后把实际看到的结果记在当节下面。
 
 ## 使用边界与许可
 
-> [!IMPORTANT]
-> 本项目以 [MIT](LICENSE) 发布，可自由使用、修改与再分发，保留版权与许可声明即可。禁止用于任何违法违规用途，包括但不限于批量加好友、自动营销、骚扰与诈骗。
+> **提示**：本项目以 [MIT](LICENSE) 发布，可自由使用、修改与再分发，保留版权与许可声明即可。禁止用于任何违法违规用途，包括但不限于批量加好友、自动营销、骚扰与诈骗。
 
 本工具通过自动化方式驱动你自己登录的微信客户端收发消息，这类用法可能与微信的用户协议冲突。请只用自己的号，并自行承担账号被限制或封禁的风险。项目为独立工具，与腾讯公司无任何关联，不承诺可用性与送达率；微信改版导致接口失效属官方行为，不在担保范围内。使用产生的一切后果由使用者自行承担。
 

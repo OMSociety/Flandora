@@ -26,8 +26,23 @@ if REPO_ROOT not in sys.path:
 
 from flandora import config, wx_desktop  # noqa: E402
 
-# 本机若真有这个路径的微信，才值得验「配置优先」
-DEFAULT_EXE = r"D:\Program Files\Tencent\Weixin\Weixin.exe"
+
+def _probe_weixin_exe() -> str:
+    """找本机的微信可执行文件：环境变量优先，其次注册表与常见安装路径。
+
+    ``FLANDORA_WECHAT_EXE`` 供 CI 与临时环境直接指定；没设就退回桥接自己的定位
+    逻辑（注册表 + 各盘 Program Files）。都找不到时返回空串，依赖它的用例 skip 并
+    在报告里留下用例名——CI 另有一道把 SKIPPED 打印出来，避免静默跳过。
+    """
+    for name in ("FLANDORA_WECHAT_EXE", "WECHAT_EXE"):
+        value = os.environ.get(name, "").strip()
+        if value and os.path.isfile(value):
+            return value
+    return wx_desktop.find_weixin_exe("")
+
+
+# 本机若真有微信，才值得验「配置优先」这条；没有就整条 skip，而不是写死一个路径
+WECHAT_EXE = _probe_weixin_exe()
 
 
 @pytest.fixture
@@ -44,10 +59,12 @@ def desktop_cfg(monkeypatch):
 # ===== 1. 可执行文件定位 =====
 
 
-@pytest.mark.skipif(not os.path.isfile(DEFAULT_EXE), reason="本机没有默认路径的微信")
+@pytest.mark.skipif(
+    not WECHAT_EXE, reason="本机没有微信可执行文件（可用 FLANDORA_WECHAT_EXE 指定路径）"
+)
 def test_configured_exe_wins_when_exists():
     """配置指定路径有效时优先采用。"""
-    assert wx_desktop.find_weixin_exe(DEFAULT_EXE) == DEFAULT_EXE
+    assert wx_desktop.find_weixin_exe(WECHAT_EXE) == WECHAT_EXE
 
 
 def test_auto_locate_returns_existing_path_or_empty():

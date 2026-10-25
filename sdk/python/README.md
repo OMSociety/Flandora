@@ -4,7 +4,7 @@ Flandora 的 Python 客户端：把桥接当成 OneBot v11 协议端来用，省
 
 ```powershell
 # 在本仓库里
-.venv\Scripts\python.exe -m pip install -e sdk\python
+python -m pip install -e sdk\python
 ```
 
 ## 三条连接方式

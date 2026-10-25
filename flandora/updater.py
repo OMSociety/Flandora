@@ -7,7 +7,9 @@
 - 任何一步失败都抛 `UpdateError` 并带上人能看懂的原因，不静默降级。
 """
 
+import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -19,11 +21,19 @@ import zipfile
 
 from . import __version__, config
 
+log = logging.getLogger("flandora")
+
 REPO = "OMSociety/Flandora"
 RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 ASSET_RE = re.compile(r'href="(/[^"]*/releases/download/[^"]+\.zip)"')
+SHA256_RE = re.compile(r"\b([0-9a-fA-F]{64})\b")
 TIMEOUT = 20.0
+
+# 拉起新版本后观察它是否还活着的时间窗口：小于这个时间就退出视为「更新后起不来」
+STARTUP_GRACE_SECONDS = 20
+# 没提供哈希时的兜底校验：PyInstaller 打出来的主程序不可能只有几百 KB
+MIN_EXE_BYTES = 1024 * 1024
 
 _opener = urllib.request.urlopen
 
@@ -87,8 +97,31 @@ def _asset_for(tag: str) -> str:
     return "https://github.com" + match.group(1)
 
 
+def asset_sha256(asset_url: str, timeout: float = TIMEOUT) -> str | None:
+    """取发布页为安装包附带的 sha256；没有或不合法时返回 None。
+
+    约定是资源旁边放一个同名加 ``.sha256`` 的文本文件（``shasum -a 256`` 的输出格式
+    即可）。没有它不算错误：调用方退到「zip 内 Flandora.exe 存在且大小合理」，并把
+    「未校验哈希」写进日志。这里只做完整性提示，不是可信签名。
+    """
+    url = asset_url + ".sha256"
+    try:
+        body = _fetch(url, timeout).decode("utf-8", "replace")
+    except Exception as e:  # noqa: BLE001 - 没有校验文件是常态，不是失败
+        log.info("未取到 %s（%s），本次不做哈希校验", url, type(e).__name__)
+        return None
+    match = SHA256_RE.search(body)
+    if match is None:
+        log.info("%s 里没有 sha256，本次不做哈希校验", url)
+        return None
+    return match.group(1).lower()
+
+
 def latest_release(timeout: float = TIMEOUT) -> dict:
-    """返回 {"version", "tag", "url", "asset"}；查不到抛 UpdateError。"""
+    """返回 {"version", "tag", "url", "asset", "sha256"}；查不到抛 UpdateError。
+
+    ``sha256`` 是可选字段：发布页没提供时为 None，下载阶段会退到兜底校验。
+    """
     feed = f"https://github.com/{REPO}/releases.atom"
     try:
         body = _fetch(feed, timeout)
@@ -103,23 +136,36 @@ def latest_release(timeout: float = TIMEOUT) -> dict:
         raise UpdateError("发布订阅里没有版本条目")
     tag = candidates[0]
     version = _version_from_tag(tag)
+    asset = _asset_for(tag)
     return {
         "version": version,
         "tag": tag,
         "url": f"{RELEASES_PAGE}/tag/{tag}",
-        "asset": _asset_for(tag),
+        "asset": asset,
+        "sha256": asset_sha256(asset, timeout),
     }
 
 
 # ---------------------------------------------------------------- 下载与暂存
 
 
-def download(asset_url: str, dest_path: str, progress=None, timeout: float = TIMEOUT * 3) -> str:
-    """下载到 `dest_path.part` 再改名，避免半截文件被当成完整包。"""
+def download(
+    asset_url: str,
+    dest_path: str,
+    progress=None,
+    timeout: float = TIMEOUT * 3,
+    expected_sha256: str | None = None,
+) -> str:
+    """下载到 `dest_path.part` 再改名，避免半截文件被当成完整包。
+
+    `expected_sha256` 有值就边写边算摘要并比对；不一致直接删掉半截文件报错。
+    没有哈希时只记录「未校验」，交给后面的 `extract()` 兜底检查程序文件。
+    """
     os.makedirs(os.path.dirname(dest_path), exist_ok=True)
     part = dest_path + ".part"
     request = urllib.request.Request(asset_url, headers={"User-Agent": f"Flandora/{__version__}"})
     total = 0
+    digest = hashlib.sha256()
     try:
         with _opener(request, timeout=timeout) as response:
             length = int(response.headers.get("Content-Length") or 0)
@@ -131,6 +177,7 @@ def download(asset_url: str, dest_path: str, progress=None, timeout: float = TIM
                     total += len(chunk)
                     if total > MAX_DOWNLOAD_BYTES:
                         raise UpdateError("安装包超过 512 MB，拒绝下载")
+                    digest.update(chunk)
                     fh.write(chunk)
                     if progress:
                         progress(total, length)
@@ -143,6 +190,14 @@ def download(asset_url: str, dest_path: str, progress=None, timeout: float = TIM
     if total == 0:
         _remove_quietly(part)
         raise UpdateError("下载到 0 字节，安装包地址可能已经失效")
+    if expected_sha256:
+        actual = digest.hexdigest()
+        if actual != expected_sha256.lower():
+            _remove_quietly(part)
+            raise UpdateError(f"安装包 sha256 不一致：期望 {expected_sha256}，实际 {actual}")
+        log.info("安装包 sha256 校验通过：%s", actual)
+    else:
+        log.info("发布页没有提供 sha256，跳过哈希校验，改为核对 zip 内容与文件大小")
     os.replace(part, dest_path)
     return dest_path
 
@@ -172,11 +227,26 @@ def extract(archive_path: str, target_dir: str) -> str:
         raise UpdateError(f"不是有效的 zip：{e}") from e
 
     for root, _dirs, files in os.walk(target_dir):
-        if "Flandora.exe" in files or "Flandora.pyz" in files:
+        if "Flandora.exe" in files:
+            _check_exe_size(os.path.join(root, "Flandora.exe"))
             return root
-        if "run_bridge.py" in files:
+        if "Flandora.pyz" in files or "run_bridge.py" in files:
             return root
     raise UpdateError("安装包里没有找到 Flandora.exe，可能下载到了错误的资源")
+
+
+def _check_exe_size(exe_path: str) -> None:
+    """没有哈希可校时，用主程序体积挡掉损坏或占位包。
+
+    PyInstaller 打出来的 Flandora.exe 通常在 10 MB 量级；不到 1 MiB 只可能是占位
+    文件、被截断的包或错误资源，装上就会把能用的程序目录换成跑不起来的东西。
+    """
+    try:
+        size = os.path.getsize(exe_path)
+    except OSError as e:
+        raise UpdateError(f"读不到安装包里的 Flandora.exe：{e}") from e
+    if size < MIN_EXE_BYTES:
+        raise UpdateError(f"安装包里的 Flandora.exe 只有 {size} 字节，明显不完整，拒绝安装")
 
 
 def stage(archive_path: str, version: str) -> dict:
@@ -234,10 +304,22 @@ def can_write_app_dir() -> bool:
         return False
 
 
-def swap_script(info: dict, backup_dir: str | None = None) -> str:
-    """生成「等本进程退出 → 备份旧目录 → 覆盖 → 重启」的 PowerShell 脚本。
+def _ps_literal(value: str) -> str:
+    """把路径写成 PowerShell 双引号字面量，转义反引号、引号与美元符。
 
-    失败时把备份挪回去，保证程序至少还能启动。
+    旧实现用 ``'...'`` 直接拼路径：目录名里一旦有单引号，脚本就是语法错误，更新停在
+    半途。双引号串的转义序列固定（`````、```"``、```$``），任何路径都能安全嵌入。
+    """
+    escaped = value.replace("`", "``").replace('"', '`"').replace("$", "`$")
+    return f'"{escaped}"'
+
+
+def swap_script(info: dict, backup_dir: str | None = None) -> str:
+    """生成「等本进程退出 → 备份旧目录 → 覆盖 → 重启并观察」的 PowerShell 脚本。
+
+    失败时把备份挪回去，保证程序至少还能启动。新版本拉起后观察
+    ``STARTUP_GRACE_SECONDS`` 秒；进程提前退出同样算失败并回滚——「更新成功但起不来」
+    比不更新更糟，用户至少还能回到能跑的旧版。
     """
     target = info.get("app_dir") or app_dir()
     staging = info["staging"]
@@ -245,30 +327,43 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
     backup = backup_dir or os.path.join(updates_dir(), f"backup-{version or 'old'}")
     exe = os.path.join(target, "Flandora.exe")
     lines = [
-        "$ErrorActionPreference = 'Stop'",
-        f"# 等旧进程退出（最多 60 秒）：{os.getpid()}",
+        '$ErrorActionPreference = "Stop"',
+        f"# 旧进程 {os.getpid()} 退出后再动程序目录，最多等 60 秒",
         f"Wait-Process -Id {os.getpid()} -Timeout 60 -ErrorAction SilentlyContinue",
         "Start-Sleep -Milliseconds 800",
-        f"$target = '{target}'",
-        f"$staging = '{staging}'",
-        f"$backup = '{backup}'",
-        "if (Test-Path $backup) { Remove-Item $backup -Recurse -Force }",
+        f"$target = {_ps_literal(target)}",
+        f"$staging = {_ps_literal(staging)}",
+        f"$backup = {_ps_literal(backup)}",
+        f"$exe = {_ps_literal(exe)}",
+        f"$grace = {STARTUP_GRACE_SECONDS}",
+        f"# 本次更新到 {version or '未知版本'}",
+        "if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Recurse -Force }",
         "New-Item -ItemType Directory -Path $backup -Force | Out-Null",
         "try {",
-        "  Get-ChildItem $target -Force | Where-Object { $_.Name -ne 'data' } | ForEach-Object {",
-        "    Move-Item $_.FullName (Join-Path $backup $_.Name) -Force",
+        "  Get-ChildItem -LiteralPath $target -Force | Where-Object { $_.Name -ne 'data' } | ForEach-Object {",
+        "    Move-Item -LiteralPath $_.FullName -Destination (Join-Path $backup $_.Name) -Force",
         "  }",
-        "  Get-ChildItem $staging -Force | ForEach-Object {",
-        "    Copy-Item $_.FullName $target -Recurse -Force",
+        "  Get-ChildItem -LiteralPath $staging -Force | ForEach-Object {",
+        "    Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force",
         "  }",
-        "  Write-Host '更新完成，正在启动新版本'",
-        f"  Start-Process '{exe}'",
+        "  $proc = Start-Process -FilePath $exe -PassThru",
+        "  $deadline = (Get-Date).AddSeconds($grace)",
+        "  $alive = $true",
+        "  while ((Get-Date) -lt $deadline) {",
+        "    Start-Sleep -Milliseconds 500",
+        "    $live = Get-Process -Id $proc.Id -ErrorAction SilentlyContinue",
+        "    if ($null -eq $live -or $live.HasExited) { $alive = $false; break }",
+        "  }",
+        '  if (-not $alive) { throw "新版本启动后 $grace 秒内退出（进程 $($proc.Id) 已不在）" }',
+        "  Write-Host '更新完成，新版本正在运行'",
         "} catch {",
         "  Write-Host ('更新失败：' + $_.Exception.Message)",
-        "  Get-ChildItem $backup -Force | ForEach-Object {",
-        "    Copy-Item $_.FullName $target -Recurse -Force",
+        "  # 回滚只做覆盖，不先删目标目录：备份里一定有旧版的每个文件，覆盖回旧版即可；",
+        "  # 先删会把「搬到一半失败」时留在目标里的旧文件一起删掉，反而救不回来。",
+        "  Get-ChildItem -LiteralPath $backup -Force | ForEach-Object {",
+        "    Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force",
         "  }",
-        "  Write-Host '已回滚到旧版本，备份留在：' $backup",
+        "  Write-Host ('已回滚到旧版本，备份留在：' + $backup)",
         "  Pause",
         "}",
     ]
@@ -276,11 +371,16 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
 
 
 def write_swap_script(info: dict) -> str:
-    """把替换脚本写到 data/updates/ 下并返回路径。"""
+    """把替换脚本写到 data/updates/ 下并返回路径。
+
+    脚本文本里已经是 CRLF，写盘时关掉换行翻译（``newline=""``），否则会再插一个
+    CR，变成 ``\\r\\r\\n``。
+    """
     version = info.get("version", "new")
     path = os.path.join(updates_dir(), f"apply-{version}.ps1")
-    with open(path, "w", encoding="utf-8-sig", newline="\r\n") as fh:
+    with open(path, "w", encoding="utf-8-sig", newline="") as fh:
         fh.write(swap_script(info))
+    log.info("更新脚本已写入 %s", path)
     return path
 
 

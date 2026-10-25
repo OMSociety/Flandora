@@ -10,11 +10,13 @@
 ;   2. data\ 下的文件一律 uninsneveruninstall，卸载时是否删除由
 ;      InitializeUninstall() 里的对话框决定（默认删除）。
 
+; 版本号与载荷目录由 tools/sync_version.py 写进 version.iss（唯一来源是
+; flandora/__init__.py 的 __version__），本文件不写这两个值。
+#include "version.iss"
+
 #define AppName "Flandora"
-#define AppVersion "1.0.0"
 #define AppPublisher "OMSociety"
 #define ManagerExe "Flandora-Manager.exe"
-#define PayloadDir "..\dist\Flandora-v1.0.0"
 
 [Setup]
 AppId={{80f185a4-624d-40dc-bb9f-59a793ff3859}

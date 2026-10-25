@@ -4,8 +4,8 @@
 Cursor、DSH 等）。让模型先「知道桥接能干什么」，再按需调动作，而不是靠猜。
 
 ```powershell
-.venv\Scripts\python.exe -m pip install -e mcp\python
-.venv\Scripts\python.exe -m flandora_mcp.server --selftest
+python -m pip install -e mcp\python
+python -m flandora_mcp.server --selftest
 ```
 
 ## 接入客户端
@@ -16,7 +16,7 @@ Cursor、DSH 等）。让模型先「知道桥接能干什么」，再按需调�
 {
   "mcpServers": {
     "flandora": {
-      "command": "D:\\WorkSpace\\Github\\Flandora\\.venv\\Scripts\\python.exe",
+      "command": "python",
       "args": ["-m", "flandora_mcp.server"],
       "env": {
         "FLANDORA_MCP_MODE": "read",

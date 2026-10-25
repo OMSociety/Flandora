@@ -42,7 +42,7 @@ Flandora 默认 `ob_message_format` 是 `array`，而 AstrBot 收到事件后是
 
 ## 3. 会话 ID 与 wxid
 
-AstrBot 用 `unified_msg_origin` 记会话，其中会话 ID 这一段群聊取事件的 `group_id`、私聊取发送者的 `user_id`（见 `aiocqhttp_message_event.py` 的 `send()`：`is_group = bool(self.get_group_id())`，`session_id = self.get_group_id() if is_group else self.get_sender_id()`）。
+AstrBot 用 `unified_msg_origin` 记会话，写法是 `平台实例 ID:消息类型:会话 ID`（`MessageSession.__str__`，消息类型取 `GroupMessage` 或 `FriendMessage`）。会话 ID 那一段：群聊取事件的 `group_id`、私聊取发送者的 `user_id`（见 `aiocqhttp_message_event.py` 的 `send()`：`is_group = bool(self.get_group_id())`，`session_id = self.get_group_id() if is_group else self.get_sender_id()`）。
 
 主动发送（定时任务、`send_by_session`、插件里没有 `event` 的发送）要求这段会话 ID 是纯数字：
 
@@ -66,9 +66,9 @@ session_id_int = int(session_id) if session_id and session_id.isdigit() else Non
 反方向也通：凡是 `user_id` / `group_id` 一类参数，整数与微信标识两种写法都收。
 
 ```python
-client.call("send_group_msg", group_id=1234567890, message=chain)          # 整数 ID
+client.call("send_group_msg", group_id=1234567890, message=chain)  # 整数 ID
 client.call("send_group_msg", group_id="50071592949@chatroom", message=chain)  # 群标识
-client.call("send_private_msg", user_id="wxid_zhangsan", message=chain)   # wxid
+client.call("send_private_msg", user_id="wxid_zhangsan", message=chain)  # wxid
 ```
 
 写整数时必须是映射表里已经分配过的号：从没见过的数字回 `1406`，Flandora 不会拿这个数字去微信里搜人——那会把 ID 当成搜索词发给真实联系人。

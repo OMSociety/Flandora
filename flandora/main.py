@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 
-from . import __version__, config, ob_ids, update_check, wechat_account
+from . import __version__, config, ob_ids, ob_network, update_check, wechat_account
 from .bridge_core import Flandora
 from .ob_server import ONEBOT_SERVER
 from .runtime import LIFECYCLE, RUNTIME, events
@@ -155,6 +155,8 @@ def _rebuild_for_account(old, new):
     old_wxid = old.wxid if old else "（未识别）"
     ob_ids.clear_names()
     ob_ids.SELF.set_wxid(new.wxid)  # user_id 重新分配，昵称缓存同时作废
+    # 反向 WS 的 X-Self-ID 是握手那一刻定下的：不重连就还顶着上一个账号的身份
+    ob_network.manager().refresh_identity()
     log.warning("=" * 64)
     log.warning(f"[账号] 微信登录账号已切换：{old_wxid} -> {new.wxid}")
     log.warning(f"[账号] 新账号数据目录：{new.data_dir or '（未找到）'}")

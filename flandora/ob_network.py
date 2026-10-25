@@ -4,7 +4,8 @@
 
 - ``ws_server``：等客户端连进来（最常用，机器人框架作为正向 WS 客户端）。
 - ``http_server``：暴露 HTTP API，客户端每次 POST 一个动作。
-- ``ws_client``：主动连到框架的 WS 服务端（框架侧只开反向 WS 接入时用）。
+- ``ws_client``：主动连到框架的 WS 服务端（框架侧只开反向 WS 接入时用），握手按
+  OneBot v11 带上 ``X-Self-ID`` 与 ``X-Client-Role``。
 - ``http_client``：把事件 POST 到框架的 HTTP 端点（Event 上报）。
 
 每种入口都有 ``role``：``api`` 只处理动作请求，``event`` 只推事件，``universal``
@@ -27,6 +28,7 @@ from urllib.parse import parse_qs, urlparse
 import websockets
 from websockets.asyncio.server import serve
 
+from . import ob_ids
 from .action_catalog import (
     RETCODE_AUTH_FAILED,
     RETCODE_BAD_PARAM,
@@ -159,6 +161,29 @@ def default_node(host: str, port: int, token: str) -> dict:
     )
 
 
+# 反向 WS 的握手头：OneBot v11 要求连接请求里带 ``X-Self-ID`` 与
+# ``X-Client-Role``，服务端据此认出这条连接代表哪个机器人、该当 API 端还是
+# 事件端用。aiocqhttp 一类实现直接把这两个头取出来用，缺了就在握手阶段拒绝。
+_ROLE_HEADERS = {ROLE_API: "API", ROLE_EVENT: "Event", ROLE_UNIVERSAL: "Universal"}
+
+
+def handshake_headers(node: dict) -> dict[str, str]:
+    """反向 WS 的握手头。
+
+    机器人身份要等认出登录的微信账号才知道，那之前用 ``*``（OneBot 服务端
+    约定的通配身份）。身份变了必须重连——``X-Self-ID`` 是握手那一刻定下的，
+    见 ``NetworkManager.refresh_identity``。
+    """
+    self_id = ob_ids.SELF.user_id()
+    headers = {
+        "X-Self-ID": str(self_id) if self_id else "*",
+        "X-Client-Role": _ROLE_HEADERS[node["role"]],
+    }
+    if node["access_token"]:
+        headers["Authorization"] = f"Bearer {node['access_token']}"
+    return headers
+
+
 # ============ 事件按入口整形 ============
 
 
@@ -190,6 +215,7 @@ class NetworkManager:
         self._tasks: list[asyncio.Task] = []
         self._connections: dict[str, set] = {}  # 入口名 → 已连接的 WS
         self._clients: dict[str, object] = {}  # 入口名 → 反向 WS 连上的那个连接
+        self._retry_now: set[str] = set()  # 身份变了、不等退避间隔就要重连的入口
         self._state: dict[str, str] = {}
         self._errors: dict[str, str] = {}
         self._lock = threading.Lock()
@@ -504,12 +530,9 @@ class NetworkManager:
         url = node["url"]
         while True:
             try:
-                headers = {}
-                if node["access_token"]:
-                    headers["Authorization"] = f"Bearer {node['access_token']}"
                 async with websockets.connect(
                     url,
-                    additional_headers=headers or None,
+                    additional_headers=handshake_headers(node),
                     max_size=MAX_MESSAGE_SIZE,
                     open_timeout=node["timeout_ms"] / 1000,
                 ) as ws:
@@ -529,6 +552,10 @@ class NetworkManager:
                 )
             finally:
                 self._clients.pop(name, None)
+            if name in self._retry_now:
+                # 刚才是身份变化主动断的：旧握手头已经作废，立刻重连换新的
+                self._retry_now.discard(name)
+                continue
             await asyncio.sleep(max(1.0, node["reconnect_interval_ms"] / 1000))
 
     async def _read_ws_client(self, node: dict, ws):
@@ -536,6 +563,27 @@ class NetworkManager:
             if node["role"] == ROLE_EVENT:
                 continue
             await _serve_action(ws, raw)
+
+    def refresh_identity(self) -> None:
+        """重开反向 WS：``X-Self-ID`` 是握手那一刻定下的，身份变了就得重连。
+
+        可从任意线程调用（账号监视回调就是这么调的），关闭动作排回事件循环。
+        """
+        loop = self._loop
+        if loop is None:
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(self._refresh_identity(), loop)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[OB11] 重连反向 WS 失败：{e}")
+
+    async def _refresh_identity(self) -> None:
+        for name, ws in list(self._clients.items()):
+            self._retry_now.add(name)
+            try:
+                await ws.close(code=1001, reason="identity changed")
+            except Exception as e:  # noqa: BLE001
+                log.debug(f"[OB11] 关闭反向 WS {name} 失败：{e}")
 
     # ---------- HTTP 上报 ----------
 

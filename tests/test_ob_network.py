@@ -1,7 +1,8 @@
 """网络适配器：配置规范化 + 四类入口的实际收发。
 
 用真的端口跑，覆盖这些行为：WS 服务端能处理动作并推送事件、api 角色不推事件、
-HTTP 服务端按路径收动作、HTTP 上报把事件 POST 出去、反向 WS 主动连上并能被推送。
+HTTP 服务端按路径收动作、HTTP 上报把事件 POST 出去、反向 WS 主动连上并能被推送
+（握手头按 OneBot v11 带 X-Self-ID / X-Client-Role，身份变了会重连）。
 配置规范化单独测：写错的配置必须报错，不能悄悄变成一个什么都不监听的桥接。
 """
 
@@ -283,6 +284,102 @@ def test_http_client_posts_events():
 
 
 # ---------- 反向 WS ----------
+
+
+def test_ws_client_handshake_headers(isolated_ids):
+    """握手要带 OneBot v11 的 X-Self-ID 与 X-Client-Role，否则严格服务端直接拒绝。"""
+    self_id = isolated_ids.contact_id("wxid_bot")
+    isolated_ids.SELF.set_wxid("wxid_bot")
+
+    headers = ob_network.handshake_headers(
+        ob_network.normalize_node({"type": "ws_client", "url": "ws://x.invalid/ws"}, 0)
+    )
+    assert headers["X-Self-ID"] == str(self_id)
+    assert headers["X-Client-Role"] == "Universal"
+    assert "Authorization" not in headers
+
+    for role, expected in (("api", "API"), ("event", "Event"), ("universal", "Universal")):
+        role_headers = ob_network.handshake_headers(
+            ob_network.normalize_node(
+                {
+                    "type": "ws_client",
+                    "url": "ws://x.invalid/ws",
+                    "role": role,
+                    "access_token": "tk",
+                },
+                0,
+            )
+        )
+        assert role_headers["X-Client-Role"] == expected
+        assert role_headers["Authorization"] == "Bearer tk"
+
+
+def test_handshake_headers_use_wildcard_before_login(isolated_ids):
+    """还没认出登录账号时用通配身份，别拿 0 冒充 self_id。"""
+    isolated_ids.SELF.set_wxid("")
+    headers = ob_network.handshake_headers(
+        ob_network.normalize_node({"type": "ws_client", "url": "ws://x.invalid/ws"}, 0)
+    )
+    assert headers["X-Self-ID"] == "*"
+
+
+def test_ws_client_reconnects_after_identity_change(isolated_ids):
+    """登录账号切换后重连换掉 X-Self-ID：事件里的 self_id 变了，握手头必须跟着变。"""
+    from websockets.asyncio.server import serve
+
+    async def main():
+        seen: list[str] = []
+        reconnected = asyncio.Event()
+
+        async def handler(ws):
+            seen.append(ws.request.headers["X-Self-ID"])
+            if len(seen) > 1:
+                reconnected.set()
+            try:
+                async for _ in ws:
+                    pass
+            except websockets.exceptions.ConnectionClosed:
+                pass
+
+        isolated_ids.SELF.set_wxid("wxid_before")
+        first = str(isolated_ids.SELF.user_id())
+
+        port = _free_port()
+        async with serve(handler, "127.0.0.1", port):
+            mgr = ob_network.NetworkManager()
+            mgr.configure(
+                [
+                    ob_network.normalize_node(
+                        {
+                            "type": "ws_client",
+                            "name": "rev",
+                            "url": f"ws://127.0.0.1:{port}/ws",
+                            # 退避间隔拉到一分钟：这一轮重连只可能来自身份变化
+                            "reconnect_interval_ms": 60000,
+                        },
+                        0,
+                    )
+                ]
+            )
+            mgr.start(asyncio.get_running_loop())
+            try:
+                for _ in range(100):
+                    if seen:
+                        break
+                    await asyncio.sleep(0.05)
+                assert seen == [first]
+
+                isolated_ids.SELF.set_wxid("wxid_after")
+                second = str(isolated_ids.SELF.user_id())
+                assert second != first
+                mgr.refresh_identity()
+
+                await asyncio.wait_for(reconnected.wait(), timeout=10)
+                assert seen[-1] == second
+            finally:
+                await mgr.stop()
+
+    asyncio.run(main())
 
 
 def test_ws_client_connects_and_receives_events():

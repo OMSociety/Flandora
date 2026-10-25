@@ -182,6 +182,8 @@ class UiaSender(BaseSender):
         self._fg_before = 0
         # 最近一次发送失败的原因（供 WebUI 回显，不只是留在日志里）
         self._last_error = ""
+        # 微信里配置的发送快捷键："" 表示还没探过，"enter" 回车，"ctrl_enter" Ctrl+回车
+        self._send_key = ""
 
         self.search_enabled = search_enabled
         # 是否允许发送时把微信窗口提到前台。关闭时发送通道整体不可用。
@@ -666,6 +668,59 @@ class UiaSender(BaseSender):
             user32.PostMessageW(hwnd, WM_KEYUP, mod, KEYUP_LPARAM)
             time.sleep(0.02)
 
+    def _post_send_key(self, kind: str) -> None:
+        """按指定的发送键把输入框里的内容发出去。
+
+        ``kind`` 是 "enter" 或 "ctrl_enter"。微信允许把发送键改成 Ctrl+回车，
+        此时单按回车只会插一个换行。
+        """
+        if kind != "ctrl_enter":
+            self._post_key(VK_RETURN)
+            return
+        # Ctrl 的键态要伪造：PostMessage 投递的修饰键进不了微信线程的键态，
+        # 与剪贴板粘贴同一个原因（见 _paste_clipboard）
+        user32 = self._user32_inst()
+        user32.SetKeyboardState.argtypes = [ctypes.c_char_p]
+        state = bytearray(256)
+        state[VK_CONTROL] = 0x80
+        state[VK_LCONTROL] = 0x80
+        try:
+            user32.SetKeyboardState(bytes(state))
+            self._post_key(VK_RETURN, VK_CONTROL)
+        finally:
+            state[VK_CONTROL] = 0
+            state[VK_LCONTROL] = 0
+            try:
+                user32.SetKeyboardState(bytes(state))
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _press_send(self) -> None:
+        """用当前认定的发送键发送（默认回车，试出来是 Ctrl+回车就记住）。"""
+        self._post_send_key(self._send_key or "enter")
+
+    def _retry_send_as_ctrl_enter(self, contact: str, text: str, summary_before: str) -> bool:
+        """回车没发出去时，按 Ctrl+回车再发一次，成功了就把结论记住。
+
+        微信允许把发送键改成 Ctrl+回车，那时回车只在正文里插一个换行、消息留在
+        输入框里。这里不读微信的设置，直接按结果判定：清空输入框（回车插进去的
+        那个换行也一并清掉）、重新输入、按 Ctrl+回车，摘要更新了就是这种配置。
+        每次进程只试一次，之后一律按 Ctrl+回车发送。
+        """
+        if not self._clear_input():
+            return False
+        if not self._type_text(text):
+            self._clear_input()
+            return False
+        self._post_send_key("ctrl_enter")
+        self._release_foreground()
+        time.sleep(0.8)
+        if not self._confirm_sent(contact, text, summary_before):
+            return False
+        self._send_key = "ctrl_enter"
+        log.info("回车发不出去、Ctrl+回车发得出去：微信的发送键是 Ctrl+回车，后续照此发送")
+        return True
+
     def _post_char(self, ch: str) -> None:
         """投递一个可见字符（WM_CHAR，支持中文）。"""
         user32 = self._user32_inst()
@@ -1013,6 +1068,22 @@ class UiaSender(BaseSender):
         self._last_error = f"输入框有清不掉的残留（{left[:20]}），本次发送已取消"
         return False
 
+    def _send_failure_hint(self) -> str:
+        """发送没确认成功时的说明。
+
+        输入框里还留着刚才的内容，说明那一下回车没被当成发送键（被改成了换行），
+        或者输入框在发送时被别的窗口抢走了焦点；两种都直接说清楚，并把残留清掉，
+        否则残留内容会在下一条消息准备好后被一起发出去。
+        """
+        leftover = self._input_text()
+        if leftover:
+            self._clear_input()
+            return (
+                "按发送键后消息没发出去，输入框里的内容已清掉。"
+                "可能是微信的发送键设成了别的组合，也可能发送时输入框被别的窗口抢走了焦点"
+            )
+        return "发了但会话摘要没更新，消息可能没发出去"
+
     def _type_text(self, text: str) -> bool:
         """逐字符投递 WM_CHAR 并回读校验。
 
@@ -1112,12 +1183,19 @@ class UiaSender(BaseSender):
                     log.error(f"[UIA失败] {contact}: {self._last_error}")
                     return False
 
-                self._post_key(VK_RETURN)
+                self._press_send()
                 self._release_foreground()
                 time.sleep(0.6)
 
                 if not self._confirm_sent(contact, text, summary_before):
-                    self._last_error = "回车后摘要未更新，消息可能没发出去"
+                    # 微信若把发送键改成了 Ctrl+回车，这一回落空就是那种情况：
+                    # 换按 Ctrl+回车再试一次，成了就把这条配置记住
+                    if self._send_key != "ctrl_enter" and self._retry_send_as_ctrl_enter(
+                        contact, text, summary_before
+                    ):
+                        log.info(f"[UIA成功] {contact}: {text[:50]}")
+                        return True
+                    self._last_error = self._send_failure_hint()
                     log.error(f"[UIA失败] {contact}: {self._last_error}")
                     return False
                 log.info(f"[UIA成功] {contact}: {text[:50]}")
@@ -1195,11 +1273,11 @@ class UiaSender(BaseSender):
                     self._last_error = "输入期间会话已改变，本次发送已取消"
                     log.error(f"[UIA失败] {contact}: {self._last_error}")
                     return False
-                self._post_key(VK_RETURN)
+                self._press_send()
                 self._release_foreground()
                 time.sleep(0.6)
                 if not self._confirm_sent(contact, text or names[0], summary_before):
-                    self._last_error = "回车后摘要未更新，消息可能没发出去"
+                    self._last_error = self._send_failure_hint()
                     log.error(f"[UIA失败] {contact}: {self._last_error}")
                     return False
                 log.info(f"[UIA成功] {contact}: @{'、'.join(names)} {text[:40]}")
@@ -1416,12 +1494,14 @@ class UiaSender(BaseSender):
                     return False
                 self._release_foreground()
 
-                self._post_key(VK_RETURN)
+                self._press_send()
                 self._release_foreground()
                 time.sleep(0.8)
 
                 summary = self._session_summary(contact) or ""
                 if "图片" not in summary:
+                    if self._input_text():
+                        self._clear_input()
                     log.error(f"[UIA失败] 图片 -> {contact}: 摘要未显示图片（{summary[:24]!r}）")
                     return False
                 log.info(f"[UIA成功] 图片 -> {contact}: {os.path.basename(image_path)}")
@@ -1487,12 +1567,14 @@ class UiaSender(BaseSender):
                     return False
                 self._release_foreground()
 
-                self._post_key(VK_RETURN)
+                self._press_send()
                 self._release_foreground()
                 time.sleep(0.8)
 
                 summary = self._session_summary(contact) or ""
                 if name not in summary and "文件" not in summary:
+                    if self._input_text():
+                        self._clear_input()
                     log.error(f"[UIA失败] 文件 -> {contact}: 摘要未显示该文件（{summary[:24]!r}）")
                     return False
                 log.info(f"[UIA成功] 文件 -> {contact}: {name}")

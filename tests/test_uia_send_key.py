@@ -15,7 +15,14 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from flandora import config  # noqa: E402
-from flandora.uia_sender import VK_RETURN, UiaSender  # noqa: E402
+from flandora.uia_sender import VK_RETURN, UiaSender, _with_cancel_note  # noqa: E402
+
+
+def test_cancel_note_follows_sentence_punctuation():
+    """原因自己带句号时不能再接逗号，否则日志出现「。，」。"""
+    assert _with_cancel_note("程序点不到。") == "程序点不到。本次发送已取消"
+    assert _with_cancel_note("没选中") == "没选中，本次发送已取消"
+    assert _with_cancel_note("") == "本次发送已取消"
 
 
 def make_sender() -> UiaSender:

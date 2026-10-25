@@ -49,6 +49,7 @@ VK_RETURN = 0x0D
 VK_BACK = 0x08
 VK_END = 0x23
 VK_ESCAPE = 0x1B
+VK_DOWN = 0x28
 VK_V = 0x56
 
 # ShowWindow 命令：还原并激活窗口
@@ -71,6 +72,20 @@ class BaseSender:
 # ================================================================
 # 进程窗口枚举（多开识别用，纯 ctypes，不依赖 uiautomation）
 # ================================================================
+
+
+def _with_cancel_note(message: str) -> str:
+    """给失败原因接一句「本次发送已取消」，按前句末尾的标点接续。
+
+    原因本身可能是一整句（以句号收尾），也可能是不带标点的短语；
+    直接拼「，本次发送已取消」会拼出「。」后的逗号。
+    """
+    note = "本次发送已取消"
+    if not message:
+        return note
+    if message[-1] in "。！？…":
+        return f"{message}{note}"
+    return f"{message}，{note}"
 
 
 def enum_process_windows(pid: int, desktop_name: str = "") -> list[int]:
@@ -118,6 +133,8 @@ class UiaSender(BaseSender):
     # 会话项的名字是多行文本：会话名 / 最后一条消息摘要 / 时间。
     SESSION_CELL_CLASS = "mmui::ChatSessionCell"
     INPUT_FIELD_CLASS = "mmui::ChatInputField"
+    # 会话列表底部的「折叠的聊天」分组项（微信把不常用的会话收进这里）
+    FOLD_CELL_CLASS = "mmui::ChatStickyFoldCell"
     # 输入框右下角的「发送」按钮：只认精确名字（输入栏里另有「发送表情」等按钮）
     SEND_BUTTON_NAMES = ("发送", "发送(S)", "Send")
     SEARCH_FIELD_CLASS = "mmui::XSearchField"
@@ -886,6 +903,33 @@ class UiaSender(BaseSender):
     # 联系人切换
     # ================================================================
 
+    def _fold_cell(self):
+        """会话列表里的「折叠的聊天」分组项；没有分组时返回 None。"""
+        for _, node in self._walk():
+            if self._class_of(node) == self.FOLD_CELL_CLASS:
+                return node
+        return None
+
+    def _folded_hint(self, contact: str) -> str:
+        """切换失败时给出原因：要么确认有折叠分组，要么只说明没选中。
+
+        会话列表里找不到「折叠的聊天」分组项时不能就此下结论——那一行只在
+        列表滚到底时才进 UIA 树，读不到它不代表没有折叠会话。
+        """
+        try:
+            folded = self._fold_cell() is not None
+        except Exception:  # noqa: BLE001
+            folded = False
+        if folded:
+            return (
+                f"「{contact}」可能被收进了微信的「折叠的聊天」："
+                "那个分组里的会话不在会话列表里，程序点不到。"
+            )
+        return (
+            f"「{contact}」不在会话列表里，也没能从搜索里选中；"
+            "如果它被收进了微信的「折叠的聊天」，那个分组里的会话程序点不到。"
+        )
+
     def _select_visible_session(self, contact: str) -> bool:
         """在会话列表里点开目标会话；列表里没有它时返回 False。
 
@@ -953,6 +997,26 @@ class UiaSender(BaseSender):
                 best, best_top = node, top
         return best
 
+    def _search_input(self):
+        """搜索框里真正接收输入的编辑框。
+
+        `mmui::XSearchField` 是外框容器，点它中心可能落在图标或空白上、抢不到
+        焦点；真正能打字的是它内部的 `mmui::XValidatorTextEdit`。
+        """
+        return self._find_by_class("mmui::XValidatorTextEdit") or self._find_by_class(
+            self.SEARCH_FIELD_CLASS
+        )
+
+    def _search_field_text(self) -> str:
+        """搜索框里当前的关键词（读不到就返回空串）。"""
+        field = self._search_input()
+        if field is None:
+            return ""
+        try:
+            return field.GetValuePattern().Value or ""
+        except Exception:
+            return ""
+
     def _search_and_select(self, contact: str) -> bool:
         """用主窗口顶部的搜索框找会话并点开（会话列表里没有它时的兜底）。
 
@@ -963,36 +1027,59 @@ class UiaSender(BaseSender):
         结果、点了却切不过去」的原因。
         """
         user32 = self._user32_inst()
-        field = self._find_by_class(self.SEARCH_FIELD_CLASS) or self._find_by_class(
-            "mmui::XValidatorTextEdit"
-        )
+        field = self._search_input()
         if field is None or not self._post_click(field):
             return False
         time.sleep(0.7)
         for ch in contact:
             user32.PostMessageW(self._hwnd, WM_CHAR, ord(ch), 1)
             time.sleep(0.05)
-        time.sleep(1.5)
+        time.sleep(1.2)
+        # 搜索结果弹层是独立顶层窗口，主窗口的 UIA 树里未必能拿到；键盘选中更稳：
+        # 上下键把焦点送进结果列表，回车打开第一条。
+        if self._open_first_search_hit(contact):
+            self._leave_search()
+            return self._open_chat_title() == contact
+        self._leave_search()
+        return False
 
-        popover = self._find_by_class(self.SEARCH_POPOVER_CLASS)
-        hit = self._search_hit(contact, popover) if popover is not None else None
-        if hit is not None:
-            self._post_click(hit, self._native_hwnd(popover))
-            time.sleep(1.0)
+    def _open_first_search_hit(self, contact: str) -> bool:
+        """用键盘打开搜索框的第一条结果。
 
-        # 退出搜索：先清空关键词，再**在弹层确实还在时**才按 Esc。
-        # 没有弹层时按 Esc，微信会把它当成「关闭主窗口到托盘」——那个窗口再显示
-        # 出来只会重绘界面，无障碍树不会重建（UIA 从此只剩两级节点），只能重启微信。
-        for _ in range(len(contact) + 4):
+        搜索框获得焦点时，按一次下键把选择移进结果列表（第一条通常就是联系人），
+        回车打开。打开成功的判据是输入框标题变成了目标会话名——弹层里点到什么都
+        不比这个硬。
+        """
+        for keys in (("down", "enter"), ("enter",)):
+            for key in keys:
+                self._post_vk({"down": VK_DOWN, "enter": VK_RETURN}[key])
+                time.sleep(0.45)
+            time.sleep(0.9)
+            if self._open_chat_title() == contact:
+                return True
+            log.info("搜索里按 %s 没打开 %s", "+".join(keys), contact)
+        return False
+
+    def _post_vk(self, vk: int) -> None:
+        """向微信主窗口投递一次按下-抬起。"""
+        user32 = self._user32_inst()
+        user32.PostMessageW(self._hwnd, WM_KEYDOWN, vk, 1)
+        time.sleep(0.02)
+        user32.PostMessageW(self._hwnd, WM_KEYUP, vk, KEYUP_LPARAM)
+
+    def _leave_search(self) -> None:
+        """清掉搜索框里的关键词。
+
+        只清关键词、不按 Esc：没有弹层时按 Esc，微信会把它当成「关闭主窗口到
+        托盘」——窗口再显示出来只会重绘界面，无障碍树不会重建（UIA 从此只剩两级
+        节点），只能重启微信。
+        """
+        user32 = self._user32_inst()
+        for _ in range(40):
             user32.PostMessageW(self._hwnd, WM_KEYDOWN, VK_BACK, 1)
             user32.PostMessageW(self._hwnd, WM_KEYUP, VK_BACK, KEYUP_LPARAM)
             time.sleep(0.01)
-        time.sleep(0.4)
-        if self._find_by_class(self.SEARCH_POPOVER_CLASS) is not None:
-            user32.PostMessageW(self._hwnd, WM_KEYDOWN, VK_ESCAPE, 1)
-            user32.PostMessageW(self._hwnd, WM_KEYUP, VK_ESCAPE, KEYUP_LPARAM)
-            time.sleep(0.5)
-        return self._open_chat_title() == contact
+        time.sleep(0.3)
 
     def _switch_contact(self, contact: str) -> bool:
         """把当前会话切到目标联系人（调用前必须已经 _attach_input）。"""
@@ -1023,10 +1110,8 @@ class UiaSender(BaseSender):
             self._detach_input()
         if not switched:
             self._last_contact = ""
-            log.error(
-                f"[UIA失败] {contact}: 未能切换到该联系人"
-                "（会话列表与搜索都不可用，微信可能未登录），本次发送已取消"
-            )
+            self._last_error = self._folded_hint(contact)
+            log.error(f"[UIA失败] {contact}: {_with_cancel_note(self._last_error)}")
             return False
         self._last_contact = contact
         return True

@@ -14,7 +14,8 @@
 
 线程模型：所有适配器活在同一个事件循环里（``ob_server.OneBotServer`` 建的那个线程），
 而事件由桥接线程推送。``broadcast()`` 因此是同步函数，内部用
-``run_coroutine_threadsafe`` 切回循环，与旧 ``ws_pool.broadcast`` 的调用方式一致。
+``run_coroutine_threadsafe`` 切回循环。配置保存后由 :meth:`NetworkManager.apply`
+把入口表同步到运行态：新增的起、删掉的停、改过的重建、没动的不动，不必重启桥接。
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import asyncio
 import json
 import logging
 import threading
+from concurrent.futures import Future
 from urllib.parse import parse_qs, urlparse
 
 import websockets
@@ -44,6 +46,10 @@ KIND_HTTP_SERVER = "http_server"
 KIND_WS_CLIENT = "ws_client"
 KIND_HTTP_CLIENT = "http_client"
 KINDS = (KIND_WS_SERVER, KIND_HTTP_SERVER, KIND_WS_CLIENT, KIND_HTTP_CLIENT)
+
+# 保存配置后要立刻套到运行态的键：入口表本身，以及 ob_networks 为空时用来造
+# 兜底入口的那三项。改了它们只写文件不重建连接，面板就会显示一条「没生效」的入口。
+_NETWORK_KEYS = frozenset({"ob_networks", "ob_server_host", "ob_server_port", "ob_server_token"})
 
 ROLE_API = "api"
 ROLE_EVENT = "event"
@@ -203,6 +209,19 @@ def format_for_node(payload: dict, node: dict, default_format: str = "array") ->
     return out
 
 
+def _heartbeat_seconds() -> int:
+    """当前配置里的心跳间隔（秒），0 表示不发心跳。
+
+    心跳循环每轮现读：面板改了间隔或关掉心跳立刻生效，不必重启桥接。
+    """
+    from . import config
+
+    try:
+        return int(getattr(config, "OB_HEARTBEAT_SECONDS", 0) or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 # ============ 适配器管理 ============
 
 
@@ -212,7 +231,8 @@ class NetworkManager:
     def __init__(self):
         self._nodes: list[dict] = []
         self._loop: asyncio.AbstractEventLoop | None = None
-        self._tasks: list[asyncio.Task] = []
+        self._node_tasks: dict[str, asyncio.Task] = {}  # 入口名 → 监督任务
+        self._node_conf: dict[str, dict] = {}  # 入口名 → 起任务时用的那份配置
         self._connections: dict[str, set] = {}  # 入口名 → 已连接的 WS
         self._clients: dict[str, object] = {}  # 入口名 → 反向 WS 连上的那个连接
         self._retry_now: set[str] = set()  # 身份变了、不等退避间隔就要重连的入口
@@ -220,7 +240,7 @@ class NetworkManager:
         self._errors: dict[str, str] = {}
         self._lock = threading.Lock()
         self._started = False
-        self._heartbeat_interval = 0
+        self._heartbeat_task: asyncio.Task | None = None
 
     # ---------- 配置 ----------
 
@@ -253,33 +273,62 @@ class NetworkManager:
     def loop(self):
         return self._loop
 
+    def apply(self, nodes: list[dict] | None = None) -> Future | None:
+        """把最新配置同步到运行态，返回可以等待的 future。
+
+        新增的入口起、删掉的停、字段变了的按新配置重建、没变的原样不动——因此
+        一次保存不会打断正在连着的客户端。入口线程没在跑时只更新配置（下次
+        ``start()`` 自然按新配置起），返回 None。
+
+        任何线程都能调：任务操作被送回入口线程执行，调用的这条线程只更新配置
+        与状态表。
+        """
+        if nodes is None:
+            from . import config
+
+            nodes = config.OB_NETWORKS
+        wanted = normalize_nodes(nodes)
+        with self._lock:
+            self._nodes = list(wanted)
+            for node in wanted:
+                self._state.setdefault(node["name"], "stopped")
+                self._connections.setdefault(node["name"], set())
+            loop = self._loop if self._started else None
+        if loop is None or loop.is_closed() or not loop.is_running():
+            return None
+        return asyncio.run_coroutine_threadsafe(self._sync(wanted), loop)
+
+    def _on_settings_changed(self, settings, changed) -> None:
+        """配置订阅者：入口表或兜底入口的设置变了就把运行态对齐一遍（幂等）。"""
+        if not (set(changed or ()) & _NETWORK_KEYS):
+            return
+        if self.apply(list(settings.OB_NETWORKS)) is not None:
+            log.info("[OB11] 入口配置已保存，运行态按新配置同步")
+
     # ---------- 生命周期 ----------
 
     def start(self, loop: asyncio.AbstractEventLoop):
         """在给定循环里为每个启用的入口起一个监督任务。"""
+        from . import config
+
         self._loop = loop
         with self._lock:
             if self._started:
                 return
             self._started = True
-        for node in self._nodes:
+            nodes = list(self._nodes)
+        for node in nodes:
             if not node["enabled"]:
                 self._state[node["name"]] = "disabled"
                 continue
-            self._tasks.append(
-                loop.create_task(self._supervise(node), name=f"obnet-{node['name']}")
-            )
-        if not self._tasks:
+            self._spawn(node)
+        if not self._node_tasks:
             log.warning("[OB11] 没有启用的网络入口，事件无处可发")
-
-        from . import config
-
-        interval = int(getattr(config, "OB_HEARTBEAT_SECONDS", 0) or 0)
-        if interval > 0 and self._tasks:
-            self._heartbeat_interval = interval
-            self._tasks.append(
-                loop.create_task(self._heartbeat_loop(interval), name="obnet-heartbeat")
-            )
+        self._sync_heartbeat(nodes)
+        # 配置保存后由 `_on_settings_changed` 把运行态对齐到新入口表。订阅挂在
+        # 启动时，配置门面会把它带给之后换上的 store；`stop()` 之后 `apply` 只
+        # 更新配置镜像，不再动任务。
+        config.subscribe(self._on_settings_changed)
 
     async def stop(self):
         # 先道别再拆线：生命周期的 disable 只能趁连接还在时发。
@@ -292,8 +341,12 @@ class NetworkManager:
             log.debug(f"[OB11] 生命周期 disable 未送达：{e}")
         with self._lock:
             self._started = False
-            tasks = self._tasks
-            self._tasks = []
+            tasks = list(self._node_tasks.values())
+            self._node_tasks.clear()
+            self._node_conf.clear()
+            if self._heartbeat_task is not None:
+                tasks.append(self._heartbeat_task)
+                self._heartbeat_task = None
         for task in tasks:
             task.cancel()
         for task in tasks:
@@ -310,6 +363,70 @@ class NetworkManager:
             conns.clear()
         self._clients.clear()
 
+    async def _sync(self, nodes: list[dict]) -> None:
+        """把运行态对齐到给定入口表（只在入口线程里跑）。"""
+        wanted = {node["name"]: node for node in nodes}
+        for name in list(self._node_tasks):
+            target = wanted.get(name)
+            if target is None:
+                log.info(f"[OB11] 入口 {name} 已从配置里删掉，断开连接")
+            elif not target["enabled"]:
+                log.info(f"[OB11] 入口 {name} 已停用，断开连接")
+            elif self._node_conf.get(name) != target:
+                log.info(f"[OB11] 入口 {name} 的配置变了，按新配置重建")
+            else:
+                continue
+            await self._retire(name)
+            if target is not None and target["enabled"]:
+                self._spawn(target)
+        for name, node in wanted.items():
+            if not node["enabled"]:
+                self._state[name] = "disabled"
+            elif name not in self._node_tasks:
+                self._spawn(node)
+                log.info(f"[OB11] 入口 {name} 是新增的，已启动")
+        self._sync_heartbeat(list(wanted.values()))
+
+    def _spawn(self, node: dict) -> None:
+        """起一个入口的监督任务（只在入口线程里调）。"""
+        self._node_conf[node["name"]] = dict(node)
+        self._node_tasks[node["name"]] = self._loop.create_task(
+            self._supervise(node), name=f"obnet-{node['name']}"
+        )
+
+    async def _retire(self, name: str) -> None:
+        """停掉一个入口：断掉它的连接、取消监督任务（只在入口线程里调）。"""
+        task = self._node_tasks.pop(name, None)
+        self._node_conf.pop(name, None)
+        conns = self._connections.get(name)
+        if conns:
+            for ws in list(conns):
+                try:
+                    await ws.close(code=1001, reason="entry changed")
+                except Exception:  # noqa: BLE001
+                    pass
+            conns.clear()
+        self._clients.pop(name, None)
+        self._state[name] = "stopped"
+        if task is not None:
+            task.cancel()
+            try:
+                await task
+            except (asyncio.CancelledError, Exception):  # noqa: BLE001
+                pass
+
+    def _sync_heartbeat(self, nodes: list[dict]) -> None:
+        """按当前配置起停心跳任务；间隔本身由心跳循环每轮现读。"""
+        need = _heartbeat_seconds() > 0 and any(node["enabled"] for node in nodes)
+        running = self._heartbeat_task is not None and not self._heartbeat_task.done()
+        if need and not running:
+            self._heartbeat_task = self._loop.create_task(
+                self._heartbeat_loop(), name="obnet-heartbeat"
+            )
+        elif not need and running:
+            self._heartbeat_task.cancel()
+            self._heartbeat_task = None
+
     async def _announce_connect(self, node: dict, ws):
         """给新连上的客户端补一条 lifecycle(connect)。
 
@@ -325,8 +442,8 @@ class NetworkManager:
         except Exception as e:  # noqa: BLE001
             log.debug(f"[OB11] lifecycle(connect) 未送达：{e}")
 
-    async def _heartbeat_loop(self, interval: int):
-        """按间隔推 heartbeat。
+    async def _heartbeat_loop(self):
+        """按**当前**配置的间隔推 heartbeat；间隔改成 0 就停。
 
         lifecycle 由每条连接自己发（见 `_announce_connect`）：它描述的是
         「这条连接」的开始，与进程启动无关。心跳投递失败只记 debug——
@@ -336,6 +453,9 @@ class NetworkManager:
 
         try:
             while True:
+                interval = _heartbeat_seconds()
+                if interval <= 0:
+                    return
                 await asyncio.sleep(interval)
                 status = self._heartbeat_status()
                 await self._broadcast(make_heartbeat_event(interval, **status))

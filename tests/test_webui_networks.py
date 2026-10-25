@@ -30,7 +30,7 @@ def test_valid_nodes_are_normalized_and_live(saved):
     rest = config_api.api_put_config({"ob_networks": [NODE]}, Response())
 
     assert rest["ok"] is True
-    assert "ob_networks" in rest["restart_required"]
+    assert "ob_networks" not in rest["restart_required"]
     written = saved.read_raw()["ob_networks"]
     assert written[0]["type"] == "ws_client"
     # 规范化会补上默认值，落盘的是补全后的整项

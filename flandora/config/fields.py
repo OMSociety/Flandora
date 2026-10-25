@@ -260,7 +260,7 @@ FIELDS: tuple[Field, ...] = (
     Field(
         key="ob_server_host",
         attr="OB_SERVER_HOST",
-        kinds=_RESTART,
+        kinds=_HOT,
         default="127.0.0.1",
         desc="OneBot v11 服务端的监听地址；ob_networks 为空时按 host / port / token 起一个"
         "默认入口，都在本机就保持回环。",
@@ -268,7 +268,7 @@ FIELDS: tuple[Field, ...] = (
     Field(
         key="ob_server_port",
         attr="OB_SERVER_PORT",
-        kinds=_RESTART,
+        kinds=_HOT,
         default=7999,
         clean=_clean_ob_port,
         desc="OneBot v11 服务端端口；ob_networks 为空时用它起默认入口，客户端连"
@@ -277,14 +277,14 @@ FIELDS: tuple[Field, ...] = (
     Field(
         key="ob_server_token",
         attr="OB_SERVER_TOKEN",
-        kinds=_RESTART_SECRET,
+        kinds=_HOT_SECRET,
         desc="握手 token，留空 = 不校验鉴权（默认只监听回环，保持留空即可）；把入口放到对外"
         "地址时填一串随机字符，并在客户端的 OneBot 配置里填同一个值。",
     ),
     Field(
         key="ob_networks",
         attr="OB_NETWORKS",
-        kinds=_RESTART,
+        kinds=_HOT,
         default=None,
         clean=_clean_networks,
         desc="OneBot v11 网络入口数组，可同时挂多个。type 取 ws_server（等客户端连进来）、"
@@ -292,12 +292,13 @@ FIELDS: tuple[Field, ...] = (
         "（把事件 POST 到框架，填 url）；"
         "role 取 api 只收动作 / event 只推事件 / universal 两者都做；message_format 留空"
         "跟随 ob_message_format。留空或删掉时按 ob_server_host / ob_server_port / "
-        "ob_server_token 起一个 WS 服务端，旧配置可以原样继续用。",
+        "ob_server_token 起一个 WS 服务端。改完保存即刻生效：新增的入口起、删掉的断开、"
+        "改过的按新配置重建，没动的连接不受影响。",
     ),
     Field(
         key="ob_message_format",
         attr="OB_MESSAGE_FORMAT",
-        kinds=_RESTART,
+        kinds=_HOT,
         default="array",
         clean=_clean_message_format,
         desc="事件里 message 字段的格式：array = 消息段数组（多数客户端用这个），string = "
@@ -307,12 +308,12 @@ FIELDS: tuple[Field, ...] = (
     Field(
         key="ob_heartbeat_seconds",
         attr="OB_HEARTBEAT_SECONDS",
-        kinds=_RESTART,
+        kinds=_HOT,
         default=30,
         clean=_clean_heartbeat,
         desc="心跳间隔（秒），0 = 不发心跳，非 0 时取 5–3600。连上先推一条 "
         "lifecycle(connect)，之后按这个间隔推 meta_event/heartbeat，桥接停止时推 "
-        "lifecycle(disable)。改这里需要重启桥接。",
+        "lifecycle(disable)。",
     ),
     # 控制面板
     Field(
@@ -377,7 +378,7 @@ FIELDS: tuple[Field, ...] = (
     Field(
         key="client_attachments",
         attr="CLIENT_ATTACHMENTS",
-        kinds=_RESTART,
+        kinds=_HOT,
         desc="发送方向的附件目录：客户端发来的图片、文件只给了文件名时到这里找（也找它的 "
         "wechat_images 子目录）。留空 = 只接受绝对路径或 base64。",
     ),

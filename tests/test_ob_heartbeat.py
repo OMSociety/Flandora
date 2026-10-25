@@ -125,6 +125,7 @@ def test_save_accepts_zero_and_live_updates(saved_config):
     rest = config_api.api_put_config({"ob_heartbeat_seconds": 0}, Response())
 
     assert rest["ok"] is True
-    assert "ob_heartbeat_seconds" in rest["restart_required"]
+    # 心跳间隔是现读的：改完立刻生效，不必重启桥接
+    assert rest["restart_required"] == []
     assert saved_config.read_raw()["ob_heartbeat_seconds"] == 0
     assert config.OB_HEARTBEAT_SECONDS == 0

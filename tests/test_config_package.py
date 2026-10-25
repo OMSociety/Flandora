@@ -41,6 +41,13 @@ HOT_KEYS = {
     "log_backup_count",
     "allow_foreground_steal",
     "wechat_files_root",
+    "ob_server_host",
+    "ob_server_port",
+    "ob_server_token",
+    "ob_networks",
+    "ob_message_format",
+    "ob_heartbeat_seconds",
+    "client_attachments",
 }
 
 
@@ -144,7 +151,7 @@ def test_restart_required_is_derived_from_the_kind(tmp_path):
             }
         )
 
-    assert result.restart_required == ("web_port", "ob_heartbeat_seconds")
+    assert result.restart_required == ("web_port",)
 
 
 def test_strict_update_leaves_the_file_alone(tmp_path):

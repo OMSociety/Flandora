@@ -120,7 +120,7 @@ function submit() {
             <input id="node-timeout" v-model.number="form.timeout_ms" class="input" type="number" min="100" max="120000" />
           </div>
         </div>
-        <p class="hint">同一个入口可同时挂多个，改完需要重启桥接生效。</p>
+        <p class="hint">同一个入口可同时挂多个，保存后立刻生效：新增的起、删掉的断开、改过的重建。</p>
       </div>
 
       <div class="dialog-foot">

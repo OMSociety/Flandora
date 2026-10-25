@@ -165,7 +165,7 @@ onMounted(load)
           <div class="field attach-field">
             <label for="attach-dir">客户端附件目录</label>
             <input id="attach-dir" v-model="general.client_attachments" class="input" placeholder="C:/path/to/wechat/attachments" />
-            <p class="hint">微信收到的文件放在哪，用于把事件里的 file 段解析成真实路径。改动需重启桥接。</p>
+            <p class="hint">微信收到的文件放在哪，用于把事件里的 file 段解析成真实路径。保存后立刻生效。</p>
           </div>
         </section>
       </aside>

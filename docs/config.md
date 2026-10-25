@@ -1,6 +1,8 @@
 # 配置项
 
-配置文件是程序目录下的 `data/config.json`（源码模式即仓库根 `data/config.json`），首次启动自动生成。缺的键按默认值处理，改完重启 bridge 生效。
+配置文件是程序目录下的 `data/config.json`（源码模式即仓库根 `data/config.json`），首次启动自动生成。缺的键按默认值处理。
+
+多数字段保存后立刻生效，包括全部网络入口（新增的入口起、删掉的断开、改过的按新配置重建，正在连的客户端不受影响）。标着「改后需重启」的字段要重启 bridge 才换，它们是：面板端口与绑定地址、TLS、隔离桌面、微信路径与轮询间隔、取钥相关。
 
 字段清单与逐项说明的机器可读版本在 `flandora/config.example.json`，由 `flandora/config/fields.py` 生成，与面板表单同源；`python tools/gen_config_example.py --check` 挡住它和字段表之间的漂移。
 

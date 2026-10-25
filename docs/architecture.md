@@ -120,6 +120,11 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
 其余键的盘上旧值按同一套 `clean_field()` 规则回退生效。改动是否需要重启由字段的 kind 派生
 （`HOT` 热生效、`RESTART` 需重启、`SECRET` 不回显），面板的 `restart_required` 就是这些键的并集。
 
+热生效的字段里，网络入口是最需要「保存即生效」的一块：`ob_network.NetworkManager` 在 `start()`
+时订阅配置，`ob_networks` 或三项兜底设置一变就调 `apply()` 把运行态对齐——新增的入口起、
+删掉的断开、改过的按新配置重建、没动的连接不受影响。`apply()` 任意线程可调，任务操作由它送回
+入口线程执行；面板上那条「待保存」写的就是「文件里有、运行态里没有」，入口不再需要重启桥接。
+
 字段声明、默认值、校验与逐键说明的唯一来源是 `config/fields.py` 的 `Field.desc`；`flandora/config.example.json`
 由 `python tools/gen_config_example.py` 生成（`--check` 挡漂移），`data/config.json` 只存「键: 值」，
 `_comment*` 与其它未知键在读写时丢弃，落盘顺序按字段声明。面板「高级」页右侧的说明与默认值来自

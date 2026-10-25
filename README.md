@@ -228,7 +228,7 @@ python -m flandora_mcp.server --selftest
 
 ## 配置与更新
 
-配置项全部在面板里改，写进 `data/config.json`：首次启动自动生成，缺的键按默认值处理，改完重启 bridge 生效。字段的类型、默认值与逐个说明见 [`docs/config.md`](docs/config.md)，机器可读的清单是 `flandora/config.example.json`。
+配置项全部在面板里改，写进 `data/config.json`：首次启动自动生成，缺的键按默认值处理。多数字段保存后立刻生效，标着「改后需重启」的那几个（面板端口、绑定地址、TLS、隔离桌面、微信路径）要重启 bridge 才换。字段的类型、默认值与逐个说明见 [`docs/config.md`](docs/config.md)，机器可读的清单是 `flandora/config.example.json`。
 
 打包安装的版本可以在控制台直接更新，源码运行只提示不替换。
 

@@ -682,6 +682,26 @@ class UiaSender(BaseSender):
             return 0
 
     @classmethod
+    def _window_alive(cls, hwnd: int) -> bool:
+        """窗口句柄是否还指向一个存在的窗口。"""
+        if not hwnd:
+            return False
+        try:
+            return bool(cls._user32_inst().IsWindow(hwnd))
+        except Exception:
+            return False
+
+    @classmethod
+    def _window_class(cls, hwnd: int) -> str:
+        """窗口类名（日志里认人用），取不到返回空串。"""
+        try:
+            buf = ctypes.create_unicode_buffer(256)
+            cls._user32_inst().GetClassNameW(hwnd, buf, 256)
+            return buf.value
+        except Exception:
+            return ""
+
+    @classmethod
     def _raise_window(cls, hwnd: int) -> bool:
         """把指定窗口提到前台，成功返回 True。
 
@@ -729,14 +749,22 @@ class UiaSender(BaseSender):
         投递输入会把微信升到前台；发完立刻还回去，用户看到的是一次短暂切换而不是
         前台被占住。发送前的前台本来就是微信、或那个窗口已经关掉时无需处理。
 
-        还原失败不影响发送结果，只记一条日志。
+        还原失败不影响发送结果。失败时把「发送前的前台」清掉：一次发送里每步投递
+        之后都会调这里，同一次失败没必要重复报，也不用再试。
         """
         if not hwnd or hwnd == self._hwnd:
             return
         if self._foreground_window() == hwnd:
             return
-        if not self._raise_window(hwnd):
-            log.warning("前台没有还给原窗口（消息本身已发出）")
+        if self._raise_window(hwnd):
+            return
+        self._fg_before = 0
+        log.warning(
+            f"前台没有还给原窗口（消息本身已发出）：目标 hwnd={hwnd}"
+            f"（类名 {self._window_class(hwnd) or '取不到'}、"
+            f"{'还在' if self._window_alive(hwnd) else '已不存在'}），"
+            f"当前前台 hwnd={self._foreground_window()}"
+        )
 
     def _release_foreground(self) -> None:
         """在一次投递动作做完后立刻还前台，不等后面的送达确认。

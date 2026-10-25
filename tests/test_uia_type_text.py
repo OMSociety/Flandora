@@ -6,6 +6,7 @@
 """
 
 import ctypes
+import logging
 import os
 import sys
 from types import SimpleNamespace
@@ -274,6 +275,37 @@ def test_mismatch_window_handles_a_missing_tail():
     info = uia_sender.mismatch_window("abcdef\n", "abcdef")
     assert "第 6 个字起不同" in info
     assert "长度 7/6" in info
+
+
+def test_a_failed_foreground_restore_is_reported_once(caplog):
+    """一次发送里每步投递后都调还前台，失败只报一条，且带上目标窗口的线索。"""
+    sender = _sender()
+    sender._fg_before = 424242
+    sender._raise_window = lambda hwnd: False
+    sender._foreground_window = lambda: 999
+    sender._window_alive = lambda hwnd: True
+    sender._window_class = lambda hwnd: "FakeWindowClass"
+    with caplog.at_level(logging.WARNING, logger="flandora"):
+        sender._release_foreground()
+        sender._release_foreground()
+    lines = [r.getMessage() for r in caplog.records if "前台没有还给原窗口" in r.getMessage()]
+    assert len(lines) == 1
+    assert "424242" in lines[0] and "FakeWindowClass" in lines[0] and "还在" in lines[0]
+    assert sender._fg_before == 0
+
+
+def test_foreground_restore_says_when_the_target_is_gone(caplog):
+    """目标窗口已经不在时，日志要说明是「已不存在」而不是含糊的失败。"""
+    sender = _sender()
+    sender._fg_before = 424242
+    sender._raise_window = lambda hwnd: False
+    sender._foreground_window = lambda: 999
+    sender._window_alive = lambda hwnd: False
+    sender._window_class = lambda hwnd: ""
+    with caplog.at_level(logging.WARNING, logger="flandora"):
+        sender._release_foreground()
+    line = next(r.getMessage() for r in caplog.records if "前台没有还给原窗口" in r.getMessage())
+    assert "已不存在" in line and "类名 取不到" in line
 
 
 # ---------------------------------------------------------------- 粘贴

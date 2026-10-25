@@ -56,8 +56,8 @@ def _config_session():
 def _reset_runtime():
     """每个用例前后把进程级状态归零。
 
-    ``LIFECYCLE`` 与 ``RUNTIME`` 是进程级单例：前一个用例留下的运行态、发送器
-    或桥接实例会改变后一个用例的判定，所以统一在这里清干净。
+    ``LIFECYCLE`` 与 ``RUNTIME`` 是进程级单例：前一个用例留下的运行态、发送器、
+    本地库视图或桥接实例会改变后一个用例的判定，所以统一在这里清干净。
     """
     from flandora.runtime import LIFECYCLE, RUNTIME
 
@@ -66,6 +66,7 @@ def _reset_runtime():
         LIFECYCLE.mark_stopped()
         RUNTIME.sender = None
         RUNTIME.bridge = None
+        RUNTIME.store = None
         RUNTIME.release_ob_server()
         RUNTIME.update_available = None
 

@@ -11,9 +11,15 @@
 from __future__ import annotations
 
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .lifecycle import LIFECYCLE
+
+if TYPE_CHECKING:
+    # 只为类型可读：运行期 import 会与 bridge_core → runtime 形成环
+    from ..bridge_core import Flandora
+    from ..domain.store import Store
+    from ..domain.window import Sender
 
 
 class AppRuntime:
@@ -21,32 +27,49 @@ class AppRuntime:
 
     def __init__(self) -> None:
         self._lock = threading.RLock()
-        self._sender: Any = None
-        self._bridge: Any = None
+        self._sender: Sender | None = None
+        self._bridge: Flandora | None = None
+        self._store: Store | None = None
         self._ob_server_claimed = False
         self._update_available: dict[str, Any] | None = None
 
     @property
-    def sender(self):
+    def sender(self) -> Sender | None:
         """当前的发送器；桥接没起或还没初始化完时为 None。"""
         with self._lock:
             return self._sender
 
     @sender.setter
-    def sender(self, value) -> None:
+    def sender(self, value: Sender | None) -> None:
         with self._lock:
             self._sender = value
 
     @property
-    def bridge(self):
+    def bridge(self) -> Flandora | None:
         """当前的桥接实例（``bridge_core.Flandora``）；收件线程未就绪时为 None。"""
         with self._lock:
             return self._bridge
 
     @bridge.setter
-    def bridge(self, value) -> None:
+    def bridge(self, value: Flandora | None) -> None:
         with self._lock:
             self._bridge = value
+
+    @property
+    def store(self) -> Store | None:
+        """当前收件源的本地库只读视图；收件源未就绪时为 None。
+
+        唯一写者是收件循环（``bridge_core.listen_local_db``）：来源建好就写上，
+        收件停止就清空。昵称、名册、历史查询都读这一份，避免「桥接实例上挂着
+        一个旧 store、面板却看到另一份」。
+        """
+        with self._lock:
+            return self._store
+
+    @store.setter
+    def store(self, value: Store | None) -> None:
+        with self._lock:
+            self._store = value
 
     def claim_ob_server(self) -> bool:
         """原子 test-and-set：拿到 OneBot 入口所有权时返回 True，已有线程时返回 False。"""

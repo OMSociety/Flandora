@@ -95,7 +95,7 @@ def bridge(monkeypatch):
     instance = bridge_core.Flandora(sender=lambda *a, **k: None)
     monkeypatch.setattr(
         instance,
-        "_resolve_names",
+        "resolve_names",
         lambda handle: {"wxid_baobao": "豹豹包", "wxid_flandore": "芙兰朵露"},
     )
     return instance

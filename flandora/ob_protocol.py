@@ -1,7 +1,8 @@
 """
 OneBot v11 协议处理模块（对接 OneBot v11 客户端）。
 
-- make_message_event() — 构造 OneBot 消息事件 JSON
+- render_message_event() — 把领域消息渲染成 OneBot 消息事件 JSON
+- to_segment_dict() / to_cq() — 单个消息段与整条消息的 CQ 码渲染
 - push_event() — 广播事件给所有已连接的 OneBot v11 客户端
 - _handle_ob_api() — 处理客户端发来的 API 请求（send_msg、get_login_info 等）
 """
@@ -13,6 +14,8 @@ import logging
 import os
 import tempfile
 import time
+from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import (
     __version__,
@@ -23,6 +26,20 @@ from . import (
     ob_store,
     send_plan,
 )
+from .domain import send as domain_send
+from .domain.message import (
+    Emoji,
+    Face,
+    Image,
+    Mention,
+    Message,
+    Reply,
+    Segment,
+    Text,
+    Video,
+    Voice,
+)
+from .domain.send import MentionTarget, SendStatus
 from .ob_network import broadcast as push_event_broadcast
 from .runtime import RUNTIME
 
@@ -57,15 +74,15 @@ def _resolve_self_name() -> str:
     if cached:
         return cached
     bridge = RUNTIME.bridge
-    resolver = getattr(bridge, "self_nickname", None)
-    if callable(resolver):
-        try:
-            nick = resolver() or ""
-        except Exception:  # noqa: BLE001
-            nick = ""
-        if nick:
-            ob_ids.SELF.set_nickname(nick)
-            return nick
+    if bridge is None:
+        return "wechat-bot"
+    try:
+        nick = bridge.self_nickname() or ""
+    except Exception:  # noqa: BLE001
+        nick = ""
+    if nick:
+        ob_ids.SELF.set_nickname(nick)
+        return nick
     return "wechat-bot"
 
 
@@ -201,263 +218,55 @@ async def _handle_ob_api(data: dict):
             # 私聊：缓存里的备注名优先，其次按 wxid 搜索（微信能搜到好友的 wxid）
             contact = contact or contact_handle or str(target_id)
 
-        sent_count = 0
-        failures: list[str] = []
+        # 客户端段 → 领域段：base64 内联数据与客户端附件在这一步落成本地文件，
+        # 解不出来的段如实记账，之后再规划动作。
+        prep = await asyncio.to_thread(_prepare_message, message)
+        actions = send_plan.plan_message(prep.segments)
+        failures: list[str] = list(prep.failures)
         skipped: list[str] = []
-
-        async def _send(kind: str, fn, *args) -> bool:
-            """执行一次发送并计数。
-
-            UIA 发送失败（微信未登录、主窗口不可用等）必须在此处如实记账，
-            否则后面的日志与响应都会谎报成功。
-            """
-            nonlocal sent_count
-            ok = bool(await asyncio.to_thread(fn, *args))
-            if ok:
-                sent_count += 1
-                log.info(f"[OB11] {kind}已发送至 {contact}")
-            else:
-                failures.append(f"{kind}发送失败")
-                log.error(f"[OB11] {kind}发送失败（消息未真正发出）: {contact}")
-            return ok
-
-        async def _send_mention(kind: str, names: list[str], body: str) -> bool:
-            """发一条带 @ 的文字。
-
-            微信的 @ 是「提及」对象而不是正文，发送器必须走成员选择弹层；
-            发送器没有这条路径时如实记账，不退回纯文字（那会变成假提及）。
-            """
-            fn = getattr(RUNTIME.sender, "send_mention_text", None)
-            if not callable(fn):
-                failures.append("@ 提及发送失败（发送器不支持）")
-                log.error("[OB11] 发送器没有 send_mention_text，@ 未发送")
-                return False
-            return await _send(kind, fn, contact, names, body)
-
-        for item in send_plan.plan_message(message):
-            kind = str(item.get("kind") or "")
-            if kind == "mention":
-                body = str(item.get("text") or "")
-                names, problem = await asyncio.to_thread(
-                    _resolve_mentions, item.get("targets") or [], is_group, contact_handle
-                )
-                if problem:
-                    failures.append(problem)
-                    log.warning(f"[OB11] @ 未发送：{problem}")
-                    continue
-                if await _send_mention("文字+@", names, body):
-                    _record_out(contact, is_group, f"@{' @'.join(names)} {body}".strip())
-                continue
-            if kind == "text":
-                seg = {"type": "text", "data": {"text": item.get("text") or ""}}
-            else:
-                seg = item.get("segment") or {}
-            if not isinstance(seg, dict):
-                continue
-            seg_type = seg.get("type", "")
-            seg_data = seg.get("data", {})
-
-            if seg_type == "reply":
-                # 引用回复段：微信 UIA 无法直接构造引用，跳过（后续 text 段正常发送）
+        for seg in prep.segments:
+            if isinstance(seg, Reply):
+                # 引用回复段：微信 UIA 无法直接构造引用，跳过（其余段正常发送）
                 log.info("[OB11] 跳过 reply 段")
                 skipped.append("引用回复段")
-                continue
 
-            if seg_type == "text":
-                text = seg_data.get("text", "")
-                if text:
-                    if await _send("文字", RUNTIME.sender.send_text, contact, text):
-                        _record_out(contact, is_group, text)
+        def _resolve(targets: tuple[MentionTarget, ...]) -> tuple[list[str], str]:
+            return _resolve_mentions(targets, is_group, contact_handle)
 
-            elif seg_type == "image":
-                file_val = seg_data.get("file", "")
-                if not file_val:
-                    continue
-                img_path = None
-
-                if file_val.startswith("base64://"):
-                    try:
-                        b64_data = file_val[9:]
-                        img_path = await asyncio.to_thread(_decode_base64_image, b64_data)
-                        if img_path:
-                            log.info(f"[OB11] 图片已解码: {os.path.basename(img_path)}")
-                    except Exception as e:
-                        log.warning(f"[OB11] base64 图片解码失败: {e}")
-                else:
-                    if config.CLIENT_ATTACHMENTS:
-                        candidates = [
-                            os.path.join(config.CLIENT_ATTACHMENTS, file_val),
-                            os.path.join(config.CLIENT_ATTACHMENTS, "wechat_images", file_val),
-                        ]
-                        for p in candidates:
-                            if os.path.exists(p):
-                                img_path = p
-                                break
-                        if not img_path:
-                            log.warning(f"[OB11] 图片文件未找到: {file_val}")
-
-                if img_path:
-                    try:
-                        if await _send("图片", RUNTIME.sender.send_image, contact, img_path):
-                            _record_out(contact, is_group, "[图片]")
-                    finally:
-                        if img_path and "tmp" in img_path:
-                            try:
-                                os.unlink(img_path)
-                            except Exception:
-                                pass
-
-            elif seg_type == "face":
-                # 表情包本质是图片文件，复用图片发送链路
-                file_val = seg_data.get("file", "")
-                if not file_val:
-                    # 无文件：尝试把 QQ 表情 id 映射为微信自带表情代码（[微笑] 等文本即渲染）
-                    face_code = QQ_FACE_TO_WECHAT.get(_safe_int(seg_data.get("id")))
-                    if face_code:
-                        if await _send("QQ表情", RUNTIME.sender.send_text, contact, face_code):
-                            _record_out(contact, is_group, face_code)
-                    else:
-                        log.debug(f"[OB11] 跳过未知 face 段: {seg_data}")
-                    continue
-                face_path = None
-
-                if file_val.startswith("base64://"):
-                    try:
-                        b64_data = file_val[9:]
-                        face_path = await asyncio.to_thread(_decode_base64_image, b64_data)
-                        if face_path:
-                            log.info(f"[OB11] 表情已解码: {os.path.basename(face_path)}")
-                    except Exception as e:
-                        log.warning(f"[OB11] base64 表情解码失败: {e}")
-                else:
-                    if config.CLIENT_ATTACHMENTS:
-                        candidates = [
-                            os.path.join(config.CLIENT_ATTACHMENTS, file_val),
-                            os.path.join(config.CLIENT_ATTACHMENTS, "wechat_images", file_val),
-                        ]
-                        for p in candidates:
-                            if os.path.exists(p):
-                                face_path = p
-                                break
-                        if not face_path:
-                            log.warning(f"[OB11] 表情文件未找到: {file_val}")
-
-                if face_path:
-                    try:
-                        if await _send("表情", RUNTIME.sender.send_image, contact, face_path):
-                            _record_out(contact, is_group, "[表情]")
-                    finally:
-                        if face_path and "tmp" in face_path:
-                            try:
-                                os.unlink(face_path)
-                            except Exception:
-                                pass
-
-            elif seg_type == "voice":
-                # 语音消息段。
-                #
-                # 微信 PC 客户端**没有"上传 mp3 当语音消息"的接口**——语音消息
-                # 必须按住麦克风按钮录制。bridge 因此把 voice 段以"文件"形式
-                # 发到聊天窗口（mp3 文件卡片，双击可播放）。
-                #
-                # 接受两种 data 格式：
-                #   1. {"file": "base64://<mp3 base64>"} — 客户端 voice 段（base64 内联）
-                #   2. {"file": "/abs/path/to/xxx.mp3"}   — 已落盘的本地文件
-                file_val = seg_data.get("file", "") or seg_data.get("data", "")
-                if not file_val:
-                    log.warning(f"[OB11] 跳过 voice 段：无 file 字段: {seg_data}")
-                    continue
-                voice_path = None
+        try:
+            outcomes = await asyncio.to_thread(
+                domain_send.execute, actions, RUNTIME.sender, _resolve, contact
+            )
+        finally:
+            # 本次解出来的临时文件是我们写的，发完就删；调用方给的文件不动。
+            for temp_path in prep.temp_files:
                 try:
-                    if isinstance(file_val, str) and file_val.startswith("base64://"):
-                        b64_data = file_val[9:]
-                        try:
-                            audio_bytes = base64.b64decode(b64_data)
-                        except Exception as e:
-                            log.warning(f"[OB11] voice base64 解码失败: {e}")
-                            continue
-                        # 写到临时文件，让 sender 走 send_file 链路
-                        with tempfile.NamedTemporaryFile(
-                            prefix="bridge_voice_", suffix=".mp3", delete=False
-                        ) as tmp:
-                            tmp.write(audio_bytes)
-                            voice_path = tmp.name
-                        log.info(
-                            f"[OB11] voice 已解码: {os.path.basename(voice_path)} ({len(audio_bytes)} bytes)"
-                        )
-                    else:
-                        # 已经是本地路径（兼容场景：bridge 之前做过 ASR 等）
-                        if os.path.isfile(file_val):
-                            voice_path = file_val
-                        else:
-                            log.warning(f"[OB11] voice 文件未找到: {file_val}")
-                            continue
+                    os.unlink(temp_path)
+                except OSError as exc:
+                    # 临时文件占了临时目录，删不掉不影响本次发送结果，留痕即可。
+                    log.debug(f"[OB11] 临时文件未能删除 {temp_path}: {exc}")
 
-                    if voice_path:
-                        if await _send(
-                            "语音（文件形式）", RUNTIME.sender.send_file, contact, voice_path
-                        ):
-                            _record_out(contact, is_group, "[语音]")
-                finally:
-                    # 清理我们写出的临时 mp3（bridge_voice_ 前缀的才是我们的）
-                    if voice_path and "bridge_voice_" in voice_path:
-                        try:
-                            os.unlink(voice_path)
-                        except Exception:
-                            pass
-
-            elif seg_type == "video":
-                # 视频段：微信 PC 端没有「提交视频消息」的入口，只能当文件发。
-                # 文件一定能到对方手里；呈现形态（文件卡片还是视频气泡）由微信
-                # 客户端按扩展名决定，这里不对它做断言。
-                file_val = seg_data.get("file", "")
-                if not file_val:
-                    failures.append("视频缺少 file")
-                    continue
-                video_path, tmp_video = None, ""
-                if isinstance(file_val, str) and file_val.startswith("base64://"):
-                    try:
-                        raw = base64.b64decode(file_val[9:])
-                    except Exception as e:
-                        failures.append(f"视频 base64 解码失败：{e}")
-                        log.warning(f"[OB11] video base64 解码失败: {e}")
-                        continue
-                    with tempfile.NamedTemporaryFile(
-                        prefix="bridge_video_", suffix=".mp4", delete=False
-                    ) as tmp:
-                        tmp.write(raw)
-                        video_path = tmp_video = tmp.name
-                    log.info(
-                        f"[OB11] 视频已解码: {os.path.basename(video_path)} ({len(raw)} bytes)"
-                    )
-                elif os.path.isfile(file_val):
-                    video_path = file_val
-                else:
-                    failures.append("视频文件未找到")
-                    log.warning(f"[OB11] 视频文件未找到: {file_val}")
-                    continue
-                try:
-                    if video_path and await _send(
-                        "视频（文件形式）", RUNTIME.sender.send_file, contact, video_path
-                    ):
-                        _record_out(contact, is_group, "[视频]")
-                finally:
-                    if tmp_video:
-                        try:
-                            os.unlink(tmp_video)
-                        except Exception:
-                            pass
-
+        sent_count = 0
+        for outcome in outcomes:
+            if outcome.status is SendStatus.SENT:
+                sent_count += 1
+                log.info(f"[OB11] {outcome.label}已发送至 {contact}")
+                _record_out(contact, is_group, outcome.text)
+            elif outcome.status is SendStatus.FAILED:
+                failures.append(f"{outcome.label}发送失败")
+                log.error(f"[OB11] {outcome.label}发送失败（消息未真正发出）: {contact}")
             else:
-                # 未接线的段类型（file / forward 等）绝不静默跳过：
-                # 跳过会让「零段发送」看起来像成功，客户端随即把内容记进上下文。
-                log.warning(f"[OB11] 不支持的消息段类型: {seg_type!r}")
-                failures.append(f"不支持的消息段 {seg_type or '（空类型）'}")
+                failures.append(outcome.text)
+                log.warning(f"[OB11] 段未发送：{outcome.text}")
 
         # message_id 必须是真实发出去的号：客户端拿它做回复引用与撤回，
         # 顺手给的假号会让「撤回自己刚发的消息」永远找不到目标。
+        # 会话键要非空才分配得出来：私聊只给了整数 user_id、名字索引里又没有它的
+        # handle 时，退回用整数 ID 当键，编号仍然按会话递增。
         if sent_count:
-            resp_data["data"] = {"message_id": ob_ids.allocate_message_id(contact_handle)}
+            resp_data["data"] = {
+                "message_id": ob_ids.allocate_message_id(contact_handle or str(target_id))
+            }
 
         # 一段都没发出去时必须回报失败，否则调用方会以为消息已送达并把它记进上下文。
         if not sent_count:
@@ -498,7 +307,6 @@ async def _handle_ob_api(data: dict):
         }
 
     elif action == "get_status":
-        source = getattr(RUNTIME.bridge, "_source", None)
         flags = RUNTIME.online_flags()
         resp_data["data"] = {
             "online": flags["online"],
@@ -506,7 +314,7 @@ async def _handle_ob_api(data: dict):
             "app_name": "flandora",
             "app_version": __version__,
             "protocol_version": "v11",
-            "receiver_ready": source is not None,
+            "receiver_ready": RUNTIME.store is not None,
             "sender_ready": RUNTIME.sender is not None,
         }
 
@@ -649,44 +457,265 @@ async def _handle_ob_api(data: dict):
     return resp_data
 
 
-def make_message_event(
-    message_type: str,
-    user_id: int,
-    message: list,
-    group_id: int = 0,
-    group_name: str = "",
-    nickname: str = "",
-    message_id: int = 0,
-    timestamp: int = 0,
-) -> dict:
-    """构造 OneBot v11 消息事件。
+# 超过这个大小就走 file:// 引用：几 MB 的 base64 会把一条事件撑到没有客户端愿意解析
+MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
 
-    ``message`` 的形态由 ``ob_message_format`` 决定（消息段数组或 CQ 码字符串），
-    ``raw_message`` 始终是 CQ 码字符串——客户端按字符串处理时两边都能用。
+
+def _image_data(image_path: str) -> dict | None:
+    """把本地图片文件编成 OneBot image 段的 data。
+
+    小图内联成 base64://，客户端不必再读盘；大图退回 file:// 引用——几 MB 的
+    base64 会把一条事件撑到没有客户端愿意解析。文件读不出来时返回 None。
     """
+    try:
+        if not image_path or not os.path.isfile(image_path):
+            return None
+        size = os.path.getsize(image_path)
+        if size <= 0:
+            return None
+        if size <= MAX_INLINE_IMAGE_BYTES:
+            with open(image_path, "rb") as fh:
+                encoded = base64.b64encode(fh.read()).decode("ascii")
+            return {"file": f"base64://{encoded}"}
+        # 过大时改用本地文件引用，文件名取原名，便于客户端缓存与显示
+        return {"file": Path(image_path).as_uri()}
+    except OSError as exc:
+        log.warning(f"读取图片失败，已跳过图片段: {exc}")
+        return None
+
+
+def to_segment_dict(segment: Segment) -> dict | None:
+    """领域段 → OneBot v11 消息段。
+
+    图片文件读不出来时返回 None：不造一个空的 image 段，否则客户端会把它当
+    坏图去重试，而这里的事实是「这张图没解出来」。
+    """
+    if isinstance(segment, Text):
+        return {"type": "text", "data": {"text": segment.text}}
+    if isinstance(segment, Mention):
+        if segment.user_id is not None:
+            return {"type": "at", "data": {"qq": segment.user_id}}
+        return {"type": "at", "data": {"qq": "", "name": segment.name}}
+    if isinstance(segment, Reply):
+        return {"type": "reply", "data": {"id": segment.message_id}}
+    if isinstance(segment, (Image, Emoji)):
+        # 表情包本体就是一张图，客户端按 image 段渲染
+        data = _image_data(segment.path)
+        return None if data is None else {"type": "image", "data": data}
+    if isinstance(segment, Face):
+        return {"type": "face", "data": {"id": segment.face_id}}
+    if isinstance(segment, Voice):
+        return {"type": "record", "data": {"file": segment.path}}
+    if isinstance(segment, Video):
+        return {"type": "video", "data": {"file": segment.path}}
+    return {"type": "file", "data": {"file": segment.path, "name": segment.name}}
+
+
+def to_cq(segments) -> str:
+    """领域段 → CQ 码字符串。"""
+    return ob_segments.segments_to_cq(
+        [data for data in (to_segment_dict(seg) for seg in segments) if data]
+    )
+
+
+def render_message_event(message: Message, message_format: str) -> dict:
+    """把一条领域消息渲染成 OneBot v11 消息事件。
+
+    ``message_format`` 是 ``config.OB_MESSAGE_FORMAT``：``array`` 时 ``message``
+    是消息段数组，否则是 CQ 码字符串；``raw_message`` 始终是 CQ 码——客户端
+    按字符串处理时两边都能用。
+    """
+    rendered = [data for data in (to_segment_dict(seg) for seg in message.segments) if data]
+    raw_cq = ob_segments.segments_to_cq(rendered)
+    user_id = ob_ids.contact_id(message.sender.handle or message.chat.handle)
     event = {
-        "time": int(timestamp or time.time()),
-        "self_id": ob_ids.SELF.user_id(),
+        "time": int(message.timestamp or time.time()),
+        "self_id": message.self_id or ob_ids.SELF.user_id(),
         "post_type": "message",
-        "message_id": message_id,
+        "message_id": message.message_id,
     }
-    raw_cq = ob_segments.segments_to_cq(message)
-    message_field = message if config.OB_MESSAGE_FORMAT == "array" else raw_cq
-    if message_type == "group":
-        event["message_type"] = "group"
+    event["message_type"] = "group" if message.chat.is_group else "private"
+    if message.chat.is_group:
+        group_id = ob_ids.contact_id(message.chat.handle)
         event["group_id"] = group_id
-        event["user_id"] = user_id
-        event["message"] = message_field
-        event["raw_message"] = raw_cq
-        event["sender"] = {"user_id": user_id, "nickname": nickname or str(user_id)}
-        event["group_name"] = group_name or str(group_id)
-    else:
-        event["message_type"] = "private"
-        event["user_id"] = user_id
-        event["message"] = message_field
-        event["raw_message"] = raw_cq
-        event["sender"] = {"user_id": user_id, "nickname": nickname or str(user_id)}
+    event["user_id"] = user_id
+    event["message"] = rendered if message_format == "array" else raw_cq
+    event["raw_message"] = raw_cq
+    event["sender"] = {"user_id": user_id, "nickname": message.sender.nickname or str(user_id)}
+    if message.chat.is_group:
+        event["group_name"] = message.chat.name or str(event["group_id"])
+        # 是否真实 @ 了机器人：由客户端决定要不要响应，桥接只如实标记
+        event["is_mentioned"] = bool(message.mentioned)
     return event
+
+
+# ============ 客户端消息段准备 ============
+
+
+@dataclass
+class _OutboundPrep:
+    """一条客户端消息的准备结果。
+
+    ``segments`` 交给规划层；``failures`` 是转换阶段就注定发不出去的段；
+    ``temp_files`` 是本次解出来的临时文件，执行完必须删掉。
+    """
+
+    segments: list[Segment] = field(default_factory=list)
+    failures: list[str] = field(default_factory=list)
+    temp_files: list[str] = field(default_factory=list)
+
+
+def _media_file(file_val: str, label: str, prep: _OutboundPrep) -> str | None:
+    """把图片/表情的 file 字段落成本地文件路径。
+
+    接受 ``base64://`` 内联数据与客户端附件目录里的文件名。解不出来只记日志
+    并返回 None：这段没有可发的图，但不把整条消息判失败（客户端从后续事件里
+    能看出对端实际发了什么）。
+    """
+    if not file_val:
+        return None
+    if file_val.startswith("base64://"):
+        try:
+            path = _decode_base64_image(file_val[9:])
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[OB11] base64 {label}解码失败: {e}")
+            return None
+        if path:
+            prep.temp_files.append(path)
+            log.info(f"[OB11] {label}已解码: {os.path.basename(path)}")
+        return path
+    if not config.CLIENT_ATTACHMENTS:
+        return None
+    for candidate in (
+        os.path.join(config.CLIENT_ATTACHMENTS, file_val),
+        os.path.join(config.CLIENT_ATTACHMENTS, "wechat_images", file_val),
+    ):
+        if os.path.exists(candidate):
+            return candidate
+    log.warning(f"[OB11] {label}文件未找到: {file_val}")
+    return None
+
+
+def _voice_file(data: dict, prep: _OutboundPrep) -> str | None:
+    """语音段落成本地音频文件。
+
+    微信 PC 端没有「提交语音消息」的接口（语音必须按住麦克风录制），所以 bridge
+    把 voice 段以文件形式发到聊天窗口（音频文件卡片，双击可播放）。接受
+    ``base64://`` 内联数据与已落盘的本地路径两种写法。
+    """
+    file_val = str(data.get("file") or data.get("data") or "")
+    if not file_val:
+        log.warning(f"[OB11] 跳过 voice 段：无 file 字段: {data}")
+        return None
+    if file_val.startswith("base64://"):
+        try:
+            audio = base64.b64decode(file_val[9:])
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[OB11] voice base64 解码失败: {e}")
+            return None
+        with tempfile.NamedTemporaryFile(
+            prefix="bridge_voice_", suffix=".mp3", delete=False
+        ) as tmp:
+            tmp.write(audio)
+            path = tmp.name
+        prep.temp_files.append(path)
+        log.info(f"[OB11] voice 已解码: {os.path.basename(path)} ({len(audio)} bytes)")
+        return path
+    if os.path.isfile(file_val):
+        return file_val
+    log.warning(f"[OB11] voice 文件未找到: {file_val}")
+    return None
+
+
+def _video_file(file_val: str, prep: _OutboundPrep) -> str | None:
+    """视频段落成本地视频文件。
+
+    微信 PC 端没有「提交视频消息」的入口，只能当文件发；文件一定能到对方手里，
+    呈现形态（文件卡片还是视频气泡）由微信按扩展名决定。缺文件与解码失败都要
+    记账：客户端否则会以为视频发出去了。
+    """
+    if not file_val:
+        prep.failures.append("视频缺少 file")
+        return None
+    if file_val.startswith("base64://"):
+        try:
+            raw = base64.b64decode(file_val[9:])
+        except Exception as e:  # noqa: BLE001
+            prep.failures.append(f"视频 base64 解码失败：{e}")
+            log.warning(f"[OB11] video base64 解码失败: {e}")
+            return None
+        with tempfile.NamedTemporaryFile(
+            prefix="bridge_video_", suffix=".mp4", delete=False
+        ) as tmp:
+            tmp.write(raw)
+            path = tmp.name
+        prep.temp_files.append(path)
+        log.info(f"[OB11] 视频已解码: {os.path.basename(path)} ({len(raw)} bytes)")
+        return path
+    if os.path.isfile(file_val):
+        return file_val
+    prep.failures.append("视频文件未找到")
+    log.warning(f"[OB11] 视频文件未找到: {file_val}")
+    return None
+
+
+def _prepare_message(message: list) -> _OutboundPrep:
+    """OneBot 消息段 → 领域段，并把需要落盘的媒体先写成本地文件。
+
+    不认识的段类型绝不静默跳过：跳过会让「零段发送」看起来像成功，客户端随即
+    把内容记进上下文。这里记成失败段，响应里如实回报。
+    """
+    prep = _OutboundPrep()
+    for seg in message:
+        seg_type = str(seg.get("type") or "")
+        data = seg.get("data") or {}
+        if seg_type == "text":
+            prep.segments.append(Text(text=str(data.get("text") or "")))
+        elif seg_type == "at":
+            raw_qq = data.get("qq")
+            if str(raw_qq) in ("all", "all_pending"):
+                # v11 用 qq="all" 表示 @全体；微信没有这个入口，归一成显示名
+                # 交给解析层如实拒绝
+                prep.segments.append(Mention(user_id=None, name="全体成员"))
+                continue
+            qq = _safe_int(raw_qq)
+            prep.segments.append(
+                Mention(
+                    user_id=qq if qq and qq > 0 else None,
+                    name=str(data.get("name") or ""),
+                )
+            )
+        elif seg_type == "reply":
+            prep.segments.append(Reply(message_id=int(_safe_int(data.get("id")) or 0)))
+        elif seg_type == "image":
+            path = _media_file(str(data.get("file") or ""), "图片", prep)
+            if path:
+                prep.segments.append(Image(path=path))
+        elif seg_type == "face":
+            file_val = str(data.get("file") or "")
+            if file_val:
+                path = _media_file(file_val, "表情", prep)
+                if path:
+                    prep.segments.append(Emoji(path=path))
+                continue
+            # 无文件：把 QQ 表情 id 换成微信自带表情代码（发这段文本即渲染成小黄豆）
+            face_code = QQ_FACE_TO_WECHAT.get(_safe_int(data.get("id")))
+            if face_code:
+                prep.segments.append(Face(face_id=face_code))
+            else:
+                log.debug(f"[OB11] 跳过未知 face 段: {data}")
+        elif seg_type == "voice":
+            path = _voice_file(data, prep)
+            if path:
+                prep.segments.append(Voice(path=path))
+        elif seg_type == "video":
+            path = _video_file(str(data.get("file") or ""), prep)
+            if path:
+                prep.segments.append(Video(path=path))
+        else:
+            log.warning(f"[OB11] 不支持的消息段类型: {seg_type!r}")
+            prep.failures.append(f"不支持的消息段 {seg_type or '（空类型）'}")
+    return prep
 
 
 def make_heartbeat_event(interval: int, *, online: bool = True, good: bool = True) -> dict:
@@ -790,18 +819,19 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
         return out
     count = max(1, min(count, 100))
 
-    bi = RUNTIME.bridge
-    store = getattr(getattr(bi, "_source", None), "store", None)
+    store = RUNTIME.store
     if store is None:
         log.warning(f"[OB11] 收件源尚未就绪，历史拉取跳过 (talker={talker})")
         return out
 
     # 复用 bridge 实例的成员昵称缓存（没有则用 wxid 兜底）
-    names = {}
-    if bi is not None and hasattr(bi, "_resolve_names"):
+    names: dict[str, str] = {}
+    bridge = RUNTIME.bridge
+    if bridge is not None:
         try:
-            names = bi._resolve_names(talker)
-        except Exception:  # noqa: BLE001
+            names = bridge.resolve_names(talker)
+        except Exception as e:  # noqa: BLE001
+            log.warning(f"[OB11] 读取成员名册失败 (talker={talker}): {e}")
             names = {}
 
     group_id = ob_ids.contact_id(talker) if is_group else 0
@@ -836,8 +866,8 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
 
 
 def _store():
-    """取当前桥接实例的只读本地库句柄；收件源未就绪时返回 None。"""
-    return getattr(getattr(RUNTIME.bridge, "_source", None), "store", None)
+    """取当前收件源的本地库只读视图；收件源未就绪时返回 None。"""
+    return RUNTIME.store
 
 
 def _contacts_roster() -> list:
@@ -933,7 +963,9 @@ def _member_object(group_id: int, m: dict) -> dict:
     }
 
 
-def _resolve_mentions(targets: list, is_group: bool, group_handle: str) -> tuple[list[str], str]:
+def _resolve_mentions(
+    targets: tuple[MentionTarget, ...], is_group: bool, group_handle: str
+) -> tuple[list[str], str]:
     """把 @ 段的目标解析成群成员的显示名。
 
     返回 ``(names, problem)``：``problem`` 非空表示这一条 @ 不能发，原因直接
@@ -948,19 +980,15 @@ def _resolve_mentions(targets: list, is_group: bool, group_handle: str) -> tuple
     by_handle = {m["username"]: m for m in members}
 
     names: list[str] = []
-    for target in targets or []:
-        if not isinstance(target, dict):
-            continue
-        qq = target.get("qq")
-        name = str(target.get("name") or "").strip()
-        if str(qq) in ("all", "all_pending") or name in ("全体成员", "all"):
+    for target in targets or ():
+        name = (target.name or "").strip()
+        if name in ("全体成员", "all"):
             return [], "微信 PC 端没有 @ 全体成员的入口"
         member = None
-        if isinstance(qq, int) and qq > 0:
-            handle = ob_ids.handle_of(qq)
-            member = by_handle.get(handle or "")
+        if target.qq:
+            member = by_handle.get(ob_ids.handle_of(target.qq) or "")
             if member is None:
-                return [], f"未知的 user_id：{qq}（不是这个群的成员）"
+                return [], f"未知的 user_id：{target.qq}（不是这个群的成员）"
         elif name:
             for candidate in members:
                 if name in (

@@ -34,7 +34,7 @@ def _make_bridge():
 def _push_once(monkeypatch, bridge, msg):
     captured = []
     monkeypatch.setattr(bridge_core, "push_event", lambda ev: captured.append(ev) or 1)
-    monkeypatch.setattr(bridge, "_resolve_names", lambda sid: dict(NAMES))
+    monkeypatch.setattr(bridge, "resolve_names", lambda sid: dict(NAMES))
     bridge.emit_message(dict(msg))
     assert len(captured) == 1, captured
     return captured[0]

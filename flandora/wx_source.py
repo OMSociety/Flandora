@@ -14,6 +14,7 @@ import re
 import time
 
 from . import config, wechat_account, wx_crypto, wx_store
+from .domain.content import IMAGE_PLACEHOLDER
 from .wx_store import WxStoreError
 from .wxkey.store import KeyStore, KeyStoreError
 
@@ -177,7 +178,8 @@ class WxLocalSource:
             if path:
                 data["imagePath"] = path
                 if msg["kind"] == "image":
-                    data["content"] = f"[图片] {path}"
+                    # 占位符与 domain.content 的判定共用常量，改字面量时两边一起改
+                    data["content"] = f"{IMAGE_PLACEHOLDER} {path}"
         return data
 
     def _image_path_for(self, msg) -> str:

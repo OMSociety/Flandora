@@ -42,8 +42,11 @@ from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .. import __version__, config, ob_ids, ob_network, storage, wechat_account
+from .. import __version__, config, ob_ids, ob_network, send_plan, storage, wechat_account
 from ..config import fields as config_fields
+from ..domain import send as domain_send
+from ..domain.message import Text
+from ..domain.send import SendStatus
 from ..ob_network import manager as ob_networks
 from ..runtime import LIFECYCLE, RUNTIME
 from . import auth, monitor
@@ -82,8 +85,7 @@ def _self_identity() -> dict:
     """机器人身份（全自动识别）：wxid 取自当前登录账号，昵称优先取自本地库自己的联系人。"""
     acct = wechat_account.current_account(config.WECHAT_FILES_ROOT or None)
     nickname = ""
-    bi = RUNTIME.bridge
-    store = getattr(getattr(bi, "_source", None), "store", None)
+    store = RUNTIME.store
     if store is not None:
         try:
             nickname = store.self_nickname() or ""
@@ -94,14 +96,13 @@ def _self_identity() -> dict:
 
 def get_status() -> dict:
     snap = LIFECYCLE.snapshot()
-    bi = RUNTIME.bridge
-    source_ready = bi is not None and getattr(bi, "_source", None) is not None
+    source_ready = RUNTIME.store is not None
     uptime = None
     if snap.is_active and snap.started_at:
         uptime = round(time.time() - snap.started_at, 1)
     window = None
     sender = RUNTIME.sender
-    if sender is not None and hasattr(sender, "current_window_info"):
+    if sender is not None:
         try:
             window = sender.current_window_info()
         except Exception:
@@ -171,10 +172,10 @@ def _on_config_changed(settings, changed: frozenset) -> None:
     if "wechat_hwnd" not in changed:
         return
     sender = RUNTIME.sender
-    if sender is None or not hasattr(sender, "rebind_window"):
+    if sender is None:
         return
     hwnd = int(settings.WECHAT_HWND or 0)
-    if getattr(sender, "_hwnd", None) == hwnd:
+    if sender.window_handle() == hwnd:
         return
     try:
         sender.rebind_window(hwnd)
@@ -773,7 +774,7 @@ def api_contacts():
     for gid, name in (config.GROUP_NAME_MAP or {}).items():
         add(str(gid), name, "group")
 
-    store = getattr(getattr(RUNTIME.bridge, "_source", None), "store", None)
+    store = RUNTIME.store
     if store is not None:
         try:
             for group in store.groups():
@@ -795,6 +796,11 @@ def api_contacts():
 # ============ 测试发送 ============
 
 
+def _refuse_mention(targets) -> tuple[list[str], str]:
+    """面板测试发送只发一段纯文字：没有 @ 目标，也不解析群成员名册。"""
+    return [], "面板测试发送不支持 @ 成员"
+
+
 @app.post("/api/send")
 async def api_send(payload: dict):
     contact = ((payload or {}).get("contact") or "").strip()
@@ -807,18 +813,22 @@ async def api_send(payload: dict):
         return JSONResponse({"ok": False, "error": "桥接未运行，请先启动"}, 400)
 
     log.info(f"[WebUI] 测试发送 -> {contact}: {text[:50]}")
+    # 与 OneBot 的 send_msg 走同一个执行入口：规划、逐段发送、失败记账只有一份
+    actions = send_plan.plan_message([Text(text=text)])
     try:
-        ok = await asyncio.to_thread(sender.send_text, contact, text)
+        outcomes = await asyncio.to_thread(
+            domain_send.execute, actions, sender, _refuse_mention, contact
+        )
     except Exception as e:
         log.error(f"[WebUI] 测试发送异常: {e}")
         return JSONResponse({"ok": False, "error": str(e)}, 500)
 
-    if ok:
+    if outcomes and outcomes[0].status is SendStatus.SENT:
         monitor.record_outbound(contact, "manual", text)
         log.info(f"[WebUI] 测试发送成功 -> {contact}")
         return {"ok": True}
     log.warning(f"[WebUI] 测试发送失败 -> {contact}")
-    return {"ok": False, "error": getattr(sender, "_last_error", "") or "发送失败，详见运行日志"}
+    return {"ok": False, "error": sender.last_error() or "发送失败，详见运行日志"}
 
 
 # ============ 调试台 ============
@@ -902,7 +912,7 @@ def api_windows():
     cur_hwnd = 0
     sender = RUNTIME.sender
     if sender is not None:
-        cur_hwnd = getattr(sender, "_hwnd", 0) or 0
+        cur_hwnd = sender.window_handle() or 0
     saved_hwnd = int(getattr(config, "WECHAT_HWND", 0) or 0)
 
     for w in wins:
@@ -920,7 +930,7 @@ def api_select_window(payload: dict):
         return JSONResponse({"ok": False, "error": "hwnd 必须是整数"}, 400)
 
     sender = RUNTIME.sender
-    if sender is None or not hasattr(sender, "rebind_window"):
+    if sender is None:
         return JSONResponse({"ok": False, "error": "发送器未就绪（桥接未运行）"}, 400)
 
     if not sender.rebind_window(hwnd):

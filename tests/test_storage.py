@@ -9,7 +9,6 @@
 
 import os
 import time
-from types import SimpleNamespace
 
 import pytest
 from fastapi.responses import JSONResponse
@@ -141,7 +140,7 @@ def test_clean_images_only_touches_images(workspace):
 def test_clean_wx_cache_redecrypts_at_once(workspace):
     root = _account_dir(workspace)
     fake = _FakeStore()
-    RUNTIME.bridge = SimpleNamespace(_source=SimpleNamespace(store=fake))
+    RUNTIME.store = fake
 
     out = storage.clean_wx_cache()
 
@@ -173,7 +172,7 @@ def test_clean_wx_cache_reports_a_failed_redecrypt(workspace):
         def refresh(self, force=False):
             raise RuntimeError("口令与账号对不上")
 
-    RUNTIME.bridge = SimpleNamespace(_source=SimpleNamespace(store=_Broken()))
+    RUNTIME.store = _Broken()
 
     out = storage.clean_wx_cache()
 

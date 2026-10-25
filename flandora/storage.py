@@ -184,12 +184,6 @@ def overview() -> dict:
 # ---------- 清理 ----------
 
 
-def _live_store():
-    """正在跑的收件源里的 WxStore；桥接没运行时返回 None。"""
-    source = getattr(RUNTIME.bridge, "_source", None)
-    return getattr(source, "store", None)
-
-
 def clean_images() -> dict:
     """删图片解码缓存。下次要看同一张图时会重新解，收消息不受影响。"""
     removed = freed = 0
@@ -234,7 +228,7 @@ def clean_wx_cache() -> dict:
                 removed += 1
                 freed += size
 
-    store = _live_store()
+    store = RUNTIME.store
     out = {"removed_files": removed, "freed_bytes": freed, "redecrypt_error": "", "note": ""}
     if store is None:
         out["note"] = "桥接当前没有运行中的收件源，下次启动时会重新解密"
@@ -245,7 +239,7 @@ def clean_wx_cache() -> dict:
         log.error("清理缓存后重新解密失败：%s", e)
         out["redecrypt_error"] = f"{type(e).__name__}: {e}"
         return out
-    if not getattr(store, "_decrypted", None):
+    if not store._decrypted:
         out["redecrypt_error"] = "重新解密没有解出任何库，消息通道可能已经断开"
     return out
 

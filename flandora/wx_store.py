@@ -31,6 +31,7 @@ import sqlite3
 import time
 
 from . import wechat_account, wx_crypto, wx_image
+from .domain.content import EMOJI_PLACEHOLDER, IMAGE_PLACEHOLDER
 
 log = logging.getLogger("flandora")
 
@@ -229,11 +230,17 @@ def classify(local_type, body):
         # body 可能是 str，也可能是未解码的 bytes；两种都要能取到 md5。
         text = body.decode("utf-8", "ignore") if isinstance(body, bytes) else str(body)
         m = re.search(r'md5="([0-9a-fA-F]{32})"', text)
-        return "image", f'[图片] md5="{m.group(1).lower()}"' if m else "[图片]"
+        # 占位符与 domain.content 的判定共用常量，改字面量时两边一起改
+        return (
+            "image",
+            f'{IMAGE_PLACEHOLDER} md5="{m.group(1).lower()}"' if m else IMAGE_PLACEHOLDER,
+        )
     if base == BASE_EMOJI:
         text = body.decode("utf-8", "ignore") if isinstance(body, bytes) else str(body)
         m = re.search(r'md5="([0-9a-fA-F]{32})"', text)
-        return "emoji", f'[表情] md5="{m.group(1).lower()}"' if m else "[表情]"
+        return "emoji", (
+            f'{EMOJI_PLACEHOLDER} md5="{m.group(1).lower()}"' if m else EMOJI_PLACEHOLDER
+        )
     if base == BASE_VOICE:
         return "voice", "[语音]"
     if base == BASE_VIDEO:

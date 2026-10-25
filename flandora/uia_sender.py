@@ -611,6 +611,14 @@ class UiaSender(BaseSender):
             pass
         return info
 
+    def window_handle(self) -> int:
+        """当前绑定的窗口句柄；未绑定为 0。"""
+        return int(self._hwnd or 0)
+
+    def last_error(self) -> str:
+        """最近一次发送失败的原因；空串表示没有记录。"""
+        return str(self._last_error or "")
+
     def rebind_window(self, hwnd: int) -> bool:
         """重新绑定到指定窗口（WebUI 窗口选择）。hwnd=0 表示恢复自动查找。"""
         with self._lock:

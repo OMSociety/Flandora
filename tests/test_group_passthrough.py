@@ -12,6 +12,7 @@ if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
 from flandora import bridge_core  # noqa: E402
+from flandora.runtime import RUNTIME  # noqa: E402
 
 GROUP_MSG = {
     "sessionId": "50071592949@chatroom",
@@ -51,11 +52,6 @@ class _StubStore:
         return self._nickname
 
 
-class _StubSource:
-    def __init__(self, nickname, my_wxid="wxid_me"):
-        self.store = _StubStore(nickname, my_wxid)
-
-
 def test_group_message_without_mention_is_reported(isolated_ids, monkeypatch):
     """没 @ 机器人的群消息也照发：要不要回由客户端判断。"""
     bridge = _make_bridge()
@@ -74,7 +70,7 @@ def test_group_message_without_mention_is_reported(isolated_ids, monkeypatch):
 def test_is_mentioned_uses_self_nickname_from_local_db():
     """@ 识别的昵称取自本地通讯录里自己那行，不来自配置。"""
     bridge = _make_bridge()
-    bridge._source = _StubSource("芙兰朵露")
+    RUNTIME.store = _StubStore("芙兰朵露")
     assert bridge._is_mentioned({**GROUP_MSG, "content": "@芙兰朵露 在吗"}) is True
     assert bridge._is_mentioned({**GROUP_MSG, "content": "＠芙兰朵露 在吗"}) is True
     assert bridge._is_mentioned(dict(GROUP_MSG)) is False
@@ -84,14 +80,14 @@ def test_is_mentioned_is_false_when_nickname_unavailable():
     """读不到自己昵称时不做误判，也不能崩。"""
     bridge = _make_bridge()
     assert bridge._is_mentioned({**GROUP_MSG, "content": "@芙兰朵露 在吗"}) is False
-    bridge._source = _StubSource("")
+    RUNTIME.store = _StubStore("")
     assert bridge._is_mentioned({**GROUP_MSG, "content": "@芙兰朵露 在吗"}) is False
 
 
 def test_should_ignore_drops_messages_from_the_bot_itself():
     """防自回环：按登录 wxid 与自己的昵称两路挡住自己发的消息。"""
     bridge = _make_bridge()
-    bridge._source = _StubSource("芙兰朵露", my_wxid="wxid_me")
+    RUNTIME.store = _StubStore("芙兰朵露", my_wxid="wxid_me")
     assert bridge.should_ignore({"talkerId": "wxid_me", "content": "自己发的"}) is True
     assert bridge.should_ignore({"sourceName": "芙兰朵露", "content": "和自己聊天"}) is True
     assert (

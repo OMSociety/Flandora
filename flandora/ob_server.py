@@ -1,8 +1,8 @@
 """OneBot v11 网络入口的起停器。
 
 入口本身（HTTP 服务端 / WS 服务端 / 反向 WS / HTTP 上报）在 ``ob_network`` 里。
-这里只持有一个专用事件循环线程：``start()`` 把 ``config.OB_NETWORKS`` 交给管理器
-并等它就绪，``stop()`` 通知循环停下、等线程退出并释放端口。
+这里只持有一个专用事件循环线程：``start()`` 把 ``config.OB_NETWORKS`` 交给管理器，
+等服务端入口真的进入监听才报成功，``stop()`` 通知循环停下、等线程退出并释放端口。
 
 只有 ``ONEBOT_SERVER`` 一个实例：启停必须成对，入口线程不允许无人持有地空转。
 """
@@ -92,9 +92,12 @@ class OneBotServer:
     # ---------------------------------------------------------------- 线程体
 
     def _run(self) -> None:
-        """入口线程：建循环 → 配入口 → 常驻；循环停下后在同线程里收尾。"""
+        """入口线程：建循环 → 配入口 → 等监听就绪 → 常驻；循环停下后收尾。"""
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+        # 循环引用先挂上：起不来时 start() 会调 stop()，那时也要能通知到这个循环
+        with self._lock:
+            self._loop = loop
         try:
             mgr = ob_network.manager()
             mgr.configure(config.OB_NETWORKS)
@@ -104,31 +107,58 @@ class OneBotServer:
                     f"[OB11] 入口 {node['name']}（{node['type']}，role={node['role']}，"
                     f"{'启用' if node['enabled'] else '未启用'}）"
                 )
+            try:
+                ready, pending = loop.run_until_complete(self._await_ready(mgr))
+            except RuntimeError:
+                # 等就绪的过程中被 stop() 叫停
+                ready, pending = False, ["启动被中止"]
         except Exception as e:  # noqa: BLE001
             log.error(f"[OB11] 网络入口启动失败：{e}")
             self._startup.set()
-            try:
-                loop.close()
-            except Exception as close_error:  # noqa: BLE001
-                log.error(f"[OB11] 事件循环关闭失败：{close_error}")
-            RUNTIME.release_ob_server()
+            self._wind_down(loop)
+            return
+        if not ready:
+            log.error(f"[OB11] 网络入口未在 {START_TIMEOUT:.0f} 秒内就绪：{'、'.join(pending)}")
+            self._startup.set()
+            self._wind_down(loop)
             return
         with self._lock:
-            self._loop = loop
             self._startup_ok = True
         self._startup.set()
         try:
             loop.run_forever()
         finally:
-            try:
-                loop.run_until_complete(ob_network.manager().stop())
-            except Exception as e:  # noqa: BLE001
-                log.error(f"[OB11] 网络入口停止失败：{e}")
-            try:
-                loop.close()
-            except Exception as e:  # noqa: BLE001
-                log.error(f"[OB11] 事件循环关闭失败：{e}")
-            RUNTIME.release_ob_server()
+            self._wind_down(loop)
+
+    async def _await_ready(self, mgr) -> tuple[bool, list[str]]:
+        """等到服务端入口都进入监听，或超时。
+
+        「线程起来了」不等于「端口在听」：绑不上端口时入口会退避重试，
+        这时启动方若已经报成功，面板上是一个假运行状态。
+        """
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + START_TIMEOUT
+        while True:
+            ready, pending = mgr.local_readiness()
+            if ready:
+                return True, []
+            if loop.time() >= deadline:
+                return False, pending
+            await asyncio.sleep(0.05)
+
+    def _wind_down(self, loop: asyncio.AbstractEventLoop) -> None:
+        """停入口 → 关循环 → 交还所有权。启动失败与正常停止共用这一条收尾路径。"""
+        try:
+            loop.run_until_complete(ob_network.manager().stop())
+        except Exception as e:  # noqa: BLE001
+            log.error(f"[OB11] 网络入口停止失败：{e}")
+        try:
+            loop.close()
+        except Exception as e:  # noqa: BLE001
+            log.error(f"[OB11] 事件循环关闭失败：{e}")
+        RUNTIME.release_ob_server()
+        with self._lock:
+            self._loop = None
 
 
 ONEBOT_SERVER = OneBotServer()

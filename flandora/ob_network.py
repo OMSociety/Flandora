@@ -206,6 +206,22 @@ class NetworkManager:
     def nodes(self) -> list[dict]:
         return list(self._nodes)
 
+    def local_readiness(self) -> tuple[bool, list[str]]:
+        """本机监听是否已经就绪，返回 ``(全部就绪, 还没就绪的入口名)``。
+
+        只有「服务端」类入口参与判定：它们绑不上端口就是本进程的问题，必须让
+        启动方知道。反向 WS 与 HTTP 上报是客户端，连不上外部框架是常态，重连
+        由监督任务负责，不该让本进程的启动等着它。
+        """
+        pending = [
+            node["name"]
+            for node in self._nodes
+            if node["enabled"]
+            and node["type"] in (KIND_WS_SERVER, KIND_HTTP_SERVER)
+            and self._state.get(node["name"]) not in ("listening", "connected")
+        ]
+        return (not pending), pending
+
     @property
     def loop(self):
         return self._loop
@@ -343,11 +359,7 @@ class NetworkManager:
         def process_request(connection, request):
             return _authorize(node, request)
 
-        self._state[node["name"]] = "listening"
-        log.info(
-            f"[OB11] WS 服务端 {node['name']} 监听 {node['host']}:{node['port']}"
-            f"{node['path']}（role={node['role']}，token={'有' if node['access_token'] else '无'}）"
-        )
+        self._state[node["name"]] = "starting"
         async with serve(
             handler,
             node["host"],
@@ -355,6 +367,12 @@ class NetworkManager:
             process_request=process_request,
             max_size=MAX_MESSAGE_SIZE,
         ):
+            # 状态与日志放在绑定之后：绑不上端口时这里不该已经报「监听」
+            self._state[node["name"]] = "listening"
+            log.info(
+                f"[OB11] WS 服务端 {node['name']} 监听 {node['host']}:{node['port']}"
+                f"{node['path']}（role={node['role']}，token={'有' if node['access_token'] else '无'}）"
+            )
             await asyncio.Future()  # 由 stop() 取消
 
     async def _handle_ws(self, node: dict, ws):
@@ -465,12 +483,18 @@ class NetworkManager:
             lifespan="off",
         )
         server = uvicorn.Server(config_)
+        task = asyncio.ensure_future(server.serve())
+        # uvicorn 在 serve() 内部才绑定端口：等它真的 started 再报「监听」
+        while not server.started:
+            if task.done():
+                task.result()  # 起不来时把异常交给监督任务
+            await asyncio.sleep(0.05)
         self._state[node["name"]] = "listening"
         log.info(
             f"[OB11] HTTP API {node['name']} 监听 {node['host']}:{node['port']}{path}"
             f"（token={'有' if token else '无'}）"
         )
-        await server.serve()
+        await task
 
     # ---------- 反向 WS ----------
 

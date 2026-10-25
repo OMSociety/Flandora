@@ -30,24 +30,6 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
   <img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/dashboard.png" width="100%" alt="Flandora 控制台的仪表盘：收件源、OneBot 连接、发送通道与进程状态" />
 </p>
 
-## 核心能力
-
-| 场景 | 能力 |
-| --- | --- |
-| 收件 | 登录瞬间取钥；解密副本只读轮询；私聊与群聊的文本、图片、表情、语音占位；群消息全量上报 |
-| 发送 | 文本、图片、文件、群内 @ 提及、语音（mp3 卡片）与视频（文件形式）；默认在隔离桌面投递；发送前清空输入框并核对回显 |
-| OneBot v11 | 四类网络入口（WS / HTTP 服务端、反向 WS、HTTP 上报）可同时开启；消息段与 CQ 码双向编解码；`is_mentioned` 如实标记是否被 @；入口改完保存即生效 |
-| 群与身份 | 群内按发言人拆分 `user_id`；群名映射；多昵称识别；动作参数既收整数 ID 也收 wxid / 群标识 |
-| 取钥 | 四步向导：免责声明、数据库口令、图片密钥、校验；口令与密钥由 Windows DPAPI 加密落盘；重启后自动认出盘上已就位的口令与密钥，不会退回重取 |
-| 隔离桌面 | 微信跑在独立的 Windows 桌面上；重启后接管仍在运行的实例；需要时由你点按钮结束 |
-| 控制台 | 仪表盘、消息记录、节点配置、微信画面、取钥向导、运行日志、调试面板、系统设置；明暗两套主题 |
-
-<p align="center">
-  <img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/assets/readme/flow.svg" width="100%" alt="微信客户端经 Flandora 的取钥、收件与发送链路，对外连接 OneBot v11 客户端" />
-</p>
-
-会话接入、口令还原、事件组装、动作执行与网络适配保持独立边界。收件按 `wx_poll_seconds` 轮询本机库，不向聊天进程注入钩子；发送只在你调用动作时发生。**桥接只做通道**：要不要回、怎么回、上下文带多少，全部留在客户端侧。
-
 ## 快速开始
 
 1. 从 [Releases](https://github.com/OMSociety/Flandora/releases) 下载发行包并解压，安装包与便携包二选一：

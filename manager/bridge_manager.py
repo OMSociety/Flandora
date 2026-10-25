@@ -20,18 +20,6 @@ import sys
 import threading
 import time
 import tkinter as tk
-
-# 单实例锁（Windows 具名互斥量）
-try:
-    import ctypes
-
-    _mutex_handle = ctypes.windll.kernel32.CreateMutexW(
-        None, False, "Global\\Flandora_SingleInstance"
-    )
-    _already_running = ctypes.windll.kernel32.GetLastError() == 183  # ERROR_ALREADY_EXISTS
-except Exception:  # noqa: BLE001
-    _mutex_handle = None
-    _already_running = False
 from pathlib import Path
 from tkinter import messagebox, scrolledtext, ttk
 from typing import Optional
@@ -57,6 +45,22 @@ else:
 # data_dir() 取值一致：打包 = exe 同级，源码 = 仓库根。
 DATA_DIR = BRIDGE_DIR / "data"
 BRIDGE_LOG = DATA_DIR / "flandora.log"
+
+
+def _acquire_manager_lock():
+    """管理器自己的单实例锁。
+
+    与 bridge 用两把不同名字的互斥量：管理器开着窗口去拉起 bridge，是正常工作
+    形态；若两者抢同一个名字，被拉起的 bridge 会把自己判成重复实例而退出。
+    """
+    if str(BRIDGE_DIR) not in sys.path:
+        sys.path.insert(0, str(BRIDGE_DIR))
+    from flandora.single_instance import MANAGER_MUTEX_NAME, acquire_mutex
+
+    return acquire_mutex(MANAGER_MUTEX_NAME)
+
+
+_mutex_handle, _already_running = _acquire_manager_lock()
 
 # 找 bridge 主程序：优先 Flandora.exe（打包后），回退 flandora/main.py（源码）
 BRIDGE_EXE = BRIDGE_DIR / ("Flandora.exe" if sys.platform == "win32" else "Flandora")

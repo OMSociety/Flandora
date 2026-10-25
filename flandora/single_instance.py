@@ -4,11 +4,13 @@
 里面的 pid 还可能被系统分给别的进程，于是要么误判「已在运行」而拒绝启动，要么
 判不出去而放进第二个实例。互斥量由内核在进程退出时自动释放，不存在残留。
 
+两个角色各持一把锁，名字必须不同：管理器要开着窗口去拉起 bridge，如果两者抢
+同一个名字，bridge 会把自己当成重复实例直接退出，而管理器界面仍显示已启动。
+
 用法：
 
-    from flandora.single_instance import (
-        acquire_mutex, SINGLE_INSTANCE_NAME)
-    handle, already_running = acquire_mutex(SINGLE_INSTANCE_NAME)
+    from flandora.single_instance import acquire_mutex, BRIDGE_MUTEX_NAME
+    handle, already_running = acquire_mutex(BRIDGE_MUTEX_NAME)
     if already_running:
         sys.exit(1)
 
@@ -25,14 +27,15 @@ from ctypes import wintypes
 log = logging.getLogger("flandora")
 
 # 带 Global\ 前缀 → 作用域是整个机器而不是当前登录会话，多用户切换也拦得住。
-# 名字与项目对外名一致，改名时要一起改。
-SINGLE_INSTANCE_NAME = "Global\\Flandora_SingleInstance"
+# 名字与项目对外名一致，改名时要一起改；bridge 与 manager 必须是两个名字。
+BRIDGE_MUTEX_NAME = "Global\\Flandora_Bridge"
+MANAGER_MUTEX_NAME = "Global\\Flandora_Manager"
 
 # CreateMutexW 在互斥量已存在时返回的 last-error
 ERROR_ALREADY_EXISTS = 183
 
 
-def acquire_mutex(name: str = SINGLE_INSTANCE_NAME):
+def acquire_mutex(name: str = BRIDGE_MUTEX_NAME):
     """创建（或打开）命名互斥量。
 
     返回 `(handle, already_running)`。

@@ -10,11 +10,13 @@
     python tests/test_single_instance.py
 """
 
+import ast
 import ctypes
 import os
 import subprocess
 import sys
 import uuid
+from pathlib import Path
 
 import pytest
 
@@ -48,9 +50,30 @@ def _run_child(src: str) -> str:
 
 def test_mutex_name_is_global():
     """名字带 Global\\ 前缀：跨会话（多用户 / 服务）也能互斥。"""
-    assert single_instance.SINGLE_INSTANCE_NAME.startswith("Global\\"), (
-        single_instance.SINGLE_INSTANCE_NAME
+    assert single_instance.BRIDGE_MUTEX_NAME.startswith("Global\\"), (
+        single_instance.BRIDGE_MUTEX_NAME
     )
+
+
+def test_bridge_and_manager_hold_different_names():
+    """管理器与 bridge 各持一把锁：同名会把被拉起的 bridge 判成重复实例。"""
+    assert single_instance.BRIDGE_MUTEX_NAME != single_instance.MANAGER_MUTEX_NAME
+    assert single_instance.MANAGER_MUTEX_NAME.startswith("Global\\")
+
+
+def test_manager_does_not_hardcode_a_mutex_name():
+    """管理器必须经由 single_instance 取锁；自己写字面量迟早与 bridge 撞名。"""
+    tree = ast.parse(
+        (Path(REPO_ROOT) / "manager" / "bridge_manager.py").read_text(encoding="utf-8")
+    )
+    literals = [
+        node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and node.value.startswith("Global\\")
+    ]
+    assert literals == []
 
 
 @windows_only

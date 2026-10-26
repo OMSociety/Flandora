@@ -226,7 +226,11 @@ def api_put_config(payload: dict, response: Response):
         result = deps.config_store().update(payload)
         log.info(f"[WebUI] 配置已保存 (字段: {', '.join(payload.keys())})")
         events.notify_status()
-        return {"ok": True, "restart_required": list(result.restart_required)}
+        return {
+            "ok": True,
+            "restart_required": list(result.restart_required),
+            "ignored_keys": list(result.ignored_keys),
+        }
     except Exception as e:
         log.error(f"[WebUI] 保存配置异常: {e}")
         return JSONResponse({"ok": False, "error": str(e)}, 500)

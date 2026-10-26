@@ -16,7 +16,7 @@ import os
 import tempfile
 import threading
 from collections.abc import Callable, Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from . import fields, paths
@@ -73,10 +73,11 @@ class Settings:
 
 @dataclass(frozen=True)
 class UpdateResult:
-    """一次写入的结果：新的有效配置，以及要重启才成立的键。"""
+    """一次写入的结果：新的有效配置、要重启才成立的键，以及被丢掉的未声明键。"""
 
     settings: Settings
     restart_required: tuple[str, ...] = ()
+    ignored_keys: tuple[str, ...] = ()
 
 
 def build_settings(
@@ -222,8 +223,12 @@ class ConfigStore:
 
         严格只针对这次提交的键：盘上原有的非法值不会挡住对别的键的保存，它继续按
         回退规则生效（回退原因在 ``settings.warnings``/``errors`` 里）。
+
+        未声明的键不会静默消失：键名收进 ``ignored_keys`` 并记一条 warning，面板据此
+        告诉用户「这几个键没生效」——拼错一个键名却看到「保存成功」是最难查的一类。
         """
         incoming = dict(payload)
+        unknown = tuple(sorted(key for key in incoming if key not in fields.KEYS))
         with self._lock:
             self._ensure_loaded_locked()
             current = self.read_raw()
@@ -235,14 +240,21 @@ class ConfigStore:
                 self.data_dir(),
                 strict_keys=frozenset(key for key in incoming if key in fields.KEYS),
             )
+            if unknown:
+                settings = replace(
+                    settings,
+                    warnings=settings.warnings
+                    + ("以下配置项未在字段表里声明，已忽略：" + "、".join(unknown),),
+                )
             self.write_raw(merged)
             previous = self._settings
             self._settings = settings
             changed = self._changed_keys(previous, settings, incoming)
             hot_changed = frozenset(key for key in changed if fields.is_hot(key))
-            restart = tuple(key for key in incoming if fields.is_restart(key))
+            # 只有真的变了的键才需要重启：同值再存一次不该又弹「改后需重启」
+            restart = tuple(key for key in incoming if key in changed and fields.is_restart(key))
         self._notify(settings, hot_changed)
-        return UpdateResult(settings=settings, restart_required=restart)
+        return UpdateResult(settings=settings, restart_required=restart, ignored_keys=unknown)
 
     def replace(self, data: Mapping[str, Any]) -> UpdateResult:
         """从备份恢复：与现有文件合并后整体重校验，语义同 :meth:`update`。"""

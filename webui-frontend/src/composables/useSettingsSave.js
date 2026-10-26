@@ -22,6 +22,8 @@ export function useSettingsSave() {
       toast('配置已保存', 'success')
       const needRestart = Array.isArray(res.data.restart_required) ? res.data.restart_required : []
       if (needRestart.length) toast('部分配置需重启桥接生效：' + needRestart.join('、'), 'info', 6500)
+      const ignored = Array.isArray(res.data.ignored_keys) ? res.data.ignored_keys : []
+      if (ignored.length) toast('这些配置项没被识别、已忽略：' + ignored.join('、'), 'info', 8000)
       return true
     }
     toast('保存失败：' + (res.data?.error || (res.status ? `HTTP ${res.status}` : '请求失败')), 'error')

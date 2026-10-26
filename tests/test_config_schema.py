@@ -152,5 +152,77 @@ def test_example_lists_every_field_with_its_comment():
         assert example[f"_comment_{spec.key}"] == spec.desc, spec.key
 
 
+def test_flag_rejects_anything_but_true_false():
+    """开关只认明确的真假写法：``"false"`` 不能因为是非空字符串就当成真。"""
+    assert fields.clean_field("isolated_desktop", "false").value is False
+    assert fields.clean_field("isolated_desktop", "TRUE").value is True
+    assert fields.clean_field("isolated_desktop", 0).value is False
+
+    with pytest.raises(fields.ConfigError):
+        fields.clean_field("isolated_desktop", "也许", strict=True)
+
+
+def test_flag_falls_back_to_the_declared_default_when_loading():
+    """读文件时坏值退回**声明的默认值**（isolated_desktop 默认是开），并带上原因。"""
+    cleaned = fields.clean_field("isolated_desktop", "maybe")
+
+    assert cleaned.value is True
+    assert cleaned.warnings
+    assert "isolated_desktop" in cleaned.warnings[0]
+    assert "已按开处理" in cleaned.warnings[0]
+
+
+def test_numbers_are_range_checked_and_never_fall_back_silently():
+    with pytest.raises(fields.ConfigError):
+        fields.clean_field("web_port", 0, strict=True)
+    with pytest.raises(fields.ConfigError):
+        fields.clean_field("ob_server_port", 70000, strict=True)
+    with pytest.raises(fields.ConfigError):
+        fields.clean_field("wx_poll_seconds", "abc", strict=True)
+
+    cleaned = fields.clean_field("web_port", "abc")
+
+    assert cleaned.value == 4950
+    assert cleaned.warnings
+    assert "web_port" in cleaned.warnings[0]
+
+
+def test_group_map_rejects_other_types_in_strict_mode():
+    assert fields.clean_field("group_name_map", None).value == {}
+    assert fields.clean_field("group_name_map", {"123@chatroom": "群"}).value == {
+        "123@chatroom": "群"
+    }
+
+    with pytest.raises(fields.ConfigError):
+        fields.clean_field("group_name_map", ["不是对象"], strict=True)
+
+    cleaned = fields.clean_field("group_name_map", "123@chatroom=群")
+
+    assert cleaned.value == {}
+    assert cleaned.warnings
+
+
+def test_unknown_keys_are_reported_back(tmp_path):
+    """拼错的键名不再静默消失：回包里能拿到，warnings 里也留一句。"""
+    store = ConfigStore(str(tmp_path / "config.json"), generate=False)
+
+    result = store.update({"web_port": 5001, "web_prt": 5002})
+
+    assert result.ignored_keys == ("web_prt",)
+    assert any("web_prt" in text for text in result.settings.warnings)
+    assert "web_prt" not in store.read_raw()
+
+
+def test_saving_the_same_value_does_not_ask_for_a_restart(tmp_path):
+    """同值再存一次不算改动，别又弹「改后需重启」。"""
+    store = ConfigStore(str(tmp_path / "config.json"), generate=False)
+
+    first = store.update({"web_port": 5100})
+    second = store.update({"web_port": 5100})
+
+    assert first.restart_required == ("web_port",)
+    assert second.restart_required == ()
+
+
 if __name__ == "__main__":
     sys.exit(pytest.main([__file__, "-q"]))

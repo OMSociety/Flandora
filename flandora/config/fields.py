@@ -56,20 +56,6 @@ def _as_text(value: Any) -> str:
     return "" if value is None else str(value)
 
 
-def _as_int(value: Any, default: int) -> int:
-    try:
-        return int(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _as_float(value: Any, default: float) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
 def _clean_text(value: Any, strict: bool, context: Mapping) -> Cleaned:
     return Cleaned(_as_text(value))
 
@@ -86,25 +72,112 @@ class Field:
     desc: str = ""
 
 
+_FLAG_ON = frozenset({"1", "true", "yes", "on"})
+_FLAG_OFF = frozenset({"0", "false", "no", "off"})
+
+
+def _where(context: Mapping) -> str:
+    """回退原因里带上字段名，读日志的人不用猜是哪一项。"""
+    key = context.get("_key")
+    return f"{key} " if key else ""
+
+
+def _number(
+    value: Any,
+    default: Any,
+    *,
+    what: str,
+    strict: bool,
+    context: Mapping,
+    low: float | None = None,
+    high: float | None = None,
+    convert: Callable[[Any], Any] = int,
+) -> Cleaned:
+    """数值字段的统一校验：布尔与空值不算数字，越界与解析失败都算非法。
+
+    严格模式（面板保存）直接拒绝；宽松模式（读文件）退回这一项声明的默认值并记一条
+    原因——静默把 ``"abc"`` 变成端口 4950，用户会以为保存成功了。
+    """
+    parsed: Any = None
+    ok = not isinstance(value, bool) and value is not None and value != ""
+    if ok:
+        try:
+            parsed = convert(value)
+        except (TypeError, ValueError):
+            ok = False
+    if ok and low is not None and parsed < low:
+        ok = False
+    if ok and high is not None and parsed > high:
+        ok = False
+    if ok:
+        return Cleaned(parsed)
+    message = f"{_where(context)}{what}不合法：{value!r}"
+    if strict:
+        raise ConfigError(message)
+    return Cleaned(default, warnings=(f"{message}，已按 {default!r} 处理",))
+
+
 def _clean_flag(value: Any, strict: bool, context: Mapping) -> Cleaned:
-    """开关按 Python 真值判定：``"false"`` 这类字符串与旧行为一样算真。"""
-    return Cleaned(bool(value))
+    """开关只认明确的真假写法：布尔、0/1、true/false（不分大小写）。
+
+    宽松模式（读文件）下别的取值退回声明的默认值并记一条原因；严格模式（面板保存）
+    直接拒绝——``"false"`` 在 Python 里是真值，静默按真处理会与用户写的相反。
+    """
+    if isinstance(value, bool):
+        return Cleaned(value)
+    if isinstance(value, int) and value in (0, 1):
+        return Cleaned(bool(value))
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in _FLAG_ON:
+            return Cleaned(True)
+        if text in _FLAG_OFF:
+            return Cleaned(False)
+    default = bool(context.get("_default"))
+    message = f"{_where(context)}开关只认 true/false（或 1/0），收到 {value!r}"
+    if strict:
+        raise ConfigError(message)
+    return Cleaned(default, warnings=(f"{message}，已按{'开' if default else '关'}处理",))
 
 
 def _clean_plain_int(value: Any, strict: bool, context: Mapping) -> Cleaned:
-    return Cleaned(_as_int(value, 0))
+    return _number(value, context.get("_default"), what="整数", strict=strict, context=context)
 
 
 def _clean_poll_seconds(value: Any, strict: bool, context: Mapping) -> Cleaned:
-    return Cleaned(_as_float(value, 1.0))
+    return _number(
+        value,
+        context.get("_default"),
+        what="秒数",
+        strict=strict,
+        context=context,
+        low=0.1,
+        convert=float,
+    )
 
 
 def _clean_web_port(value: Any, strict: bool, context: Mapping) -> Cleaned:
-    return Cleaned(_as_int(value, 4950))
+    return _number(
+        value,
+        context.get("_default"),
+        what="端口",
+        strict=strict,
+        context=context,
+        low=1,
+        high=65535,
+    )
 
 
 def _clean_ob_port(value: Any, strict: bool, context: Mapping) -> Cleaned:
-    return Cleaned(_as_int(value, 7999))
+    return _number(
+        value,
+        context.get("_default"),
+        what="端口",
+        strict=strict,
+        context=context,
+        low=1,
+        high=65535,
+    )
 
 
 def _clean_cert_file(value: Any, strict: bool, context: Mapping) -> Cleaned:
@@ -251,8 +324,15 @@ def _clean_networks(value: Any, strict: bool, context: Mapping) -> Cleaned:
 
 
 def _clean_group_map(value: Any, strict: bool, context: Mapping) -> Cleaned:
-    """群 ID → 群名映射；不是对象时按空表处理（发送到群时退回群 ID）。"""
-    return Cleaned(dict(value) if isinstance(value, dict) else {})
+    """群 ID → 群名映射；留空按空表，写了别的类型严格模式拒绝（发送到群会退回群 ID）。"""
+    if isinstance(value, dict):
+        return Cleaned(dict(value))
+    if value is None:
+        return Cleaned({})
+    message = f"{_where(context)}应为对象（群 ID → 群名），收到 {type(value).__name__}"
+    if strict:
+        raise ConfigError(message)
+    return Cleaned({}, warnings=(f"{message}，已按空表处理",))
 
 
 FIELDS: tuple[Field, ...] = (
@@ -617,4 +697,9 @@ def clean_field(
     spec = _BY_KEY.get(key)
     if spec is None:
         raise KeyError(f"未声明的配置项：{key}")
-    return spec.clean(value, strict, context or {})
+    # 把这一项自己的键名与声明默认值一并交给 cleaner：非法值该退回哪个值、原因里写哪个
+    # 字段名，由 cleaner 说清楚（见 _clean_flag / _number）。
+    here = dict(context or {})
+    here["_key"] = key
+    here["_default"] = spec.default
+    return spec.clean(value, strict, here)

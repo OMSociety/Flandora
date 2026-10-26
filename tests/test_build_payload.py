@@ -79,24 +79,31 @@ def test_dirty_tree_is_refused_until_explicitly_allowed():
     assert build.dirty_build_problem("abc", True, True) is None
 
 
-def test_payload_rebuild_carries_the_user_data_over(tmp_path):
-    rel = tmp_path / "payload"
-    (rel / "data").mkdir(parents=True)
-    (rel / "data" / "wx_key.dat").write_bytes(b"secret-key")
-    (rel / "data" / "messages.db").write_bytes(b"db")
-    (rel / "Flandora.exe").write_bytes(b"MZ")
-    stash = tmp_path / "stash"
+def test_payload_rebuild_carries_the_user_data_over(tmp_path, monkeypatch):
+    """打包前先挪走 data/，打包中 dist 被清空也不会丢配置与口令。"""
+    monkeypatch.setattr(build, "DIST", tmp_path / "dist")
+    monkeypatch.setattr(build, "BUILD", tmp_path / "build")
+    payload = build.DIST / build.PKG_NAME
+    (payload / "data").mkdir(parents=True)
+    (payload / "data" / "wx_key.dat").write_bytes(b"secret-key")
+    (payload / "data" / "messages.db").write_bytes(b"db")
 
-    assert build._stash_user_data(rel, stash) is True
-    assert not (rel / "data").exists()
+    assert build._stash_payload_data() is True
+    assert not (payload / "data").exists()
+    assert build.payload_data_stash().is_dir()
 
-    (rel / "data").mkdir()
-    (rel / "data" / "config.json").write_text("{}", encoding="utf-8")
+    # 打包过程相当于 clean() 删掉 dist 再从零搭一份载荷
+    import shutil
 
-    assert build._restore_user_data(rel, stash) is True
-    assert (rel / "data" / "wx_key.dat").read_bytes() == b"secret-key"
-    assert (rel / "data" / "messages.db").read_bytes() == b"db"
-    assert not (rel / "data" / "config.json").exists()
+    shutil.rmtree(payload)
+    (payload / "data").mkdir(parents=True)
+    (payload / "Flandora.exe").write_bytes(b"MZ")
+
+    assert build._restore_payload_data() is True
+    assert (payload / "data" / "wx_key.dat").read_bytes() == b"secret-key"
+    assert (payload / "data" / "messages.db").read_bytes() == b"db"
+    assert (payload / "Flandora.exe").exists()
+    assert not build.payload_data_stash().exists()
 
 
 def test_zip_leaves_the_user_data_out(tmp_path, monkeypatch):

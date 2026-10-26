@@ -508,8 +508,6 @@ def verify_payload(payload: Path) -> list[str]:
 def assemble_zip() -> Path:
     step("组装发布 zip")
     rel = DIST / PKG_NAME
-    stash = BUILD / f"{rel.name}-data"
-    stashed = _stash_user_data(rel, stash) if rel.exists() else False
     if rel.exists():
         shutil.rmtree(rel)
     (rel / "data").mkdir(parents=True)
@@ -562,33 +560,43 @@ def assemble_zip() -> Path:
     _zip_payload(rel, zip_path)
     print(f"\n生成：{zip_path} ({zip_path.stat().st_size / 1024 / 1024:.2f} MB)")
 
-    # 8) 把上一次的 data/ 放回载荷：配置、口令与存档都还在
-    if stashed and _restore_user_data(rel, stash):
-        print("  已保留上次的 data/（配置、口令与存档）")
     return zip_path
 
 
-def _stash_user_data(rel: Path, stash: Path) -> bool:
-    """把上一次载荷里的 data/ 挪到一边，返回是否真挪了。
+def payload_data_stash() -> Path:
+    """载荷里 data/ 的暂存位置：放在 build/ 下，clean() 清 dist 时碰不到它。"""
+    return BUILD / f"{PKG_NAME}-data"
 
-    重建时 dist 是构建产物，但在这台机器上它同时是正在跑的实例：直接 rmtree 会把
-    配置、微信口令与消息存档一起删掉。挪出去、重建完再挪回来，用户就不必每次重配。
+
+def _stash_payload_data() -> bool:
+    """打包前把上一份载荷的 data/ 挪到一边，返回是否真挪了。
+
+    dist 在开发机上同时是正在跑的实例：clean() 一删就会把配置、微信口令与消息
+    存档一起抹掉。挪出去、重建完再挪回来，用户不必每次重配。
     """
-    data = rel / "data"
+    data = DIST / PKG_NAME / "data"
     if not data.is_dir():
         return False
+    stash = payload_data_stash()
     if stash.exists():
         shutil.rmtree(stash)
     stash.parent.mkdir(parents=True, exist_ok=True)
-    shutil.move(str(data), str(stash))
+    try:
+        shutil.move(str(data), str(stash))
+    except OSError as exc:
+        # 有实例正开着时文件被占用、挪不动：退回复制，至少把内容留在暂存区
+        print(f"  提示：{data} 正被占用（{exc}），改为复制暂存")
+        shutil.copytree(data, stash, dirs_exist_ok=True)
+        shutil.rmtree(data, ignore_errors=True)
     return True
 
 
-def _restore_user_data(rel: Path, stash: Path) -> bool:
-    """把挪出去的 data/ 放回载荷，返回是否真放回。"""
+def _restore_payload_data() -> bool:
+    """把暂存的 data/ 放回载荷，返回是否真放回。"""
+    stash = payload_data_stash()
     if not stash.is_dir():
         return False
-    target = rel / "data"
+    target = DIST / PKG_NAME / "data"
     if target.exists():
         shutil.rmtree(target)
     shutil.move(str(stash), str(target))
@@ -778,6 +786,7 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(problem)
 
     t0 = time.time()
+    stashed = _stash_payload_data()
     clean()
     DIST.mkdir(parents=True, exist_ok=True)
     ensure_webui_dist(skip_web=args.skip_web)
@@ -786,6 +795,8 @@ def main(argv: list[str] | None = None) -> int:
     build_keytool()
     build_manager()
     zip_path = assemble_zip()
+    if stashed and _restore_payload_data():
+        print("  已保留上次的 data/（配置、口令与存档）")
     setup_path = build_installer()
     # 这里不要用 emoji：Windows 控制台默认 GBK 编码，编码失败会让打包成功却以退出码 1 结束
     print(f"\n[完成] 打包完成，耗时 {time.time() - t0:.1f}s")

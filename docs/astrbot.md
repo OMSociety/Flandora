@@ -35,7 +35,7 @@ Flandora 默认 `ob_message_format` 是 `array`，而 AstrBot 收到事件后是
 | --- | --- |
 | `self_id` | 当前登录账号的整数 ID，与 `get_login_info` 同源 |
 | `user_id` | 发送者的整数 ID |
-| `group_id` | 群消息里是该群的整数 ID；私聊事件不含这个字段 |
+| `group_id` | 群消息里是该群的整数 ID；只在群消息事件里出现 |
 | `message_id` | 非零正整数，撤回、引用、取原文都用它 |
 
 群消息事件另有 `group_name`（微信里的群名）与 `is_mentioned`（这条消息是否真的 @ 了机器人）。

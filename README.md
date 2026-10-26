@@ -31,19 +31,15 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 ## 快速开始
 
-1. 从 [Releases](https://github.com/OMSociety/Flandora/releases) 下载发行包并解压，安装包与便携包二选一：
+需要 Windows 10/11 与 Python 3.13。
 
-   | 包 | 说明 |
-   | --- | --- |
-   | `Flandora-v1.0.0-setup.exe` | 安装到 `%LOCALAPPDATA%\Programs\Flandora`，可勾选开机自启与桌面快捷方式；卸载时单独询问是否删除配置与已存口令 |
-   | `Flandora-v1.0.0.zip` | 便携包，解压到任意目录，双击 `Flandora.exe` |
-
-   发行包还没放出来时，直接从源码运行：
+1. 建虚拟环境并装依赖：
 
    ```powershell
+   git clone https://github.com/OMSociety/Flandora.git
+   cd Flandora
    python -m venv .venv
    .venv\Scripts\python -m pip install -r requirements-dev.txt
-   .venv\Scripts\python manager\main.py
    ```
 
 2. 退出自己的微信，双击 `Flandora.exe`。它在任务栏托盘里常驻并拉起桥接，需要时从菜单打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)，或等它第一次运行时自己弹出面板。
@@ -62,6 +58,10 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 ```
 
 > **提示**：`ob_server_token` 与客户端 `token` 必须一致。留空表示不校验鉴权，此时服务端只监听 `127.0.0.1`；要让别的机器连进来，改 `ob_server_host`、在防火墙放行 7999，并务必填一串随机 token。
+
+## 打包
+
+`python build.py` 在 `dist/` 下产出 `Flandora-v1.0.0-setup.exe`（安装包）与 `Flandora-v1.0.0.zip`（便携包，解压到任意目录后双击 `Flandora.exe`）。
 
 ## 文档
 

@@ -12,7 +12,7 @@ web
 
 ## Product Purpose
 
-将个人微信的消息收发映射成标准 OneBot v11 通道，供 OneBot v11 客户端使用。WebUI 使本机桥接的运行、诊断和首次配置可以在一个控制台内完成。
+将个人微信的消息收发映射成标准 OneBot v11 通道，供 OneBot v11 客户端使用。WebUI 使本机桥接的运行、诊断和首次配置可以在一个面板内完成。
 
 ## Positioning
 
@@ -28,7 +28,7 @@ web
 
 ## Brand Commitments
 
-产品名 Flandora，描述为「微信 ↔ OneBot 桥接控制台」。本次视觉参考为用户指定的 SnowLuma WebUI；主题采用绿色与白色／黑色，默认跟随系统，并允许手动切换明暗。
+产品名 Flandora，描述为「微信 ↔ OneBot 桥接面板」。本次视觉参考为用户指定的 SnowLuma WebUI；主题采用绿色与白色／黑色，默认跟随系统，并允许手动切换明暗。
 
 ## Evidence on Hand
 

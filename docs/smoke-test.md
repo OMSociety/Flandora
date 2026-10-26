@@ -63,7 +63,7 @@
 | 场景 | 通过判据 |
 |---|---|
 | 好友发文本 | 客户端收到 `message/private` 事件，`sender.nickname` 正确 |
-| 群里发文本 | `message/group`，`group_id`/`group_name` 正确，群名不含「(12)」这类人数后缀 |
+| 群里发文本 | `message/group`，`group_id`/`group_name` 正确；`group_name` 与微信里显示的一致（「(12)」这类人数后缀由 `member_count` 单独表达） |
 | 群里 @ 机器人 | 事件里 `is_mentioned=true`；没 @ 时为 `false` |
 | 发图片 | 事件里出现 `image` 段，路径指向真实文件；日志里没有把图片当正文推送 |
 | 发自定义表情/动画表情 | 事件里出现对应段；日志无异常 |

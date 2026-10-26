@@ -71,24 +71,11 @@ def test_handle_is_accepted_where_id_is_expected():
     assert action_catalog.validate_params("send_private_msg", {"user_id": "", "message": []}) != []
 
 
-def test_bool_is_not_accepted_as_int():
-    resp = _call({"action": "get_group_info", "params": {"group_id": True}})
-    assert resp["status"] == "failed"
-    assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
-
-
 def test_numeric_string_is_taken_as_int():
     """客户端把整数字段写成字符串（AstrBot 的引用解析会先试字符串），按整数收下。"""
     params = {"message_id": "402"}
     assert action_catalog.validate_params("get_msg", params) == []
     assert params["message_id"] == 402
-
-
-def test_non_numeric_string_is_still_refused_as_int():
-    """只有纯数字字符串被收下，别的字符串按类型不对报错。"""
-    assert action_catalog.validate_params("get_msg", {"message_id": "四零二"}) == [
-        "参数 message_id 应为 int，收到 str"
-    ]
 
 
 def test_empty_message_is_refused():

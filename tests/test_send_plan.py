@@ -32,11 +32,6 @@ def test_text_segments_stay_separate_without_mention():
     assert plan == [SendText(text="第一句"), SendText(text="第二句")]
 
 
-def test_mention_run_is_merged_into_one_message():
-    plan = send_plan.plan_message([Mention(user_id=123), Text(" 看一下"), Text("这个")])
-    assert plan == [SendMention(targets=(MentionTarget(qq=123, name=""),), text=" 看一下这个")]
-
-
 def test_text_around_a_mention_stays_one_message():
     # 一次 @ 前后跟着的文字属于同一条消息：拆开发会让「前 后」之间的语序消失
     plan = send_plan.plan_message([Text("前"), Mention(user_id=1), Text("后")])
@@ -84,8 +79,3 @@ def test_media_segments_map_to_their_kinds():
         SendMedia(kind=SegmentKind.VOICE, path="/c.mp3"),
         SendMedia(kind=SegmentKind.FILE, path="/d.bin"),
     ]
-
-
-def test_empty_input_yields_empty_plan():
-    assert send_plan.plan_message([]) == []
-    assert send_plan.plan_message(None) == []

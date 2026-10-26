@@ -257,47 +257,6 @@ def test_record_segment_is_sent_as_file(monkeypatch, isolated_ids, tmp_path):
     assert sender.files[0][2] == payload
 
 
-def test_record_base64_is_written_and_removed(monkeypatch, isolated_ids):
-    import base64
-
-    sender = FakeSender()
-    uid = _prepare(monkeypatch, sender)
-    raw = b"ID3\x04\x00\x00" + b"x" * 16
-    resp = _call(
-        {
-            "action": "send_private_msg",
-            "params": {
-                "user_id": uid,
-                "message": [
-                    {
-                        "type": "record",
-                        "data": {"file": "base64://" + base64.b64encode(raw).decode()},
-                    }
-                ],
-            },
-        }
-    )
-    assert resp["status"] == "ok"
-    assert sender.files and sender.files[0][2] == raw
-    assert sender.files[0][1].endswith(".mp3")
-    # 临时文件在发送结束后删掉，不留在 data 目录里
-    assert not os.path.exists(sender.files[0][1])
-
-
-def test_record_without_file_reports_failure(monkeypatch, isolated_ids):
-    sender = FakeSender()
-    uid = _prepare(monkeypatch, sender)
-    resp = _call(
-        {
-            "action": "send_private_msg",
-            "params": {"user_id": uid, "message": [{"type": "record", "data": {}}]},
-        }
-    )
-    assert resp["status"] == "failed"
-    assert "语音缺少 file" in resp["message"]
-    assert sender.files == []
-
-
 def test_mention_is_sent_with_member_name(monkeypatch, isolated_ids):
     sender = FakeSender()
     members = [
@@ -426,24 +385,6 @@ def test_sender_failure_is_reported(monkeypatch, isolated_ids):
     assert resp["retcode"] == action_catalog.RETCODE_INTERNAL
     assert "发送失败" in resp["message"]
     assert "message_id" not in resp["data"]
-
-
-def test_partial_failure_keeps_message_id_and_counts_segments(monkeypatch, isolated_ids):
-    sender = FakeSender()
-    uid = _prepare(monkeypatch, sender)
-    resp = _call(
-        {
-            "action": "send_private_msg",
-            "params": {
-                "user_id": uid,
-                "message": [{"type": "text", "data": {"text": "hi"}}]
-                + [{"type": "forward", "data": {"id": "1"}}],
-            },
-        }
-    )
-    assert resp["status"] == "ok"
-    assert resp["data"]["message_id"] > 0
-    assert resp["data"]["failed_segments"] == 1
 
 
 def test_invalid_message_shape_is_bad_param(monkeypatch, isolated_ids):

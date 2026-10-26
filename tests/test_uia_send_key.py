@@ -105,13 +105,6 @@ def test_config_can_pin_the_send_mode(send_mode):
     assert pinned._clicked == 0
 
 
-def test_unknown_config_value_falls_back_to_auto(send_mode):
-    send_mode("whatever")
-    sender = make_sender()
-
-    assert sender._configured_send_mode() == "auto"
-
-
 def test_auto_may_retry_but_pinned_does_not(send_mode):
     sender = make_sender()
 

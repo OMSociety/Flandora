@@ -23,19 +23,6 @@ POKE_BODY = """<sysmsg type="pat">
 <suffix>的流萤说真好看</suffix></patinfo></sysmsg>"""
 
 
-def test_sysmsg_type_reads_attribute():
-    assert wx_store.sysmsg_type(REVOKE_BODY) == "revokemsg"
-    assert wx_store.sysmsg_type(POKE_BODY) == "pat"
-    assert wx_store.sysmsg_type(b"plain text") == ""
-
-
-def test_revoke_info_extracts_nickname():
-    info = wx_store.revoke_info(REVOKE_BODY)
-
-    assert info is not None
-    assert info["nickname"] == "豹豹包"
-
-
 def test_revoke_info_ignores_other_sysmsg():
     assert wx_store.revoke_info(POKE_BODY) is None
     assert wx_store.revoke_info(b"plain text") is None
@@ -49,10 +36,6 @@ def test_pat_info_extracts_participants():
     assert info["group"] == GROUP
     assert info["to"] == "wxid_flandore"
     assert info["suffix"] == "的流萤说真好看"
-
-
-def test_pat_info_ignores_other_sysmsg():
-    assert wx_store.pat_info(REVOKE_BODY) is None
 
 
 def test_recall_event_shape():

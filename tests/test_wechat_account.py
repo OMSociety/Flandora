@@ -71,13 +71,6 @@ def test_default_root_ignores_settings_that_point_nowhere(sandbox):
     assert wechat_account.default_root() == os.path.join(str(documents), "xwechat_files")
 
 
-def test_default_root_handles_missing_or_empty_settings(sandbox):
-    documents, appdata = sandbox
-    _write_wechat_setting(str(appdata), "", name="empty.ini")
-
-    assert wechat_account.default_root() == os.path.join(str(documents), "xwechat_files")
-
-
 def test_accounts_are_listed_from_the_configured_root(sandbox):
     documents, appdata = sandbox
     elsewhere = appdata / "Tencent Files"

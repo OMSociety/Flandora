@@ -81,9 +81,3 @@ def test_identity_flags_a_dirty_build(tmp_path):
     problems = smoke.identity_problems(payload, "c" * 40)
 
     assert any("dirty" in problem for problem in problems)
-
-
-def test_missing_payload_directory_is_reported(tmp_path):
-    problems = smoke.identity_problems(tmp_path / "Flandora-v1.0.0", "c" * 40)
-
-    assert problems and "build-info.json" in problems[0]

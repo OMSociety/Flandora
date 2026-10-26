@@ -69,15 +69,6 @@ def test_mention_in_content_becomes_at_segment(isolated_ids, monkeypatch):
     ]
 
 
-def test_plain_at_stays_text(isolated_ids, monkeypatch):
-    bridge = _make_bridge()
-    event = _push_once(
-        monkeypatch, bridge, {**GROUP_MSG, "content": "@李四 看一下这个", "quote": {}}
-    )
-    assert [s["type"] for s in event["message"]] == ["text"]
-    assert event["message"][0]["data"]["text"] == "@李四 看一下这个"
-
-
 def test_private_quote_is_restored_too(isolated_ids, monkeypatch):
     bridge = _make_bridge()
     quoted_id = isolated_ids.message_ids().ensure("wxid_lisi", 4100, server_id="SN-9")

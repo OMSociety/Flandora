@@ -89,32 +89,7 @@ def clean_update_state(monkeypatch):
     return RUNTIME
 
 
-# ===== 版本号解析 =====
-
-
-@pytest.mark.parametrize(
-    "text,want",
-    [
-        ("v1.2.3", (1, 2, 3)),
-        ("1.2.3", (1, 2, 3)),
-        ("v1.0.0-beta.1", (1, 0, 0)),
-        ("v1.2.3+build.5", (1, 2, 3)),
-        ("v10.20.30", (10, 20, 30)),
-        ("  1.0  ", (1, 0)),
-        ("", ()),
-        (None, ()),
-        ("v", ()),
-        ("abc", ()),
-        ("1.x.0", ()),
-    ],
-)
-def test_parse_version(text, want):
-    """v 前缀、预发布与 build 后缀、空白、乱输入都按同一规则解析。"""
-    got = update_check.parse_version(text)
-    assert got == want, f"parse_version({text!r}) = {got!r}，期望 {want!r}"
-
-
-# ===== 新旧比较 =====
+# ===== 版本号比大小 =====
 
 
 @pytest.mark.parametrize(

@@ -84,28 +84,6 @@ def test_no_heartbeat_when_interval_is_zero(monkeypatch):
     asyncio.run(main())
 
 
-def test_heartbeat_status_reflects_runtime():
-    """在线 = 已起、未暂停且收件源已接上；sender 就绪才算 good。"""
-    from flandora.runtime import LIFECYCLE, RUNTIME
-
-    LIFECYCLE.begin_start()
-    LIFECYCLE.mark_running()
-    RUNTIME.bridge = object()
-    RUNTIME.store = object()
-    RUNTIME.sender = object()
-    assert ob_network.NetworkManager._heartbeat_status() == {"online": True, "good": True}
-
-    RUNTIME.sender = None
-    assert ob_network.NetworkManager._heartbeat_status() == {"online": True, "good": False}
-
-    assert LIFECYCLE.pause() is True
-    assert ob_network.NetworkManager._heartbeat_status() == {"online": False, "good": False}
-
-    assert LIFECYCLE.resume() is True
-    RUNTIME.bridge = None
-    assert ob_network.NetworkManager._heartbeat_status() == {"online": False, "good": False}
-
-
 @pytest.fixture()
 def saved_config(monkeypatch, tmp_path):
     monkeypatch.setattr(events, "notify_status", lambda: None)

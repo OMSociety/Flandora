@@ -18,7 +18,7 @@
   <a href="https://github.com/OMSociety/Flandora/issues">问题反馈</a>
 </p>
 
-Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录的瞬间截获本机数据库口令，只读解密聊天库收取消息，并以账号本人身份在隔离桌面上投递回复，对外提供 [OneBot v11](https://github.com/botuniverse/onebot-11) 正向 WebSocket 服务端与浏览器控制台。
+Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录的瞬间截获本机数据库口令，只读解密聊天库收取消息，并以账号本人身份在隔离桌面上投递回复，对外提供 [OneBot v11](https://github.com/botuniverse/onebot-11) 正向 WebSocket 服务端与浏览器面板。
 
 > [!CAUTION]
 > Flandora 是独立的第三方项目，与腾讯 / 微信无隶属或授权关系。项目仅供学习与技术研究，请遵守《微信软件许可及服务协议》及适用法律；以自动化方式驱动自己的客户端存在账号被限制或封禁的风险，软件按「现状」提供，使用风险自负。详见[使用边界与许可](#使用边界与许可)。
@@ -26,7 +26,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 > **Disclaimer:** Flandora is an independent third-party project, not affiliated with or authorized by Tencent / WeChat. It is provided for study and research only, "as is" and without warranty, and you are responsible for complying with the applicable laws and the WeChat terms of service.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/dashboard.png" width="100%" alt="Flandora 控制台的仪表盘：收件源、OneBot 连接、发送通道与进程状态" />
+  <img src="https://raw.githubusercontent.com/OMSociety/Flandora/main/docs/shots/dashboard.png" width="100%" alt="Flandora 面板的仪表盘：收件源、OneBot 连接、发送通道与进程状态" />
 </p>
 
 ## 快速开始
@@ -49,6 +49,8 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 2. 退出自己的微信，双击 `Flandora.exe`。它在任务栏托盘里常驻并拉起桥接，需要时从菜单打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)，或等它第一次运行时自己弹出面板。
 3. 进入「取钥向导」，四步走完：勾选免责声明 → 开始取钥 → 在向导右侧的实况画面里完成登录 → 想让机器人看图就继续抓图片密钥 → 校验。
 
+   面板打不开、桥接没起来时，从托盘菜单「打开日志」看最后几行；日志文件在 `data/flandora.log`，对应的失败原因多半写在里面。
+
 之后让客户端连上来即可：
 
 ```json
@@ -66,7 +68,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | 想看什么 | 去哪 |
 | --- | --- |
 | 微信标识与 OneBot 整数怎么对应、支持哪些动作、消息段与事件面的实际形态、返回码含义 | [docs/protocol.md](docs/protocol.md) |
-| 控制台八个页面各做什么，`data/` 下每个文件是干什么的 | [docs/console.md](docs/console.md) |
+| 面板八个页面各做什么，`data/` 下每个文件是干什么的 | [docs/console.md](docs/console.md) |
 | 托盘图标的菜单、开机自启与再双击的行为 | [manager/README.md](manager/README.md) |
 | 每个配置项的类型、默认值与说明，以及版本更新的工作机制 | [docs/config.md](docs/config.md) |
 | 用 Python 自己写客户端，或把动作面挂给支持 MCP 的 AI 客户端 | [docs/sdk.md](docs/sdk.md) |

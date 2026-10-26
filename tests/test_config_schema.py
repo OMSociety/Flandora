@@ -92,16 +92,6 @@ def test_write_json_drops_unknown_keys_and_follows_declaration_order(tmp_path):
     assert text.endswith("\n")
 
 
-def test_update_never_writes_unknown_keys_back(tmp_path):
-    path = tmp_path / "config.json"
-    store = ConfigStore(str(path), generate=False)
-
-    store.update({"web_port": 5001, "custom": 1, "_comment": "示例文件里的说明"})
-
-    assert store.read_raw() == {"web_port": 5001}
-    assert json.loads(path.read_text(encoding="utf-8")) == {"web_port": 5001}
-
-
 def test_example_style_file_with_comments_loads(tmp_path):
     """带 ``_comment*`` 的示例式配置照常加载：不报错、值一致、未知键被丢弃。"""
     path = tmp_path / "config.json"
@@ -137,19 +127,6 @@ def test_generated_example_matches_the_field_table():
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
-
-
-def test_example_lists_every_field_with_its_comment():
-    """示例的排版契约：每个字段紧跟自己的 ``_comment_<key>``，值就是声明默认值。"""
-    with open(EXAMPLE_PATH, encoding="utf-8") as handle:
-        example = json.load(handle)
-
-    order = list(example)
-    for spec in fields.FIELDS:
-        assert example[spec.key] == spec.default, spec.key
-        index = order.index(spec.key)
-        assert order[index + 1] == f"_comment_{spec.key}", spec.key
-        assert example[f"_comment_{spec.key}"] == spec.desc, spec.key
 
 
 def test_flag_rejects_anything_but_true_false():

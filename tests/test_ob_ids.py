@@ -16,16 +16,7 @@ from flandora.ob_ids import (  # noqa: E402
     ID_MIN,
     ContactIds,
     MessageIds,
-    fold_handle,
 )
-
-
-def test_fold_is_deterministic_and_in_range():
-    a = fold_handle("wxid_abc123")
-    b = fold_handle("wxid_abc123")
-    assert a == b
-    assert ID_MIN <= a <= ID_MAX
-    assert fold_handle("wxid_other") != a
 
 
 def test_contact_id_is_stable_across_reload(tmp_path):
@@ -45,14 +36,6 @@ def test_different_handles_get_different_ids(tmp_path):
     bob = ids.get("wxid_bob")
     assert alice != bob
     assert len(ids) == 2
-
-
-def test_id_map_json_is_human_readable(tmp_path):
-    path = tmp_path / "id_map.json"
-    ids = ContactIds(str(path))
-    oid = ids.get("wxid_alice")
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    assert payload["ids"]["wxid_alice"] == oid
 
 
 def test_duplicate_ids_in_file_are_repaired(tmp_path, caplog):

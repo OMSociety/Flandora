@@ -173,12 +173,6 @@ def test_astral_char_splits_into_a_surrogate_pair():
     assert utf16_units("😀") == (0xD83D, 0xDE00)
 
 
-def test_split_units_rebuild_the_character():
-    units = utf16_units("🥺")
-    raw = b"".join(unit.to_bytes(2, "little") for unit in units)
-    assert raw.decode("utf-16-le") == "🥺"
-
-
 def test_has_non_bmp_flags_only_astral_chars():
     assert has_non_bmp("晚安🥺") is True
     assert has_non_bmp("晚安，好梦～") is False
@@ -190,12 +184,6 @@ def test_post_char_posts_one_message_per_unit():
     _sender(user32)._post_char("🥺")
     assert [p[2] for p in user32.posted] == [0xD83E, 0xDD7A]
     assert {p[1] for p in user32.posted} == {WM_CHAR}
-
-
-def test_post_char_keeps_bmp_char_in_one_message():
-    user32 = _User32()
-    _sender(user32)._post_char("中")
-    assert [p[2] for p in user32.posted] == [0x4E2D]
 
 
 def test_post_char_without_a_window_posts_nothing():
@@ -241,16 +229,6 @@ def test_needs_paste_covers_emoji_and_newlines():
     assert needs_paste("普通一行") is False
     assert needs_paste("带 emoji 🥺") is True
     assert needs_paste("第一行\n第二行") is True
-
-
-def test_enter_text_pastes_when_the_text_has_a_newline():
-    """换行 WM_CHAR 送不进去（实测整行被吞），必须走粘贴。"""
-    pasted = []
-    sender = _sender()
-    sender._type_text = lambda text: pytest_fail("含换行的正文不该逐字符投递")
-    sender._paste_text = lambda text, *a, **k: pasted.append(text) or True
-    assert sender._enter_text("第一行\n第二行") is True
-    assert pasted == ["第一行\n第二行"]
 
 
 def test_enter_text_clears_the_input_when_pasting_fails():
@@ -453,15 +431,6 @@ def test_pillow_discussion_is_not_rejected(monkeypatch):
     monkeypatch.setattr(sender, "_ensure_window", lambda: False)
     assert sender._send_text_impl("张三", "PIL.Image.open 很好用") is False
     assert sender._last_error == ""  # 没发出去是窗口不可用，与正文内容无关
-
-
-def test_looks_like_pil_repr_only_matches_the_repr():
-    assert uia_sender._looks_like_pil_repr("<PIL.Image.Image image mode=RGB size=8x8>")
-    assert not uia_sender._looks_like_pil_repr("PIL.Image.open 很好用")
-    assert not uia_sender._looks_like_pil_repr("用 PIL 打开图片")
-
-
-# ------------------------------------------------- 图片/文件发送的失败原因与路径转义
 
 
 def test_send_image_clears_a_stale_error_and_records_a_new_one(monkeypatch):

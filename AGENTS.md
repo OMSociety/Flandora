@@ -23,7 +23,7 @@
 
 - 用户向说明（概览、能力与快速开始）：[README.md](./README.md)
 - 协议面（ID 约定、动作面、消息段、事件面、返回码）：[docs/protocol.md](./docs/protocol.md)
-- 控制台八个页面与数据落点：[docs/console.md](./docs/console.md)
+- 面板八个页面与数据落点：[docs/console.md](./docs/console.md)
 - 配置与更新：[docs/config.md](./docs/config.md)
 - 客户端工具（Python SDK、MCP 服务）：[docs/sdk.md](./docs/sdk.md)
 - 开发环境、命令与验收：[docs/development.md](./docs/development.md)
@@ -71,7 +71,7 @@ run_bridge.py -> flandora.main
    收件：wx_source -> wx_store -> wx_crypto/zstandard -> bridge_core -> ob_protocol -> ob_network -> OneBot 客户端
    更新：webui/api/update.py -> updater（下载/暂存/生成替换脚本）+ 退出后执行的 PowerShell 脚本
    发件：WebUI /api/send 或 OneBot 调用 -> senders.create_sender() -> uia_sender -> wx_desktop（隔离桌面）
-   面板：flandora/webui/api/*.py 的 12 个路由器（各自导出 ROUTES 与 DEFER_REASONS），webui/app.py 是组合根
+   面板：flandora/webui/api/*.py 的 12 个路由器（每个模块导出 `ROUTES`，有 defer 档的再导出 `DEFER_REASONS`），webui/app.py 是组合根
    管理器：manager/（paths 收路径与端口、bridge 管桥接进程、tray 出托盘图标与菜单、main 取单实例锁；桥接侧由 flandora/stop_request.py 接停止信号）
    进程级状态：flandora/runtime/（LIFECYCLE 管阶段/暂停/桥接线程，RUNTIME 管 sender、bridge、OneBot 入口占用与版本提示）
    身份与名字索引：flandora/ob_ids.py（SELF、remember_name/lookup_name，账号级，换账号一起复位）
@@ -109,7 +109,7 @@ run_bridge.py -> flandora.main
 | 改机器人身份或「整数 ID → 显示名」索引 | `flandora/ob_ids.py` |
 | 改 OneBot 入口线程的起停 | `flandora/ob_server.py`（`OneBotServer.start()/stop()`） |
 | 加 API 端点 | `flandora/webui/api/<组>.py`：加处理函数并在该模块 `ROUTES` 登记 `call`/`defer`，`defer` 的路由还要在 `DEFER_REASONS` 写原因；`app.py` 只负责组合，不要往里加路由 |
-| 加一个控制台页面 | `webui-frontend/src/pages/index.js` 的 `PAGES` 加一项（id/group/label/icon/description/component），侧栏、路由与 Playwright 用例都从这张表派生 |
+| 加一个面板页面 | `webui-frontend/src/pages/index.js` 的 `PAGES` 加一项（id/group/label/icon/description/component），侧栏、路由与 Playwright 用例都从这张表派生 |
 | 改收件（读库、字段解析） | `flandora/bridge_core.py`，数据层在 `flandora/wx_store.py` |
 | 改发送（投递、清空输入框） | `flandora/uia_sender.py` |
 | 改桌面隔离与接管 | `flandora/wx_desktop.py` |
@@ -176,7 +176,7 @@ run_bridge.py -> flandora.main
 - 禁止在桥接里决定「要不要回」（@ 过滤、拼上下文、表情学习、图片描述都别做）。原因：那属于 OneBot 客户端职责，越界会让客户端收不到群里的消息。
   群消息一律全量上报，用 `is_mentioned` 如实标记是否被 @。
 - 禁止静默结束用户自己桌面上的微信。原因：那可能是用户正在用的账号。挡住隔离桌面时，
-  只由用户在控制台点「结束桌面上的微信」（`POST /api/desktop/quit-default-wechat`）。
+  只由用户在面板点「结束桌面上的微信」（`POST /api/desktop/quit-default-wechat`）。
 - 禁止前端直接接触微信或本地库。原因：浏览器侧只有 `/api/*` 一个入口，绕过它就拿不到密钥与桌面句柄。
 - 禁止手改 `flandora/webui/dist/`。原因：那是 vite 生成物且不入库；改源码后重新构建。
 - 禁止给日志与控制台输出加 emoji。原因：Windows 控制台默认 GBK，`build.py` 曾因此打包成功
@@ -247,7 +247,7 @@ run_bridge.py -> flandora.main
 | 症状（报错里的可检索片段） | 处理 |
 |---|---|
 | `IndentationError` / `unexpected indent` | 编辑时删掉了行尾换行，把 `def` 与 docstring 并成一行：先 `compileall` 定位再修 |
-| `隔离桌面启动失败：默认桌面上已有微信在运行` | 退出自己桌面的微信，或在控制台点「结束桌面上的微信」 |
+| `隔离桌面启动失败：默认桌面上已有微信在运行` | 退出自己桌面的微信，或在面板点「结束桌面上的微信」 |
 | `找不到微信可执行文件` | 在 `data/config.json` 把 `wechat_exe` 填成 `Weixin.exe` 完整路径；`/api/desktop/status` 的 `exe_found` 应为 `true` |
 | `前端尚未构建` / 面板 503 | `cd webui-frontend; npm install; npm run build` |
 | `输入框有清不掉的残留` | 在「微信画面」里手动清空输入框再重试；根因看日志里的残留文本 |

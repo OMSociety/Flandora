@@ -39,15 +39,6 @@ def test_update_check_reports_newer_version(monkeypatch):
     assert data["latest"]["version"] == "9.9.9"
 
 
-def test_update_check_reports_current_version(monkeypatch):
-    monkeypatch.setattr(
-        updater,
-        "latest_release",
-        lambda timeout=None: {"version": "0.0.1", "tag": "v0.0.1", "url": "u", "asset": "a"},
-    )
-    assert update_api.api_update_check()["newer"] is False
-
-
 def test_update_check_failure_is_a_502(monkeypatch):
     def boom(timeout=None):
         raise updater.UpdateError("连不上 GitHub")

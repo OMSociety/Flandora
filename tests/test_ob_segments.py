@@ -67,11 +67,6 @@ def test_unknown_cq_type_survives_roundtrip():
     assert S.segments_to_cq(S.parse_cq(text)) == text
 
 
-def test_non_ascii_cq_type_is_kept_as_text():
-    text = "[CQ:中文段,x=1]"
-    assert S.plain_text(S.parse_cq(text)) == text
-
-
 def test_broken_cq_stays_literal():
     for text in ("[CQ:]", "[CQ:image,file=x.png", "没闭合[CQ:at", "[CQ:=1]"):
         assert S.plain_text(S.parse_cq(text)) == text

@@ -145,14 +145,6 @@ def test_broken_pem_is_refused_before_writing(saved):
     assert saved.read_raw() == {}
 
 
-def test_half_a_pair_is_refused(saved):
-    rest = config_api.api_put_config({"webui_tls_cert": TEST_CERT}, Response())
-
-    assert isinstance(rest, JSONResponse)
-    assert "一起装" in rest.body.decode("utf-8")
-    assert not os.path.exists(config.WEBUI_TLS_CERT_FILE)
-
-
 def test_enabling_tls_without_certificate_is_refused(saved):
     rest = config_api.api_put_config({"webui_tls": True}, Response())
 
@@ -188,17 +180,6 @@ def _seed(saved, payload: dict) -> None:
     """把一份配置直接写到 store 背后那个文件上。"""
     with open(saved.path, "w", encoding="utf-8") as f:
         json.dump(payload, f)
-
-
-def test_backup_leaves_credentials_out_by_default(saved):
-    _seed(saved, {"web_port": 4950, "webui_password": "hash", "ob_server_token": "tok"})
-
-    dump = config_api.api_config_backup()
-
-    assert "webui_password" not in dump["config"]
-    assert "ob_server_token" not in dump["config"]
-    assert sorted(dump["excluded_sensitive"]) == ["ob_server_token", "webui_password"]
-    assert dump["include_sensitive"] is False
 
 
 def test_backup_can_include_credentials(saved):

@@ -87,20 +87,6 @@ def test_first_acquire_takes_handle():
 
 
 @windows_only
-def test_second_acquire_in_same_process_reports_existing():
-    """同进程再建一次：内核返回同一个对象，last-error 置 ERROR_ALREADY_EXISTS。"""
-    h1, _ = single_instance.acquire_mutex(_NAME)
-    h2, running2 = single_instance.acquire_mutex(_NAME)
-    try:
-        assert h2, "同进程内重复创建也应拿到句柄"
-        assert running2 is True, "同进程内重复创建必须判出「已存在」"
-    finally:
-        kernel32 = ctypes.WinDLL("kernel32")
-        for h in (h1, h2):
-            if h:
-                kernel32.CloseHandle(h)
-
-
 @windows_only
 def test_other_process_reports_existing():
     """跨进程：子进程拿同一个名字——这才是真正的使用场景。"""

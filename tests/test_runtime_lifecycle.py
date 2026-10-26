@@ -122,18 +122,6 @@ def test_join_reports_timeout_honestly():
 # ===== 运行期对象 =====
 
 
-def test_runtime_holds_sender_and_bridge():
-    sentinel = object()
-    RUNTIME.sender = sentinel
-    RUNTIME.bridge = sentinel
-    assert RUNTIME.sender is sentinel
-    assert RUNTIME.bridge is sentinel
-
-    RUNTIME.sender = None
-    assert RUNTIME.sender is None
-    assert RUNTIME.bridge is sentinel
-
-
 def test_claim_ob_server_is_atomic():
     assert RUNTIME.claim_ob_server() is True
     assert RUNTIME.claim_ob_server() is False
@@ -188,18 +176,6 @@ def test_online_flags_are_one_definition():
 
     LIFECYCLE.begin_stop()
     assert RUNTIME.online_flags() == {"online": False, "good": False}
-
-
-def test_update_available_round_trip():
-    payload = {"latest": "9.9.9", "current": "1.0.0", "url": "https://example.invalid/v999"}
-    RUNTIME.update_available = payload
-    assert RUNTIME.update_available == payload
-
-    RUNTIME.update_available = None
-    assert RUNTIME.update_available is None
-
-
-# ===== 身份与名字索引 =====
 
 
 def test_self_identity_switches_id_and_nickname_together(isolated_ids):

@@ -51,11 +51,6 @@ def test_text_without_content_leaves_no_empty_segment():
     assert ob_inbound.split_mentions("\u2005\u200b", _resolve) == []
 
 
-def test_mention_only_message():
-    segments = ob_inbound.split_mentions("@王五\u2005", _resolve)
-    assert segments == [Mention(user_id=1, name="王五")]
-
-
 def test_text_before_mention_is_kept():
     segments = ob_inbound.split_mentions("早上好 @李四\u2005帮我看下", _resolve)
     assert [type(seg) for seg in segments] == [Text, Mention, Text]

@@ -1,6 +1,6 @@
 # 未完成与做不到的能力
 
-本文件收录 Flandora 当前**做不到**或**只能近似**的能力，以及各自的原因。动作目录（`flandora/action_catalog.py`）里每个未实现动作的 `wip` 字段都指向这里或 [`needs-user.md`](needs-user.md)，两者共同构成「什么能用、什么不能用」的完整口径。
+本文件收录 Flandora 当前**做不到**或**只能近似**的能力，以及各自的原因。动作目录（`flandora/action_catalog.py`）里每个未实现动作的 `wip` 字段写明原因：指向本文件或 [`needs-user.md`](needs-user.md) 的逐条登记，值取自 `NOT_QQ` 常量的属于第一节「微信 PC 客户端没有入口」那一类；三者共同构成「什么能用、什么不能用」的完整口径。
 
 ## 一、微信 PC 客户端没有入口
 

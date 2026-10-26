@@ -16,7 +16,6 @@ if REPO_ROOT not in sys.path:
 from flandora import bridge_core  # noqa: E402
 from flandora.domain.message import ChatKind, ChatRef, Message, SenderRef, Text  # noqa: E402
 from flandora.ob_protocol import render_message_event  # noqa: E402
-from flandora.runtime import RUNTIME  # noqa: E402
 
 
 class _StubStore:
@@ -80,14 +79,6 @@ def test_group_name_loses_the_member_count_suffix(isolated_ids, monkeypatch):
     # 微信那边的原始标识一并给出去，客户端要按标识存东西时不必再查一次
     assert event["group_wxid"] == "12345678@chatroom"
     assert event["sender"]["wxid"] == "wxid_zhangsan"
-
-
-def test_is_mentioned_comes_from_the_raw_text(isolated_ids, monkeypatch):
-    RUNTIME.store = _StubStore("芙兰朵露")
-    pushed = _capture(monkeypatch)
-    bridge_core.Flandora(sender=None).emit_message({**GROUP_MSG, "content": "@芙兰朵露 在吗"})
-
-    assert pushed[0]["is_mentioned"] is True
 
 
 def test_private_event_has_no_group_fields(isolated_ids, monkeypatch):

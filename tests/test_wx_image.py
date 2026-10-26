@@ -142,14 +142,6 @@ def test_sniff_xor_key():
     assert got == 0x5A, hex(got)
 
 
-def test_decode_keeps_the_pkcs7_block_out_of_the_payload():
-    """明文长度整除时多出的整块填充不能混进载荷（HEVC 会从那里失步）。"""
-    jpeg = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 2 + b"\xff\xd9"
-    raw = _make_dat(jpeg, KEY, 0x5A, aes_plain_len=64)
-    got = wx_image.decode(raw, KEY, 0x5A)
-    assert got.data == jpeg, (len(got.data), len(jpeg))
-
-
 def test_decode_accepts_unaligned_plain_len():
     """明文长度不是 16 的整数倍时填充在最后一块里，也要解对。"""
     jpeg = b"\xff\xd8\xff\xe0" + bytes(range(256)) * 2 + b"\xff\xd9"

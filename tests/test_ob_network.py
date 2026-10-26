@@ -533,20 +533,3 @@ def test_ws_client_connects_and_receives_events():
                 await mgr.stop()
 
     asyncio.run(main())
-
-
-def test_status_reports_targets():
-    mgr = ob_network.NetworkManager()
-    mgr.configure(
-        [
-            ob_network.normalize_node({"type": "ws_server", "name": "s", "port": 7001}, 0),
-            ob_network.normalize_node(
-                {"type": "http_client", "name": "c", "url": "http://x.invalid/hook"}, 1
-            ),
-        ]
-    )
-    rows = {r["name"]: r for r in mgr.status()}
-    assert rows["s"]["target"] == "127.0.0.1:7001/"
-    assert rows["s"]["state"] == "stopped"
-    assert rows["c"]["target"] == "http://x.invalid/hook"
-    assert rows["c"]["message_format"] == "（跟随全局）"

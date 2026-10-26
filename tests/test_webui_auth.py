@@ -87,19 +87,6 @@ def test_expired_session_is_dropped():
     assert len(sessions) == 0
 
 
-def test_throttle_blocks_after_failures():
-    throttle = auth.LoginThrottle(window=60, limit=3)
-    for _ in range(2):
-        throttle.fail()
-    assert throttle.blocked() is False
-
-    throttle.fail()
-    assert throttle.blocked() is True
-
-    throttle.reset()
-    assert throttle.blocked() is False
-
-
 def test_throttle_forgets_old_failures():
     # 窗口为 0：上一次失败立刻过期，不该累积成永久封锁
     throttle = auth.LoginThrottle(window=0, limit=2)

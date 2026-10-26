@@ -34,7 +34,7 @@ MODULE_STATE: dict[str, frozenset[str]] = {
     "flandora/single_instance.py": frozenset({"log"}),
     "flandora/stop_request.py": frozenset({"_handle_cache", "_kernel32"}),
     "flandora/storage.py": frozenset({"log"}),
-    "flandora/uia_sender.py": frozenset({"log"}),
+    "flandora/uia_sender.py": frozenset({"log", "_com_ready"}),
     "flandora/update_check.py": frozenset({"log"}),
     "flandora/updater.py": frozenset({"log"}),
     "flandora/wechat_account.py": frozenset({"log"}),

@@ -103,8 +103,8 @@ def _looks_like_pil_repr(text: str) -> bool:
 def mismatch_window(want: str, got: str) -> str:
     """回读不符时的定位信息：第几个字起不同、两边的上下文、各自的长度。
 
-    只打前 40 个字看不出是「漏了一个换行」还是「多了一个杂字」——2026-10-26 的
-    一次真机失败就卡在这里：期望以换行结尾、实得末尾是个 `U`，两种可能都说得通。
+    只打前 40 个字看不出是「漏了一个换行」还是「多了一个杂字」——两种可能都说得通，
+    连位置一起报出来才能判断。
     """
     at = next(
         (i for i, (a, b) in enumerate(zip(want, got)) if a != b),
@@ -114,6 +114,28 @@ def mismatch_window(want: str, got: str) -> str:
         f"第 {at} 个字起不同：期望 {want[max(0, at - 20) : at + 20]!r}，"
         f"实得 {got[max(0, at - 20) : at + 20]!r}；长度 {len(want)}/{len(got)}"
     )
+
+
+_com_ready = threading.local()
+
+
+def ensure_com() -> None:
+    """让当前线程接上 COM：uiautomation 的所有控件调用都走 COM。
+
+    发消息的线程来自线程池，从没初始化过 COM，`ControlFromHandle` 会直接报
+    「尚未调用 CoInitialize」。每个线程初始化一次；线程已是 MTA（`RPC_E_CHANGED_MODE`）
+    时 COM 本来就可用，不用再试。必须在附着到微信所在桌面之后调用：COM 公寓会建
+    隐藏窗口，先初始化会让 `SetThreadDesktop` 以 `ERROR_BUSY` 失败。
+    """
+    if getattr(_com_ready, "done", False):
+        return
+    try:
+        hr = ctypes.windll.ole32.CoInitializeEx(None, 0x2)  # COINIT_APARTMENTTHREADED
+        if hr < 0:
+            log.debug("CoInitializeEx 返回 0x%08X，沿用线程已有的套间", hr & 0xFFFFFFFF)
+    except Exception as e:  # noqa: BLE001 - 初始化不了也让后面的 UIA 调用自己报错
+        log.debug(f"初始化 COM 失败：{e}")
+    _com_ready.done = True
 
 
 class BaseSender:
@@ -577,6 +599,7 @@ class UiaSender(BaseSender):
             log.error("uiautomation 不可用，无法定位微信窗口")
             return False
         self._join_wechat_desktop()
+        ensure_com()
         if self._window_alive():
             self._ready = True
             try:

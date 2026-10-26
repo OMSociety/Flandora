@@ -1,7 +1,7 @@
 """发送链路的段形态：语音、视频、@ 提及、未支持段与只发引用段。
 
 重点不是「能发出去」，而是**发不出去时必须报错**：未接线的段类型静默跳过会让
-客户端把内容记进上下文；@ 必须走真实名册与提及对象，不能退化成「@昵称」正文。
+客户端把内容记进上下文；@ 必须走真实名册与提及对象，把「@昵称」当正文不算提及。
 """
 
 import asyncio
@@ -123,7 +123,7 @@ def test_private_send_asks_the_local_db_for_the_display_name(monkeypatch, isolat
 
 
 def test_private_send_falls_back_to_the_handle(monkeypatch, isolated_ids):
-    """本地库也给不出名字时，仍然按原来的方式拿标识去搜索。"""
+    """本地库也给不出名字时，仍拿标识去搜索。"""
     sender = FakeSender()
     RUNTIME.sender = sender
     monkeypatch.setattr(ob_protocol, "_store", lambda: _NameStore({"filehelper": "filehelper"}))

@@ -224,7 +224,7 @@ async function applyRestore() {
   }
   const restored = res.data.restored || []
   const needRestart = res.data.restart_required || []
-  restoreMsg.value = `已恢复 ${restored.length} 项配置；改动前的 config.json 已另存为 ${res.data.backup_path}。`
+  restoreMsg.value = `已恢复 ${restored.length} 项配置；改动前的 config.json 已另存为 ${res.data.backup_name}。`
     + (res.data.password_restored ? ' 面板密码已按备份替换，需要重新登录。' : '')
   toast('配置已恢复', 'success')
   if (needRestart.length) restartFrom.value = 'restore'

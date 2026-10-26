@@ -11,7 +11,7 @@
 本模块负责在切换发生时立刻发现，并把「哪些状态必须重建」讲清楚。
 
 `key_info.db` 只是登录标记，本身不是数据库口令的存放处；新账号的库要能读，
-仍须对新账号走一次密钥提取（见文档 `wechat41-ghidra-key-extraction.md`）。
+仍须对新账号走一次密钥提取（见 `flandora/wxkey/` 与 `docs/known-limits-dat-format.md`）。
 """
 
 import ctypes
@@ -63,7 +63,7 @@ def _wechat_config_dir() -> str:
 def _configured_root() -> str:
     """微信记住的存储基准目录（用户把「存储位置」改到别的盘时用得上）。
 
-    微信把基准目录（不含 ``xwechat_files`` 那层）写在这个目录下的一个 ``.ini`` 里，
+    微信把基准目录（``xwechat_files`` 的上一层）写在这个目录下的一个 ``.ini`` 里，
     文件名是机器相关的哈希，所以遍历全部 ``.ini``，取第一个内容指向现存目录的。
     """
     directory = _wechat_config_dir()

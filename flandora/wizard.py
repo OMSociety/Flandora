@@ -50,8 +50,6 @@ LOG_MAX = 300
 DBKEY_LOGIN_WAIT = 600.0
 # 图片密钥的持续扫描上限
 IMAGEKEY_SECONDS = 600.0
-# 单个库的页 1 校验预算（PBKDF2 256000 轮，约 0.3 秒一个）
-VERIFY_TIMEOUT = 20.0
 
 
 class WizardError(Exception):

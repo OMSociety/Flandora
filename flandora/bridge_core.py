@@ -340,7 +340,11 @@ class Flandora:
             config.OB_MESSAGE_FORMAT,
         )
         try:
-            ob_store.message_store().save_event(event)
+            archive = ob_store.message_store()
+            if archive.get(message_id) is not None:
+                log.debug(f"[OB11] 被引消息 {quote.server_id} 已在存档里，保持原样")
+                return message_id
+            archive.save_event(event)
         except Exception as e:  # noqa: BLE001 - 存档失败就别给客户端一个取不到的号
             log.error(f"[OB11] 被引消息未能存档（message_id={message_id}）：{e}")
             return None

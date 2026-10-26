@@ -146,6 +146,26 @@ def test_claimed_quote_reuses_the_same_id(isolated_ids, isolated_store, monkeypa
     assert first == second, (first, second)
 
 
+def test_claimed_quote_keeps_the_existing_archive(isolated_ids, isolated_store, monkeypatch):
+    """补档只填空缺：同一条消息只入档一次，重复补档时保留第一次写入的内容。"""
+    bridge = _make_bridge()
+    first = _quote_unpushed(monkeypatch, bridge)["message"][0]["data"]["id"]
+    archive = bridge_core.ob_store.message_store()
+    saved = archive.get(first)
+    assert saved is not None
+
+    real_save = archive.save_event
+    calls = []
+    monkeypatch.setattr(
+        archive, "save_event", lambda event: calls.append(event) or real_save(event)
+    )
+    second = _quote_unpushed(monkeypatch, bridge)["message"][0]["data"]["id"]
+
+    assert second == first
+    assert calls == [], "存档里已有这条消息，补档不该再写一次"
+    assert archive.get(first)["raw_message"] == saved["raw_message"]
+
+
 def test_unclaimable_quote_still_keeps_zero(isolated_ids, isolated_store, monkeypatch):
     """本地库也查不到（消息已被清理）时仍是 0：段还在，只是取不到原文。"""
     bridge = _make_bridge()

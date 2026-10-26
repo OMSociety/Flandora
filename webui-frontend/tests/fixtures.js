@@ -169,7 +169,7 @@ export async function mockApi(page, options = {}) {
         restored: ['web_port'],
         restart_required: ['web_port'],
         password_restored: false,
-        backup_path: 'D:/WorkSpace/Github/Flandora/data/config.json.bak-20261024-224000',
+        backup_name: 'D:/WorkSpace/Github/Flandora/data/config.json.bak-20261024-224000',
       })
     }
     if (url.pathname === '/api/storage') return json(storageFixture)

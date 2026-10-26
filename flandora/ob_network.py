@@ -189,16 +189,21 @@ def default_node(host: str, port: int, token: str) -> dict:
 _ROLE_HEADERS = {ROLE_API: "API", ROLE_EVENT: "Event", ROLE_UNIVERSAL: "Universal"}
 
 
+class IdentityNotReady(RuntimeError):
+    """账号还没认出来，此刻没有合规的 ``X-Self-ID`` 可发。"""
+
+
 def handshake_headers(node: dict) -> dict[str, str]:
     """反向 WS 的握手头。
 
-    ``X-Self-ID`` 按规范是机器人 QQ 号。账号还没认出来时这里只能发 ``*``（第三方
-    实现可能因此拒绝握手），``refresh_identity`` 会在认出账号后重连、用真实号码
-    重新握手。
+    ``X-Self-ID`` 按规范就是机器人 QQ 号，没有「未知」的写法；账号没认出来时不建
+    连，等 ``ob_ids.SELF`` 就绪后再握手（``refresh_identity`` 负责重连）。
     """
     self_id = ob_ids.SELF.user_id()
+    if not self_id:
+        raise IdentityNotReady("账号还没认出来，暂不发起反向 WS 握手")
     headers = {
-        "X-Self-ID": str(self_id) if self_id else "*",
+        "X-Self-ID": str(self_id),
         "X-Client-Role": _ROLE_HEADERS[node["role"]],
     }
     if node["access_token"]:
@@ -727,6 +732,11 @@ class NetworkManager:
         name = node["name"]
         url = node["url"]
         while True:
+            if not ob_ids.SELF.user_id():
+                self._state[name] = "waiting_identity"
+                log.info(f"[OB11] 账号还没认出来，反向 WS {name} 等身份就绪后再连")
+                await asyncio.sleep(max(1.0, node["reconnect_interval_ms"] / 1000))
+                continue
             try:
                 async with websockets.connect(
                     url,

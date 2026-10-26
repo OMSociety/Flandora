@@ -109,9 +109,3 @@ export function closeWS() {
   }
   wsState.state = 'closed'
 }
-
-export function sendWS(payload) {
-  if (socket && socket.readyState === WebSocket.OPEN) {
-    socket.send(JSON.stringify(payload))
-  }
-}

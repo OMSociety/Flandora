@@ -48,6 +48,67 @@ async def _require_login(request: Request, call_next):
     return await call_next(request)
 
 
+MAX_REQUEST_BODY_BYTES = 4 * 1024 * 1024
+
+
+class _BodyTooLarge(Exception):
+    """请求体超过上限。"""
+
+
+class _LimitBodySize:
+    """面板的请求体上限：超过就回 413，别把超大 JSON 整块读进内存。
+
+    声明了 ``Content-Length`` 的直接在入口拒绝；分块上传按累计字节数拒绝。
+    """
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        declared = ""
+        for key, value in scope.get("headers") or []:
+            if key == b"content-length":
+                declared = value.decode("latin-1")
+                break
+
+        total = 0
+        started = False
+
+        async def limited_receive():
+            nonlocal total
+            message = await receive()
+            total += len(message.get("body", b""))
+            if total > MAX_REQUEST_BODY_BYTES:
+                raise _BodyTooLarge
+            return message
+
+        async def tracked_send(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            if declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
+                raise _BodyTooLarge
+            await self.app(scope, limited_receive, tracked_send)
+        except _BodyTooLarge:
+            if started:
+                return
+            response = JSONResponse(
+                {
+                    "ok": False,
+                    "error": f"请求体超过 {MAX_REQUEST_BODY_BYTES // (1024 * 1024)} MB",
+                },
+                413,
+            )
+            await response(scope, receive, send)
+
+
 def _no_build():
     """前端没构建时的兜底：静态目录不存在就直说怎么构建，不返回空白页。"""
     return JSONResponse(
@@ -79,6 +140,7 @@ def create_app() -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
+    app.add_middleware(_LimitBodySize)
     app.middleware("http")(_require_login)
     app.add_exception_handler(RequestValidationError, _validation_error)
     for router in ALL_ROUTERS:

@@ -277,7 +277,7 @@ ACTIONS: tuple[Action, ...] = (
     Action(
         name="get_friend_list",
         category=CAT_FRIEND,
-        summary="获取好友列表（读通讯录；不含公众号与文件传输助手）",
+        summary="获取好友列表（通讯录里的好友；群聊用 get_group_list，公众号与文件传输助手另有动作）",
         read_only=True,
     ),
     Action(

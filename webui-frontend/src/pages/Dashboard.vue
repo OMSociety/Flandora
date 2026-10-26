@@ -1,7 +1,7 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { get, post } from '../api'
-import { status, refreshStatus, toast } from '../store'
+import { status, statusMeta, refreshStatus, toast } from '../store'
 import { on } from '../ws'
 import { formatUptime, fmt, hexHwnd, formatClock } from '../utils/format'
 import HourlyBarChart from '../components/HourlyBarChart.vue'
@@ -87,6 +87,10 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="dashboard">
+    <div v-if="statusMeta.stale" class="stale-banner">
+      <AppIcon name="CircleAlert" :size="15" />
+      <span>数据截至 {{ statusMeta.updatedAt || '—' }}，之后连不上面板：先从托盘里确认管理器还在运行。</span>
+    </div>
     <section class="card service-panel" aria-labelledby="service-heading">
       <div class="service-main">
         <div class="service-icon" :class="{ online: status.running }"><AppIcon :name="status.running ? 'Activity' : 'Zap'" :size="25" /></div>
@@ -148,6 +152,19 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+
+.stale-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+  padding: 10px 14px;
+  border: 1px solid var(--warning-border, #d9a600);
+  border-radius: 10px;
+  background: var(--warning-soft, rgba(217, 166, 0, 0.12));
+  color: var(--text);
+  font-size: 13px;
+}
 .dashboard { display:flex; flex-direction:column; gap:16px; }
 .service-panel { display:flex; justify-content:space-between; align-items:center; gap:20px; padding:20px; box-shadow:none; }
 .service-main { display:flex; align-items:center; gap:15px; min-width:0; }

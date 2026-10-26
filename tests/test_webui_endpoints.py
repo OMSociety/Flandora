@@ -70,6 +70,16 @@ def _registered():
     }
 
 
+def test_request_body_over_the_limit_is_refused(client):
+    """超大请求体在入口就回 413，不把它读进内存再交给业务。"""
+    from flandora.webui import app as webui_app
+
+    body = b"{" + b" " * (webui_app.MAX_REQUEST_BODY_BYTES + 16) + b"}"
+    resp = client.post("/api/config", content=body, headers={"content-type": "application/json"})
+    assert resp.status_code == 413
+    assert "请求体超过" in resp.json()["error"]
+
+
 def test_route_table_matches_the_app():
     """双向对账：少了是路由被删；多了是有人加了端点却没决定它归哪一档。"""
     expected = {(path, method) for path, methods in ROUTES.items() for method in methods}

@@ -1102,7 +1102,7 @@ def _store():
 
 
 def _contacts_roster() -> list:
-    """在线程池中执行：通讯录里的好友（不含群、公众号、文件传输助手）。"""
+    """在线程池中执行：通讯录里的好友；群、公众号、文件传输助手由各自的动作返回。"""
     store = _store()
     if store is None:
         return []

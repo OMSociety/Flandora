@@ -1,6 +1,6 @@
 """微信本地库的只读访问层。
 
-口令由取钥链路提供（见 wx_key），本模块负责：定位当前登录账号的数据目录、
+口令由取钥链路提供（见 `flandora/wxkey/` 与 `wx_source.load_passphrase`），本模块负责：定位当前登录账号的数据目录、
 把要用的库解到自己的工作目录、按会话增量取新消息。
 
 对微信原始目录只读；所有写操作都落在 bridge 自己的工作目录里。
@@ -212,7 +212,7 @@ def pat_info(body) -> dict | None:
         "from": _xml_value(inner, "fromusername").strip(),
         "group": _xml_value(inner, "chatusername").strip(),
         "to": _xml_value(inner, "pattedusername").strip(),
-        # 老版本用 <suffix>，新版本用 <patsuffix>，两个都认
+        # <suffix> 与 <patsuffix> 两种写法都认
         "suffix": (_xml_value(inner, "patsuffix") or _xml_value(inner, "suffix")).strip(),
     }
 
@@ -292,7 +292,7 @@ def payload_of(
 
     撤回行（`local_type=10002`）不能按正文推：它得带上 `revoke` 字段，桥接才会把它摘成
     notice（`bridge_core._notice_for`）。这一行的 body 里通常只剩占位文本，撤回了谁要看
-    同一会话的 sysmsg；解不到也照旧上报，昵称回退到这一行的发送者。
+    同一会话的 sysmsg；解不到也照旧上报，昵称取这一行的发送者。
     """
     kind, text = classify(local_type, body)
     quote = quote_ref(body) if kind == "quote" else None
@@ -479,7 +479,7 @@ class WxStore:
     def contacts(self):
         """通讯录里的个人联系人。
 
-        不含群会话（`@chatroom`）、公众号（`gh_` 开头）与微信内部的伪联系人
+        只列个人好友：群会话（`@chatroom`）、公众号（`gh_` 开头）与微信内部的伪联系人由各自的入口返回
         （`SYSTEM_USERNAMES`：文件传输助手、服务通知、微信团队等）：它们在微信里
         各自是独立入口，混进好友列表会让客户端给它们推消息。
         """

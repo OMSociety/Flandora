@@ -15,7 +15,9 @@ export async function request(path, options = {}) {
   try {
     res = await fetch(path, opts)
   } catch (err) {
-    if (!silent) toast('网络请求失败: ' + (err.message || err), 'error')
+    // fetch 抛 TypeError 就是连不上（面板进程停了、端口关了），别把这句原文丢给用户
+    console.warn('请求失败：', path, err)
+    if (!silent) toast('无法连接桥接服务：面板进程可能已停止，先从托盘里确认它在运行', 'error')
     return { ok: false, status: 0, data: null }
   }
   let data = null

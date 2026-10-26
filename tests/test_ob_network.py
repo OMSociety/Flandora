@@ -412,13 +412,13 @@ def test_ws_client_handshake_headers(isolated_ids):
         assert role_headers["Authorization"] == "Bearer tk"
 
 
-def test_handshake_headers_use_wildcard_before_login(isolated_ids):
-    """还没认出登录账号时用通配身份，别拿 0 冒充 self_id。"""
+def test_handshake_headers_wait_for_a_known_identity(isolated_ids):
+    """还没认出登录账号时不建连：规范没有「未知身份」的写法，发 * 会被严格服务端拒绝。"""
     isolated_ids.SELF.set_wxid("")
-    headers = ob_network.handshake_headers(
-        ob_network.normalize_node({"type": "ws_client", "url": "ws://x.invalid/ws"}, 0)
-    )
-    assert headers["X-Self-ID"] == "*"
+    with pytest.raises(ob_network.IdentityNotReady):
+        ob_network.handshake_headers(
+            ob_network.normalize_node({"type": "ws_client", "url": "ws://x.invalid/ws"}, 0)
+        )
 
 
 def test_ws_client_reconnects_after_identity_change(isolated_ids):
@@ -480,8 +480,10 @@ def test_ws_client_reconnects_after_identity_change(isolated_ids):
     asyncio.run(main())
 
 
-def test_ws_client_connects_and_receives_events():
+def test_ws_client_connects_and_receives_events(isolated_ids):
     from websockets.asyncio.server import serve
+
+    isolated_ids.SELF.set_wxid("wxid_bot")
 
     async def main():
         got: list[dict] = []

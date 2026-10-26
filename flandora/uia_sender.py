@@ -181,6 +181,14 @@ def enum_process_windows(pid: int, desktop_name: str = "") -> list[int]:
     return out
 
 
+# 会话摘要里代表「一张图片」的词：中文界面写「图片」，英文界面写 Photo / Image。
+_IMAGE_SUMMARY_WORDS = ("图片", "Photo", "Image")
+
+
+def _is_image_summary(summary: str) -> bool:
+    return any(word in (summary or "") for word in _IMAGE_SUMMARY_WORDS)
+
+
 class UiaSender(BaseSender):
     """微信消息发送器：把输入以窗口消息定向投递给微信线程。"""
 
@@ -372,7 +380,7 @@ class UiaSender(BaseSender):
 
     def _find_window(self) -> bool:
         """定位微信**已登录主窗口**：优先绑定 config.wechat_hwnd 指定的窗口（多开场景），
-        未配置或已失效则回退到自动查找。
+        未配置或已失效时按自动查找处理。
 
         查找顺序：按进程名（Weixin.exe/WeChat.exe）挑顶层窗口；识别不到进程时退回
         标题匹配。登录界面一律不绑定——否则模拟按键会打进登录界面并假报发送成功。
@@ -1075,46 +1083,6 @@ class UiaSender(BaseSender):
         except Exception:
             return 0
 
-    def _search_hit(self, contact: str, popover):
-        """搜索弹层里指向该联系人的**会话结果项**（同名项取最靠上的一个）。
-
-        弹层里同名的项不止一个：搜狗网络结果的名字带后缀（如「文件传输助手
-        打开」），「功能」分区下还有与联系人**完全同名**的动作项（如「发送
-        文件」）。所以只认名字完全相同的项，并排除「功能」标题之下的那些。
-        """
-        if popover is None:
-            return None
-        nodes = self._walk(popover)
-
-        limit = None
-        for _, node in nodes:
-            if (
-                self._class_of(node) in self.SEARCH_RESULT_CLASSES
-                and (node.Name or "") == self.SEARCH_ACTION_HEADER
-            ):
-                try:
-                    limit = node.BoundingRectangle.top
-                except Exception:
-                    pass
-                break
-
-        best = None
-        best_top = None
-        for _, node in nodes:
-            if self._class_of(node) not in self.SEARCH_RESULT_CLASSES:
-                continue
-            if (node.Name or "") != contact:
-                continue
-            try:
-                top = node.BoundingRectangle.top
-            except Exception:
-                continue
-            if limit is not None and top >= limit:
-                continue
-            if best is None or top < best_top:
-                best, best_top = node, top
-        return best
-
     def _search_input(self):
         """搜索框里真正接收输入的编辑框。
 
@@ -1124,16 +1092,6 @@ class UiaSender(BaseSender):
         return self._find_by_class("mmui::XValidatorTextEdit") or self._find_by_class(
             self.SEARCH_FIELD_CLASS
         )
-
-    def _search_field_text(self) -> str:
-        """搜索框里当前的关键词（读不到就返回空串）。"""
-        field = self._search_input()
-        if field is None:
-            return ""
-        try:
-            return field.GetValuePattern().Value or ""
-        except Exception:
-            return ""
 
     def _search_and_select(self, contact: str) -> bool:
         """用主窗口顶部的搜索框找会话并点开（会话列表里没有它时的兜底）。
@@ -1336,7 +1294,7 @@ class UiaSender(BaseSender):
         输入法会扰动字符（实测输入 `t` 落到输入框里变成 `上`），所以打完必须
         回读比对；不符就清空重打，三次仍不符判定失败。
 
-        只适用于不含 emoji 与换行的文本：那两类由 :meth:`_enter_text` 改走粘贴。
+        走窗口消息投递；文本里有 emoji 或换行时，交给 :meth:`_enter_text` 粘贴。
         """
         for _ in range(3):
             for ch in text:
@@ -1659,7 +1617,7 @@ class UiaSender(BaseSender):
         """输入框里是否已经放进了提及对象。
 
         真机上提及是内嵌对象，输入框的值里表现为 U+FFFC（对象占位符）；
-        少数路径会退化成「昵称 + U+2005」，两种都认。
+        少数路径取到的是「昵称 + U+2005」，两种都认。
         """
         text = self._input_text()
         if "\ufffc" in text:
@@ -1693,34 +1651,6 @@ class UiaSender(BaseSender):
             except Exception:  # noqa: BLE001
                 continue
         return items
-
-    def _mention_item(self, name: str, hwnd: int):
-        """弹层里指向该成员的那一项；找不到或候选不唯一时返回 None。"""
-        import uiautomation as auto
-
-        try:
-            root = auto.ControlFromHandle(hwnd)
-        except Exception:
-            return None
-        if root is None:
-            return None
-        exact, prefixed = [], []
-        for _, node in self._walk(root):
-            try:
-                node_name = (node.Name or "").strip()
-            except Exception:
-                continue
-            if not node_name:
-                continue
-            if node_name == name:
-                exact.append(node)
-            elif len(name) >= 2 and node_name.startswith(name):
-                prefixed.append(node)
-        candidates = exact or prefixed
-        if len(candidates) > 1:
-            log.warning(f"成员弹层里「{name}」有 {len(candidates)} 个候选，无法确定是哪一位")
-            return None
-        return candidates[0] if candidates else None
 
     def _self_pid(self) -> int:
         try:
@@ -1792,7 +1722,7 @@ class UiaSender(BaseSender):
                 time.sleep(0.8)
 
                 summary = self._session_summary(contact) or ""
-                if "图片" not in summary:
+                if not _is_image_summary(summary):
                     if self._input_text():
                         self._clear_input()
                     log.error(f"[UIA失败] 图片 -> {contact}: 摘要未显示图片（{summary[:24]!r}）")

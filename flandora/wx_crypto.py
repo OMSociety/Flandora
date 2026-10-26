@@ -1,7 +1,7 @@
 """微信 4.x 本地库解密（SQLCipher 4）。
 
 职责范围：只做「口令 → 可直接用 sqlite3 只读打开的普通文件」这一段。
-口令由取钥链路提供（见 wx_key）。
+口令由取钥链路提供（见 `flandora/wxkey/` 与 `wx_source.load_passphrase`）。
 
 页面布局（SQLCipher 4 默认参数）：
     KDF       PBKDF2-HMAC-SHA512，256000 轮
@@ -36,7 +36,7 @@ RESERVE = 80
 IV_SZ = 16
 KDF_ITER = 256000
 SALT_MASK = 0x3A
-CT_BODY = PAGE - RESERVE  # 4016：加密正文长度（不含 IV/HMAC）
+CT_BODY = PAGE - RESERVE  # 4016：加密正文长度（IV 与 HMAC 另计）
 MAC_END = PAGE - RESERVE + IV_SZ  # 4032：页 HMAC 覆盖到这儿（IV 不参与计算）
 WAL_HDR = 32
 WAL_FRAME_HDR = 24

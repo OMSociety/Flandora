@@ -24,13 +24,16 @@ export const status = reactive({
   send_method: 'uia',
   ob: { host: '', port: 0, connected: false, clients: 0 },
   inbound: { source: 'local', ready: false },
-  group_reply_mode: 'mention',
   counters: { recv: 0, pushed: 0, sent: 0, dropped: 0 },
   window: null,
   window_locked: false,
 })
 
 let statusTimer = null
+
+// 面板进程停了以后 /api/status 会一直失败，界面上的 PID、端口都是最后一帧；
+// 记下最后一次成功读数的时间；失败时页面标出「数据截至」，别把上一次的数值当现状。
+export const statusMeta = reactive({ stale: false, updatedAt: '' })
 
 export async function refreshStatus(silent = false) {
   const res = await get('/api/status', silent)
@@ -44,6 +47,10 @@ export async function refreshStatus(silent = false) {
     )
     status.window = res.data.window && typeof res.data.window === 'object' ? res.data.window : null
     status.window_locked = !!res.data.window_locked
+    statusMeta.stale = false
+    statusMeta.updatedAt = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+  } else {
+    statusMeta.stale = true
   }
 }
 

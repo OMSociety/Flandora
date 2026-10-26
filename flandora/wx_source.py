@@ -147,7 +147,7 @@ class WxLocalSource:
     # ---------- 轮询 ----------
 
     def poll(self):
-        """取回新消息。返回统一形态的字典列表（不含自己发出的）。"""
+        """取回新消息。返回统一形态的字典列表，只含对方发来的消息。"""
         if not self._primed:
             self.prime()
         self.store.refresh()
@@ -293,7 +293,7 @@ class WxLocalSource:
         """
         if not self.store.image_ready():
             return ""
-        body = msg.get("raw") or msg.get("text") or ""
+        body = msg.get("text") or ""
         m = re.search(r'md5="([0-9a-fA-F]{32})"', body)
         if not m:
             return ""

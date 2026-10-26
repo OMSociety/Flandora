@@ -431,7 +431,7 @@ class IsolatedDesktop:
 # 微信可执行文件定位
 # ====================================================================
 
-# 常见安装位置。微信 4.x 换成了 Weixin.exe，老版本是 WeChat.exe。
+# 常见安装位置。微信 4.x 的进程名是 Weixin.exe；WeChat.exe 也一并认。
 _CANDIDATE_DIRS = (
     r"C:\Program Files\Tencent\Weixin",
     r"C:\Program Files (x86)\Tencent\Weixin",
@@ -458,7 +458,7 @@ def _registry_dirs() -> list:
     实测（微信 4.1.15.56）：
       `HKCU\\SOFTWARE\\Tencent\\Weixin` 的值 `InstallPath` 记的就是安装目录（装到非 C 盘也照记）
 
-    老版本写在哪个键下没有实机可验，所以 hive、键路径、值名都多试几个，命中即止。
+    各安装方式把路径写在哪一键没有实机可验，所以 hive、键路径、值名都多试几个，命中即止。
     取不到不算错——后面还有常见位置与逐盘扫描兜着。
     """
     try:

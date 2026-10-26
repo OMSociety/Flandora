@@ -93,3 +93,25 @@ def test_recent_messages_carry_server_id(tmp_path):
     rows = _store(tmp_path).recent_messages(TALKER)
     assert [r["local_id"] for r in rows] == [5, 6]
     assert [r["server_id"] for r in rows] == ["SN-PLAIN", "SN-QUOTE"]
+
+
+def test_quote_ref_takes_the_sender_from_either_field():
+    """被引消息的发送者可能在 fromusr，也可能只在 chatusr：两个都认，fromusr 优先。"""
+    group_quote = (
+        "<msg><appmsg><refermsg><fromusr>wxid_self</fromusr>"
+        "<chatusr>50071592949@chatroom</chatusr><displayname>芙兰朵露Flandre</displayname>"
+        f"<svrid>{QUOTE_SVID}</svrid></refermsg></appmsg></msg>"
+    )
+    assert wx_store.quote_ref(group_quote)["sender"] == "wxid_self"
+
+    only_fromusr = (
+        "<msg><appmsg><refermsg><fromusr>wxid_zhangsan</fromusr>"
+        f"<svrid>{QUOTE_SVID}</svrid></refermsg></appmsg></msg>"
+    )
+    assert wx_store.quote_ref(only_fromusr)["sender"] == "wxid_zhangsan"
+
+    only_chatusr = (
+        "<msg><appmsg><refermsg><chatusr>wxid_zhangsan</chatusr>"
+        f"<svrid>{QUOTE_SVID}</svrid></refermsg></appmsg></msg>"
+    )
+    assert wx_store.quote_ref(only_chatusr)["sender"] == "wxid_zhangsan"

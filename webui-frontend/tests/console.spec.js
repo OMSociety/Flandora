@@ -138,7 +138,7 @@ test('node page adds, toggles and removes OneBot endpoints', async ({ page }) =>
   page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
   await page.goto('/#/nodes')
   await expect(page.locator('.page-heading h1')).toHaveText('节点配置')
-  await expect(page.locator('.account-name strong')).toHaveText('芙兰朵露')
+  await expect(page.locator('.account-name strong')).toHaveText('测试账号')
   await expect(page.locator('.account-name small')).toHaveText('wxid_demouser10001')
   // 附件目录搬到了本机账号卡里
   await expect(page.getByLabel('客户端附件目录')).toHaveValue('D:/wechat/attachments')

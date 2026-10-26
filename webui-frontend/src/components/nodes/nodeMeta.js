@@ -74,7 +74,9 @@ export function blankNode(type, index) {
     reconnect_interval_ms: 5000,
   }
   if (type === 'ws_server') return { ...base, port: 7999 }
-  if (type === 'http_server') return { ...base, port: 5700 }
+  // HTTP 服务入口的动作接口开在本机 HTTP 端口上，浏览器里的任何页面都能跨站请求它，
+  // 所以后端强制要求非空令牌（normalize_node）；这里直接给一个，省得建好就被拒。
+  if (type === 'http_server') return { ...base, port: 5700, access_token: randomToken() }
   if (type === 'ws_client') return { ...base, url: 'ws://127.0.0.1:6199/ws' }
   return { ...base, url: 'http://127.0.0.1:8080/onebot' }
 }
@@ -95,6 +97,9 @@ export function nodeProblem(node) {
     if (!Number.isInteger(port) || port < 1 || port > 65535) return '端口取 1–65535'
     const path = String(node.path || '')
     if (path && !path.startsWith('/')) return '路径要以 / 开头'
+    if (node.type === 'http_server' && !String(node.access_token || '').trim()) {
+      return 'HTTP 服务入口必须设令牌：动作接口就在本机 HTTP 端口上，浏览器里的任何页面都能跨站请求它'
+    }
     return ''
   }
   const url = String(node.url || '').trim()

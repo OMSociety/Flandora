@@ -658,9 +658,15 @@ def _media_file(file_val: str, label: str, prep: _OutboundPrep) -> str | None:
         prep.failures.append(f"{label}文件未找到：{file_val}（client_attachments 未配置）")
         log.warning(f"[OB11] {label}文件未找到（未配置 client_attachments）: {file_val}")
         return None
+    # 只按文件名找：`..\..\Windows\...` 这类带路径分隔符的值不许穿出附件目录，
+    # 与文件段（`_file_path`）的收窄口径一致。子目录靠下面第二个候选目录覆盖。
+    name = os.path.basename(file_val.replace("\\", "/"))
+    if not name:
+        prep.failures.append(f"{label}文件未找到：{file_val}")
+        return None
     for candidate in (
-        os.path.join(config.CLIENT_ATTACHMENTS, file_val),
-        os.path.join(config.CLIENT_ATTACHMENTS, "wechat_images", file_val),
+        os.path.join(config.CLIENT_ATTACHMENTS, name),
+        os.path.join(config.CLIENT_ATTACHMENTS, "wechat_images", name),
     ):
         if os.path.exists(candidate):
             return candidate

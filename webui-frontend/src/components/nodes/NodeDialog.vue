@@ -86,7 +86,7 @@ function submit() {
         <div class="field">
           <label for="node-token">授权 Token</label>
           <div class="token-row">
-            <PasswordInput id="node-token" v-model="form.access_token" placeholder="留空则不校验" />
+            <PasswordInput id="node-token" v-model="form.access_token" :placeholder="form.type === 'http_server' ? '必填' : '留空则不校验'" />
             <button type="button" class="icon-btn token-btn" title="随机生成一个令牌" aria-label="重新生成令牌" @click="regenerate"><AppIcon name="RefreshCw" :size="15" /></button>
             <button type="button" class="icon-btn token-btn" title="复制当前令牌" aria-label="复制令牌" @click="copyToken"><AppIcon name="Copy" :size="15" /></button>
           </div>

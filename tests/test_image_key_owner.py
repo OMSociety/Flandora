@@ -11,6 +11,7 @@
 
 import contextlib
 import json
+import logging
 import os
 import shutil
 import sys
@@ -91,6 +92,64 @@ def test_bad_hex_key_is_rejected():
         key, xor = wx_source.load_image_key("")
     assert key == b"", key
     assert xor == -1, xor
+
+
+def test_grab_key_writes_sealed_key():
+    """取钥落盘的是 DPAPI 密文：文件里没有明文，读回来仍是同一把密钥。"""
+    from unittest import mock
+
+    from flandora import wx_image_key
+
+    d = tempfile.mkdtemp(prefix="wwb-idx-")
+    path = os.path.join(d, "wx_image_key.json")
+    try:
+        with (
+            mock.patch.object(wx_image_key, "scan_for_key", return_value=b"0123456789abcdef"),
+            mock.patch.object(wx_image_key, "sniff_xor", return_value=135),
+            mock.patch.object(wx_image_key, "current_wxid", return_value="wxid_me"),
+        ):
+            payload = wx_image_key.grab_key(out_path=path, sample_from=d)
+        with open(path, encoding="utf-8") as fh:
+            stored = json.load(fh)
+        assert "aes_key" not in stored, f"落盘文件里还有明文密钥：{stored}"
+        assert stored["aes_key_dpapi"], stored
+        assert payload["aes_key"] == "0123456789abcdef", "返回值里应保留明文，供控制台显示"
+        with config.temporary(
+            os.path.join(d, "config.json"), overrides={"wx_image_key_file": path}
+        ):
+            key, xor = wx_source.load_image_key("wxid_me")
+        assert key == b"0123456789abcdef", key
+        assert xor == 135, xor
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def test_broken_sealed_key_is_treated_as_no_key():
+    """密文解不开（换了 Windows 账户或换了机器）→ 按无密钥处理，不抛错。"""
+    with key_file({"wxid": "", "aes_key_dpapi": "bm90LWEtcmVhbC1zZWFs", "xor_key": 1}):
+        key, xor = wx_source.load_image_key("")
+    assert key == b"", key
+    assert xor == -1, xor
+
+
+def test_loaded_key_log_hides_the_xor_value():
+    """日志只报「已配置/未配置」：密钥值不该进日志文件。"""
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    logger = logging.getLogger("flandora")
+    logger.addHandler(handler)
+    old_level = logger.level
+    logger.setLevel(logging.INFO)
+    try:
+        with key_file():
+            wx_source.load_image_key("wxid_someone_else")
+    finally:
+        logger.removeHandler(handler)
+        logger.setLevel(old_level)
+    text = "\n".join(r.getMessage() for r in records)
+    assert "0x87" not in text, f"XOR 密钥值（135 = 0x87）不该出现在日志里：{text}"
+    assert "XOR 密钥已配置" in text, text
 
 
 def main() -> int:

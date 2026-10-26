@@ -202,7 +202,14 @@ def test_http_server_serves_actions():
         mgr.configure(
             [
                 ob_network.normalize_node(
-                    {"type": "http_server", "name": "h", "host": "127.0.0.1", "port": port}, 0
+                    {
+                        "type": "http_server",
+                        "name": "h",
+                        "host": "127.0.0.1",
+                        "port": port,
+                        "access_token": "tk",
+                    },
+                    0,
                 )
             ]
         )
@@ -215,6 +222,7 @@ def test_http_server_serves_actions():
                         requests.post,
                         f"http://127.0.0.1:{port}/",
                         json={"action": "get_login_info", "echo": "http"},
+                        headers={"Authorization": "Bearer tk"},
                         timeout=2,
                     )
                     break
@@ -225,6 +233,96 @@ def test_http_server_serves_actions():
             body = resp.json()
             assert body["echo"] == "http"
             assert body["status"] == "ok"
+        finally:
+            await mgr.stop()
+
+    asyncio.run(main())
+
+
+def test_http_server_requires_token():
+    """http_server 的令牌必填：空令牌等于把发消息的能力交给任意网页。"""
+    with pytest.raises(ob_network.NetworkConfigError) as err:
+        ob_network.normalize_node({"type": "http_server", "name": "h", "port": 5700}, 0)
+    assert "access_token" in str(err.value)
+
+
+def test_http_server_turns_away_cross_site_requests():
+    """动作只收 POST + JSON，且只认本机回环的 Origin / Host。"""
+
+    async def main():
+        import requests
+
+        port = _free_port()
+        mgr = ob_network.NetworkManager()
+        mgr.configure(
+            [
+                ob_network.normalize_node(
+                    {
+                        "type": "http_server",
+                        "name": "h",
+                        "host": "127.0.0.1",
+                        "port": port,
+                        "access_token": "tk",
+                    },
+                    0,
+                )
+            ]
+        )
+        mgr.start(asyncio.get_running_loop())
+        url = f"http://127.0.0.1:{port}/"
+        auth = {"Authorization": "Bearer tk"}
+
+        async def send(**kwargs):
+            return await asyncio.to_thread(requests.request, timeout=3, **kwargs)
+
+        try:
+            for _ in range(100):
+                try:
+                    await send(
+                        method="POST", url=url, json={"action": "get_login_info"}, headers=auth
+                    )
+                    break
+                except Exception:  # noqa: BLE001
+                    await asyncio.sleep(0.1)
+            else:
+                raise AssertionError("HTTP 服务端没有起来")
+
+            # GET 带 action（跨站页面用 <img> 就能发的那种）
+            got = await send(method="GET", url=url + "?action=get_login_info&echo=x", headers=auth)
+            assert got.status_code == 405, got.text
+            # 非 JSON 请求体（跨站的简单请求）
+            plain = await send(
+                method="POST",
+                url=url,
+                data='{"action": "get_login_info"}',
+                headers={**auth, "Content-Type": "text/plain"},
+            )
+            assert plain.status_code == 400, plain.text
+            # 别的网站的页面来请求
+            foreign = await send(
+                method="POST",
+                url=url,
+                json={"action": "get_login_info"},
+                headers={**auth, "Origin": "https://example.com"},
+            )
+            assert foreign.status_code == 403, foreign.text
+            # DNS rebinding：域名指向回环，但 Host 还是那个域名
+            rebound = await send(
+                method="POST",
+                url=url,
+                json={"action": "get_login_info"},
+                headers={**auth, "Host": "evil.example.com"},
+            )
+            assert rebound.status_code == 403, rebound.text
+            # 本机页面的 POST 照常通
+            ok = await send(
+                method="POST",
+                url=url,
+                json={"action": "get_login_info", "echo": "local"},
+                headers={**auth, "Origin": f"http://127.0.0.1:{port}"},
+            )
+            assert ok.status_code == 200, ok.text
+            assert ok.json()["echo"] == "local"
         finally:
             await mgr.stop()
 

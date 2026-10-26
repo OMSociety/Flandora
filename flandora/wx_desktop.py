@@ -455,8 +455,8 @@ def _drive_roots() -> list:
 def _registry_dirs() -> list:
     """从注册表取微信安装目录。
 
-    本机实测（微信 4.1.15.56）：
-      `HKCU\\SOFTWARE\\Tencent\\Weixin` 的值 `InstallPath` = `D:\\Program Files\\Tencent\\Weixin`
+    实测（微信 4.1.15.56）：
+      `HKCU\\SOFTWARE\\Tencent\\Weixin` 的值 `InstallPath` 记的就是安装目录（装到非 C 盘也照记）
 
     老版本写在哪个键下没有实机可验，所以 hive、键路径、值名都多试几个，命中即止。
     取不到不算错——后面还有常见位置与逐盘扫描兜着。
@@ -488,7 +488,7 @@ def find_weixin_exe(configured: str = "") -> str:
 
     依次试：配置 → 环境变量 `WECHAT_EXE` → 注册表记录的安装目录 → 常见安装位置 →
     逐盘扫 `Program Files` 与 `Program Files (x86)`（两条都扫，微信有装在 32 位
-    目录下、也有装在非 C 盘的情况；本机就是 `D:\\Program Files\\Tencent\\Weixin`）。
+    目录下的，也有装在非 C 盘的）。
 
     `Weixin.exe` 只是启动器，真正的版本目录里是 `Weixin.dll`——但我们要启动的
     就是启动器本身，所以找它是对的。

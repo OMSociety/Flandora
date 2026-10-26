@@ -14,6 +14,7 @@ XOR 密钥不用扫：它可以从本账号已有图片的尾部反推（末字�
 
 from __future__ import annotations
 
+import base64
 import ctypes
 import glob
 import json
@@ -28,6 +29,7 @@ from ctypes import wintypes
 from typing import Callable, Optional
 
 from . import wechat_account, wx_image
+from .wxkey import store as wxkey_store
 
 log = logging.getLogger("flandora")
 
@@ -77,6 +79,26 @@ def default_key_file() -> str:
     from .config.paths import default_data_dir
 
     return os.path.join(default_data_dir(), "wx_image_key.json")
+
+
+def seal_aes_key(aes_key: bytes) -> str:
+    """把 AES 密钥用当前 Windows 账户的 DPAPI 凭据封起来。
+
+    与数据库口令（``wx_key.dat``）用同一套保护：同机同账户才解得开。密钥文件以前
+    写的是明文，同一个磁盘上的任何程序都能拿去解密图片。
+    """
+    return base64.b64encode(wxkey_store.protect(aes_key)).decode("ascii")
+
+
+def open_aes_key(sealed: str) -> bytes:
+    """解开 :func:`seal_aes_key` 写的密文；解不开就返回 ``b""``（按没有密钥处理）。"""
+    if not sealed:
+        return b""
+    try:
+        return wxkey_store.unprotect(base64.b64decode(sealed, validate=True))
+    except Exception as exc:  # noqa: BLE001 - 解不开等于没有密钥，不该拦住文本通道
+        log.warning("图片 AES 密钥解不开（%s）：它是在别的 Windows 账户或别的机器上取的", exc)
+        return b""
 
 
 def current_wxid(root: Optional[str] = None) -> str:
@@ -344,7 +366,11 @@ def grab_key(
     on_status: Optional[Callable[[str], None]] = None,
     on_round: Optional[Callable[[int], None]] = None,
 ) -> dict:
-    """扫出 AES 密钥、反推 XOR 密钥、写入文件，返回写入的内容。"""
+    """扫出 AES 密钥、反推 XOR 密钥、写入文件，返回本次取到的密钥。
+
+    落盘的是 DPAPI 密文（``aes_key_dpapi``），与数据库口令用同一套保护；返回的字典里
+    仍带明文 ``aes_key``，供向导与控制台现场显示——明文只留在内存里。
+    """
     attach = sample_from or attach_dir(root)
     aes_key = scan_for_key(
         seconds=seconds, sample_from=attach, stop=stop, on_status=on_status, on_round=on_round
@@ -356,9 +382,12 @@ def grab_key(
     payload = {"aes_key": aes_key.decode("ascii"), "xor_key": xor_key}
     if wxid:
         payload["wxid"] = wxid
+    stored = {"aes_key_dpapi": seal_aes_key(aes_key), "xor_key": xor_key}
+    if wxid:
+        stored["wxid"] = wxid
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     with open(path, "w", encoding="utf-8") as fh:
-        json.dump(payload, fh, ensure_ascii=False, indent=2)
+        json.dump(stored, fh, ensure_ascii=False, indent=2)
 
     if on_status:
         on_status(f"XOR 密钥 0x{xor_key:02x}")

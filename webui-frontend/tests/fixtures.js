@@ -17,7 +17,7 @@ export const statusFixture = {
   counters: { recv: 128, pushed: 116, sent: 42, dropped: 0 },
   window: { title: '微信', pid: 6132, hwnd: 123456 },
   window_locked: false,
-  self: { wxid: 'wxid_demouser10001', nickname: '芙兰朵露' },
+  self: { wxid: 'wxid_demouser10001', nickname: '测试账号' },
   webui: { host: '127.0.0.1', port: 4950, tls: false, tls_cert_set: false, tls_key_set: false, password_set: false },
 }
 

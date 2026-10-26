@@ -21,6 +21,7 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import threading
@@ -120,6 +121,12 @@ def normalize_node(raw: dict, index: int) -> dict:
     if kind in (KIND_WS_SERVER, KIND_HTTP_SERVER):
         if not node["port"]:
             raise NetworkConfigError(f"入口 {name} 缺少 port")
+        if kind == KIND_HTTP_SERVER and not node["access_token"]:
+            raise NetworkConfigError(
+                f"入口 {name} 是 http_server，必须设 access_token：它的动作接口开在本机 HTTP "
+                "端口上，浏览器里的任何页面都能跨站请求它（发消息是副作用，不需要读响应），"
+                "没有令牌等于把发消息的能力交给所有网页"
+            )
     else:
         if not node["url"]:
             raise NetworkConfigError(f"入口 {name} 缺少 url")
@@ -572,6 +579,7 @@ class NetworkManager:
             if path != "/" and req_path != path:
                 await _asgi_json(send, 404, {"status": "failed", "retcode": RETCODE_NOT_FOUND})
                 return
+            method = scope.get("method") or "GET"
             headers = {
                 k.decode("latin-1").lower(): v.decode("latin-1")
                 for k, v in scope.get("headers", [])
@@ -579,19 +587,69 @@ class NetworkManager:
             query = {
                 k: v[0] for k, v in parse_qs(scope.get("query_string", b"").decode()).items() if v
             }
+            # 浏览器跨站面：响应不带 CORS 头，但**副作用**不需要读响应——一个网页用
+            # `<img src="http://127.0.0.1:5700/?action=send_private_msg&...">` 就能让受害者的
+            # 微信发消息。只认来源是本机回环的网页；非浏览器客户端不带 Origin，照常放行。
+            if not _is_loopback_host(headers.get("origin", "")):
+                await _asgi_json(
+                    send,
+                    403,
+                    {
+                        "status": "failed",
+                        "retcode": RETCODE_AUTH_FAILED,
+                        "message": "Origin 不是本机页面，已拒绝",
+                    },
+                )
+                return
+            # 监听回环时 Host 也该是回环：DNS rebinding 会把攻击者的域名解析到 127.0.0.1，
+            # 但请求里的 Host 仍是那个域名。
+            if _is_loopback_host(node["host"]) and not _is_loopback_host(headers.get("host", "")):
+                await _asgi_json(
+                    send,
+                    403,
+                    {
+                        "status": "failed",
+                        "retcode": RETCODE_AUTH_FAILED,
+                        "message": "Host 与监听地址不符，已拒绝",
+                    },
+                )
+                return
+            # 动作只走 POST：GET 属「简单请求」，浏览器跨站页面不必预检就能发出。
+            if method != "POST":
+                await _asgi_json(
+                    send,
+                    405,
+                    {
+                        "status": "failed",
+                        "retcode": RETCODE_BAD_PARAM,
+                        "message": "http_server 入口只接受 POST 调动作",
+                    },
+                )
+                return
             if token and headers.get("authorization", "") != f"Bearer {token}":
                 if query.get("access_token") != token:
                     await _asgi_json(
                         send, 401, {"status": "failed", "retcode": RETCODE_AUTH_FAILED}
                     )
                     return
+            ctype = headers.get("content-type", "").split(";")[0].strip().lower()
+            if ctype and ctype != "application/json":
+                await _asgi_json(
+                    send,
+                    400,
+                    {
+                        "status": "failed",
+                        "retcode": RETCODE_BAD_PARAM,
+                        "message": f"只接受 application/json 请求体（收到 {ctype}）",
+                    },
+                )
+                return
             body = b""
-            if scope.get("method") == "POST":
-                while True:
-                    msg = await receive()
-                    body += msg.get("body", b"")
-                    if not msg.get("more_body"):
-                        break
+            while True:
+                msg = await receive()
+                body += msg.get("body", b"")
+                if not msg.get("more_body"):
+                    break
             payload = {}
             if body:
                 try:
@@ -603,7 +661,7 @@ class NetworkManager:
                     await _asgi_json(send, 400, {"status": "failed", "retcode": RETCODE_BAD_PARAM})
                     return
             if not payload.get("action"):
-                # 没带 action 的 GET：把 query 里的参数当作动作参数
+                # POST 没带 body.action：把 query 里的参数当作动作参数
                 action = query.get("action") or ""
                 if not action:
                     await _asgi_json(
@@ -787,6 +845,31 @@ class NetworkManager:
                     }
                 )
         return out
+
+
+def _is_loopback_host(value: str) -> bool:
+    """Host / Origin 里的主机名是不是本机回环（也用来判断监听地址）。
+
+    只认 127.0.0.0/8、::1 与 localhost。DNS rebinding 把攻击者的域名解析到
+    127.0.0.1 时，请求里的 Host 仍是那个域名，会在这里被挡下；空值表示这一头本来
+    就没有（非浏览器客户端不发 Origin），不算跨站。
+    """
+    text = (value or "").strip()
+    if not text:
+        return True
+    if "://" in text:
+        text = urlparse(text).hostname or ""
+    elif text.startswith("["):
+        text = text[1 : text.find("]")] if "]" in text else text
+    else:
+        text = text.split(":", 1)[0]
+    text = text.strip().lower()
+    if text == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(text).is_loopback
+    except ValueError:
+        return False
 
 
 async def _asgi_json(send, status: int, payload: dict):

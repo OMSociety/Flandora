@@ -34,12 +34,14 @@
 | --- | --- |
 | `data/config.json` | 全部配置（含 token 与 API key，别提交进仓库） |
 | `data/wx_key.dat` | 数据库口令（DPAPI 加密，绑定当前 Windows 账户） |
-| `data/wx_image_key.json` | 图片密钥 |
+| `data/wx_image_key.json` | 图片解码用的 AES 与 XOR 密钥（AES 部分是 DPAPI 密文，与 `wx_key.dat` 同绑当前 Windows 账户） |
 | `data/id_map.json` | wxid / 群 ID 与整数 ID 的映射表，删了 ID 会重新分配 |
 | `data/msg_ids.db` | 消息号表（`message_id` 与微信库行号的对应） |
 | `data/messages.db` | 已推送事件的存档，供 `get_msg`、历史检索与仪表盘统计 |
 | `data/wx_cache/` | 解密副本与游标，可随时删 |
 | `data/updates/` | 更新用的安装包、暂存目录、备份与替换脚本，可随时删 |
+| `data/flandora.pid` | 当前进程号，只作人工排查用，可随时删 |
+| `data/wizard.json` | 取钥向导的免责声明确认状态，删了会要求重新确认一次 |
 | `data/flandora.log` | 运行日志（UTF-8），写满按份轮转 |
 
-换机器时把整个目录带走即可保住 ID 映射与推送存档；`wx_key.dat` 除外——它由 DPAPI 加密、只有生成它的那个 Windows 账户解得开，到新机器上要在取钥向导里重新取一次。
+换机器时把整个目录带走即可保住 ID 映射与推送存档；`wx_key.dat` 与 `wx_image_key.json` 里的 AES 密钥除外——它们由 DPAPI 加密、只有生成它们的那个 Windows 账户解得开，到新机器上要在取钥向导里重新取一次。

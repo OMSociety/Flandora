@@ -17,6 +17,7 @@ import time
 
 from . import config, wechat_account, wx_crypto, wx_store
 from .domain.content import IMAGE_PLACEHOLDER
+from .wx_image_key import open_aes_key
 from .wx_store import WxStoreError
 from .wxkey.store import KeyStore, KeyStoreError
 
@@ -251,8 +252,10 @@ def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
     与数据库口令分开存：口令丢了整条通道都不能用，而图片密钥缺失只影响图片。
     所以这里不抛错，让文本消息照常走。
 
-    AES 密钥在落盘时可能有两种写法：32 位十六进制（16 字节二进制），或直接
-    16 个 ASCII 字符。实测微信用的是后者，但两种都接受，避免手工填错就静默失效。
+    AES 密钥落盘时可能是三种写法：DPAPI 密文（``aes_key_dpapi``，取钥时由本机写入，
+    只有同一个 Windows 账户解得开），或手写的明文——32 位十六进制（16 字节二进制），
+    或直接 16 个 ASCII 字符。实测微信用的是最后一种，三种都接受，避免手工填错就静默
+    失效。
 
     **密钥是账号级的**：文件里记了取钥时的账号，与当前登录账号不一致时按「没有
     密钥」处理。否则切号后会拿旧密钥去解新账号的图，解出一堆随机字节再报解码
@@ -279,7 +282,9 @@ def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
         )
         return b"", -1
 
-    aes = _parse_aes_key(payload.get("aes_key") or "")
+    aes = open_aes_key(str(payload.get("aes_key_dpapi") or ""))
+    if not aes:
+        aes = _parse_aes_key(payload.get("aes_key") or "")
     if not aes:
         return b"", -1
     try:
@@ -287,9 +292,9 @@ def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
     except (TypeError, ValueError):
         xor_int = -1
     log.info(
-        "已加载图片密钥（账号 %s），XOR 密钥 %s",
+        "已加载图片密钥（账号 %s），XOR 密钥%s",
         owner or "未知",
-        f"0x{xor_int:02x}" if xor_int >= 0 else "未配置（将自动反推）",
+        "已配置" if xor_int >= 0 else "未配置（将自动反推）",
     )
     return aes, xor_int
 

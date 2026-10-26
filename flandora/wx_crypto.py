@@ -20,6 +20,7 @@ AES 走 Windows CNG（bcrypt.dll），不引入第三方依赖。
 """
 
 import ctypes
+import glob
 import hashlib
 import hmac
 import logging
@@ -322,11 +323,18 @@ def _selftest(argv):
         db_path = argv[1]
         key_hex = argv[2] if len(argv) >= 3 else None
     else:
-        root = (
-            r"D:\WeChatFiles"
-            r"\wxid_demouser10001\db_storage"
-        )
-        db_path = os.path.join(root, "message", "message_0.db")
+        root = os.environ.get("WECHAT_FILES_ROOT", "")
+        if not root:
+            print(
+                "需要库路径：python wx_crypto.py <库路径> <key.hex 里的十六进制>\n"
+                "也可以先设 WECHAT_FILES_ROOT 指向微信数据根目录，再不带参数运行。"
+            )
+            return 2
+        found = sorted(glob.glob(os.path.join(root, "*", "message", "message_0.db")))
+        if not found:
+            print(f"{root} 下没找到 message\\message_0.db，请把库文件路径直接作为第一个参数。")
+            return 2
+        db_path = found[0]
         key_hex = None
 
     if key_hex is None:

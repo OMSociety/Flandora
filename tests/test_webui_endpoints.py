@@ -161,3 +161,20 @@ def test_internal_errors_do_not_leak_exception_text(monkeypatch, client, caplog)
     assert detail not in resp.text
     assert "详细原因见运行日志" in resp.json()["error"]
     assert detail in caplog.text
+
+
+def test_reset_defer_reason_matches_the_implementation():
+    """B-08：档位表里的理由要与 reset 的实际行为一致。
+
+    ``Wizard.reset()`` 只重置步骤状态、取消在跑的任务，不动已存的口令与图片密钥
+    文件；理由里就别写成「会清空已存的密钥」——冒烟表是按这句话决定跳过哪些路由的。
+    """
+    import inspect
+
+    from flandora.webui.api.wizard import DEFER_REASONS
+    from flandora.wizard import Wizard
+
+    source = inspect.getsource(Wizard.reset)
+    assert "os.remove" not in source and "unlink" not in source
+    reason = DEFER_REASONS["POST /api/wizard/reset"]
+    assert "不删" in reason

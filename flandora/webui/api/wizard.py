@@ -30,7 +30,7 @@ DEFER_REASONS: dict[str, str] = {
     "POST /api/wizard/dbkey/start": "会启动取钥器并向微信进程注入",
     "POST /api/wizard/dbkey/manual": "会拿给定口令去解真实库",
     "POST /api/wizard/imagekey/start": "会启动扫描微信内存的取图钥线程",
-    "POST /api/wizard/reset": "会清空向导状态与已存的密钥",
+    "POST /api/wizard/reset": "会取消在跑的取钥任务并重置向导步骤（不删已存口令与密钥文件）",
 }
 
 

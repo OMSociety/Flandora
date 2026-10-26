@@ -7,6 +7,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+import requests
 from flandora_sdk import ApiError, FlandoraHttp, FlandoraWS, MessageChain, TransportError
 from websockets.asyncio.server import serve
 
@@ -237,9 +238,18 @@ def test_http_wrong_token_keeps_the_retcode(http_bridge):
 
 
 def test_http_unreachable_is_transport_error():
+    """D-10：连不上时给一句人话，别把 urllib3 的内部结构摊给用户。"""
     with FlandoraHttp("http://127.0.0.1:1/", timeout=0.5) as client:
-        with pytest.raises(TransportError):
+        with pytest.raises(TransportError) as err:
             client.call("get_status")
+
+    text = str(err.value)
+    assert "HTTPConnectionPool" not in text
+    assert "Max retries" not in text
+    assert "NewConnectionError" not in text
+    assert "http://127.0.0.1:1/" in text  # 地址留着，用户才知道往哪连
+    assert "确认桥接已启动" in text
+    assert isinstance(err.value.__cause__, requests.RequestException)
 
 
 def _error_server(status, body, content_type="text/plain"):

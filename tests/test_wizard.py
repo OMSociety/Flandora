@@ -277,3 +277,21 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
+
+def test_verify_summary_does_not_guess_which_dbs_are_index():
+    """B-07：失败的是不是索引库，按事实写，不拿失败个数推。"""
+    text = wizard_mod.verify_summary(18, 21, ["message_0.db", "message_1.db", "message_2.db"])
+    assert "索引库" not in text
+    assert "message_0.db" in text
+    assert "18/21" in text
+
+
+def test_verify_summary_counts_when_the_list_is_long():
+    text = wizard_mod.verify_summary(1, 12, [f"db{i}.db" for i in range(11)])
+    assert "11 个（见校验日志）" in text
+
+
+def test_verify_summary_all_passed_and_none_passed():
+    assert wizard_mod.verify_summary(5, 5, []) == "5/5 个库全部通过"
+    assert "口令可能不属于当前账号" in wizard_mod.verify_summary(0, 5, ["a.db"] * 5)

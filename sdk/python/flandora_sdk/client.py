@@ -30,6 +30,30 @@ def _auth_headers(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"} if token else {}
 
 
+def _transport_reason(exc: Exception) -> str:
+    """把 requests / urllib3 的异常收敛成一句人话。
+
+    ``str(exc)`` 会把这些库的内部结构整套摊给用户看
+    （``HTTPConnectionPool(host=..., port=...): Max retries exceeded ...``），
+    而第一次连不上的人只需要知道「桥接没起来」还是「地址写错了」。原文仍留在
+    ``__cause__`` 里，要看细节可以顺着异常链取。
+    """
+    if isinstance(exc, requests.exceptions.Timeout):
+        return "等待响应超时"
+    if isinstance(exc, requests.exceptions.SSLError):
+        return "TLS 握手失败"
+    if isinstance(exc, requests.exceptions.ProxyError):
+        return "代理连不上"
+    if isinstance(exc, requests.exceptions.ConnectionError):
+        text = str(exc).lower()
+        if "name or service not known" in text or "nodename nor servname" in text:
+            return "域名解析失败"
+        if "getaddrinfo" in text:
+            return "域名解析失败"
+        return "连接被拒绝或地址不通"
+    return "请求发不出去"
+
+
 def _check(action: str, payload: Any) -> Any:
     if not isinstance(payload, dict):
         raise TransportError(f"{action}：响包不是 JSON 对象")
@@ -132,7 +156,10 @@ class FlandoraHttp(_Actions):
                 timeout=self.timeout,
             )
         except requests.RequestException as e:
-            raise TransportError(f"{action}：连不上桥接（{e}）") from e
+            raise TransportError(
+                f"{action}：连不上 {self.base_url}（{_transport_reason(e)}），"
+                "确认桥接已启动且入口地址正确"
+            ) from e
         if response.status_code >= 400:
             raise _http_error(action, response)
         try:

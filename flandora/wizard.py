@@ -98,6 +98,24 @@ def parse_passphrase(text: str) -> list[bytes]:
     return [text.encode("utf-8", errors="replace")]
 
 
+def verify_summary(passed: int, total: int, failed: list[str]) -> str:
+    """校验结论：只说核对过的事实，不拿失败个数去猜库的种类。
+
+    「未通过的是索引库，不影响正文」曾经是 ``len(failed) <= 3`` 推出来的——
+    名字和类型都没看过，三个正文库一起解不开也会被说成无害。现在把失败的名字
+    照实列出来，让结论能对上校验日志。
+    """
+    if total and passed == total:
+        return f"{passed}/{total} 个库全部通过"
+    if not passed:
+        return f"0/{total} 个库通过，口令可能不属于当前账号"
+    shown = "、".join(failed) if len(failed) <= 5 else f"{len(failed)} 个（见校验日志）"
+    return (
+        f"{passed}/{total} 个库通过；未通过：{shown}。"
+        "正文库解不开说明口令不对或库不完整，若收件异常请重新取一次口令"
+    )
+
+
 class Wizard:
     """四步向导。所有公开方法都是线程安全的。"""
 
@@ -615,17 +633,8 @@ class Wizard:
             self._verify_log(f"[{index}/{len(dbs)}] {name} {'通过' if ok else '未通过'}")
 
         total = len(dbs)
-        if passed == total:
-            self._finish_verify("ok", f"{passed}/{total} 个库全部通过")
-        elif passed:
-            self._finish_verify(
-                "failed",
-                f"{passed}/{total} 个库通过；未通过的是索引库，不影响正文"
-                if len(failed) <= 3
-                else f"{passed}/{total} 个库通过，有 {len(failed)} 个未通过",
-            )
-        else:
-            self._finish_verify("failed", f"0/{total} 个库通过，口令可能不属于当前账号")
+        state = "ok" if passed == total else "failed"
+        self._finish_verify(state, verify_summary(passed, total, failed))
 
     def _verify_log(self, text: str) -> None:
         with self._lock:

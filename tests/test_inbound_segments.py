@@ -1,5 +1,6 @@
 """端到端：收到的引用与 @ 在推出去的事件里已经是段，不是扁平文本。"""
 
+import base64
 import os
 import sys
 
@@ -172,3 +173,86 @@ def test_unclaimable_quote_still_keeps_zero(isolated_ids, isolated_store, monkey
     monkeypatch.setattr(bridge_core.RUNTIME, "store", _StubStore({}))
     event = _push_once(monkeypatch, bridge, {**GROUP_MSG, "content": "同意"})
     assert event["message"][0] == {"type": "reply", "data": {"id": 0}}
+
+
+def _tiny_png(dest):
+    """写一张 1×1 的真 PNG：image 段要读得到文件才会渲染。"""
+    dest.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="
+        )
+    )
+    return dest
+
+
+# ===== 图片：能渲染就只发 image 段，不再叠一段「[图片]」文本 =====
+
+
+def _push_image(monkeypatch, bridge, msg, *, emoji=False):
+    """图片与表情包由工作线程处理，这里直接调那个入口，避免等线程。"""
+    captured = []
+    monkeypatch.setattr(bridge_core, "push_event", lambda ev: captured.append(ev) or 1)
+    monkeypatch.setattr(bridge, "resolve_names", lambda sid: dict(NAMES))
+    message = bridge._entry_for(dict(msg))
+    if emoji:
+        bridge.process_emoji_message(message)
+    else:
+        bridge.process_image_message(message)
+    assert len(captured) == 1, captured
+    return captured[0]
+
+
+def test_image_with_a_file_is_one_segment(isolated_ids, monkeypatch, tmp_path):
+    bridge = _make_bridge()
+    path = _tiny_png(tmp_path / "1.png")
+    event = _push_image(
+        monkeypatch,
+        bridge,
+        {
+            **GROUP_MSG,
+            "content": f"[图片] {path}",
+            "imagePath": str(path),
+            "quote": {},
+        },
+    )
+    assert [seg["type"] for seg in event["message"]] == ["image"], event["message"]
+    # 小图走 base64 内联，大图才给 file://；这里只关心「只有一个 image 段」
+    assert event["message"][0]["data"]["file"].startswith(("base64://", "file://"))
+
+
+def test_image_without_a_file_keeps_the_placeholder(isolated_ids, monkeypatch):
+    bridge = _make_bridge()
+    event = _push_image(
+        monkeypatch,
+        bridge,
+        {**GROUP_MSG, "content": '[图片] md5="0123456789abcdef"', "quote": {}},
+    )
+    assert event["message"] == [{"type": "text", "data": {"text": "[图片]"}}]
+
+
+def test_emoji_with_a_file_is_one_segment(isolated_ids, monkeypatch, tmp_path):
+    bridge = _make_bridge()
+    path = _tiny_png(tmp_path / "emoji.gif")
+    event = _push_image(
+        monkeypatch,
+        bridge,
+        {
+            **GROUP_MSG,
+            "content": '[表情] md5="0123456789abcdef"',
+            "imagePath": str(path),
+            "quote": {},
+        },
+        emoji=True,
+    )
+    assert [seg["type"] for seg in event["message"]] == ["image"], event["message"]
+
+
+def test_emoji_without_a_file_keeps_the_placeholder(isolated_ids, monkeypatch):
+    bridge = _make_bridge()
+    event = _push_image(
+        monkeypatch,
+        bridge,
+        {**GROUP_MSG, "content": '[表情] md5="0123456789abcdef"', "quote": {}},
+        emoji=True,
+    )
+    assert event["message"] == [{"type": "text", "data": {"text": "[表情]"}}]

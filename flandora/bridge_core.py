@@ -15,7 +15,7 @@ import threading
 import time
 
 from . import config, ob_ids, ob_inbound, ob_store, wx_crypto, wx_source
-from .domain.content import IMAGE_PLACEHOLDER, ContentKind, classify
+from .domain.content import EMOJI_PLACEHOLDER, IMAGE_PLACEHOLDER, ContentKind, classify
 from .domain.message import (
     ChatKind,
     ChatRef,
@@ -420,10 +420,18 @@ class Flandora:
             kind = ContentKind.RECALL
         elif data.get("pat"):
             kind = ContentKind.POKE
+        # 图片与表情包的正文只是「[图片] md5="…"」这类占位符：客户端拿到的是 image 段，
+        # 正文里那串 md5 对谁都没用，所以只保留占位符本身
+        if kind is ContentKind.IMAGE:
+            text = IMAGE_PLACEHOLDER
+        elif kind is ContentKind.EMOJI:
+            text = EMOJI_PLACEHOLDER
+        else:
+            text = content
         return InboundMessage(
             chat=chat,
             sender=sender,
-            text=IMAGE_PLACEHOLDER if kind is ContentKind.IMAGE else content,
+            text=text,
             kind=kind,
             media=tuple(media),
             quote=_quote_ref(data.get("quote")),
@@ -450,8 +458,11 @@ class Flandora:
             # 正文保持原样：发言人、群名由事件的 sender/group 字段承载，是否 @ 了
             # 机器人由 is_mentioned 标记。提及的标记字符由 ob_inbound 在认出提及之后
             # 清掉——只有它知道哪一处 @ 是真提及，先清就再也认不出来了。
-            segments = self._inbound_segments(message, message.text)
-            segments.extend(Image(path=path) for path in message.media)
+            # 图片拿到了可渲染的文件就不再带正文：正文此时只是「[图片]」占位符，
+            # 客户端已经有 image 段可显示，再发一遍文本等于同一张图出现两次。
+            images = [Image(path=path) for path in message.media]
+            segments = self._inbound_segments(message, "" if images else message.text)
+            segments.extend(images)
 
             event = render_message_event(
                 Message(

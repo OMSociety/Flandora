@@ -212,7 +212,7 @@ ACTIONS: tuple[Action, ...] = (
     Action(
         name="get_msg",
         category=CAT_MESSAGE,
-        summary="按 message_id 取回消息原文（存档只保留 Flandora 推送过的消息）",
+        summary="按 message_id 取回消息原文（收件与发出去的消息都在存档里）",
         params=(P("message_id", "int", required=True),),
         read_only=True,
     ),

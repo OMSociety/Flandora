@@ -12,7 +12,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from flandora import action_catalog, ob_ids, ob_protocol  # noqa: E402
+from flandora import action_catalog, ob_ids, ob_protocol, ob_store  # noqa: E402
 from flandora.runtime import RUNTIME
 
 
@@ -681,3 +681,73 @@ def test_known_face_id_still_goes_out(monkeypatch, isolated_ids):
     )
     assert resp["status"] == "ok"
     assert sender.texts
+
+
+# ------------------------------------------------- 发出去的消息也要进事件存档
+
+
+def test_sent_message_is_archived_for_get_msg(monkeypatch, isolated_ids):
+    """自己发出的消息进存档：客户端引用机器人说过的话时，靠这个号取回原文。"""
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": uid, "message": [{"type": "text", "data": {"text": "在的"}}]},
+        }
+    )
+    assert resp["status"] == "ok"
+    mid = resp["data"]["message_id"]
+
+    got = _call({"action": "get_msg", "params": {"message_id": mid}})
+    assert got["status"] == "ok"
+    event = got["data"]
+    assert event["post_type"] == "message_sent"
+    assert event["message_id"] == mid
+    assert event["message_type"] == "private"
+    # 私聊事件的 user_id 是对方（与收到私聊消息同一口径），机器人自己才在 self_id
+    assert event["user_id"] == uid
+    assert event["self_id"] == ob_ids.SELF.user_id()
+    assert event["raw_message"] == "在的"
+    assert event["sender"]["wxid"] == ob_ids.SELF.wxid()
+
+
+def test_group_sent_message_carries_group_fields(monkeypatch, isolated_ids):
+    """群里的出站存档带上群号与群名，客户端按群过滤时用得上。"""
+    sender = FakeSender()
+    gid, _uid = _prepare_group(monkeypatch, sender, [])
+    monkeypatch.setattr(
+        ob_protocol,
+        "_groups_roster",
+        lambda: [{"username": "50071592949@chatroom", "name": "测试群"}],
+    )
+    resp = _call(
+        {
+            "action": "send_group_msg",
+            "params": {"group_id": gid, "message": [{"type": "text", "data": {"text": "到了"}}]},
+        }
+    )
+    assert resp["status"] == "ok"
+    got = _call({"action": "get_msg", "params": {"message_id": resp["data"]["message_id"]}})
+    event = got["data"]
+    assert event["message_type"] == "group"
+    assert event["group_id"] == gid
+    assert event["user_id"] == ob_ids.SELF.user_id()
+    assert event["group_name"] == "测试群"
+
+
+def test_failed_send_is_not_archived(monkeypatch, isolated_ids):
+    """一段都没发出去时不留存档：存档里只应有真正送达的消息。"""
+    sender = FakeSender(ok=False)
+    uid = _prepare(monkeypatch, sender)
+    store = ob_store.message_store()
+    before = store.count()
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": uid, "message": [{"type": "text", "data": {"text": "hi"}}]},
+        }
+    )
+    assert resp["status"] == "failed"
+    # 存档为整场会话共用，这里看增量：一发都没出去就不该多出任何行
+    assert store.count() == before

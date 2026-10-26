@@ -95,7 +95,7 @@ AstrBot 把消息链转成 OneBot 段名再发下来，它的语音段是 `recor
 
 被引的是机器人自己发出的那条时，Flandora 会在消息段最前面补一个 `at` 自己的段（`qq` 与事件的 `self_id` 相同），后面照旧跟一个 `reply` 段。
 
-补这一段的原因在 AstrBot 的唤醒检查里（`astrbot/core/pipeline/waking_check/stage.py`）：它把「被 @ 了」「被 @全体成员」「引用了机器人的消息」并列成三条唤醒条件，前两条不依赖回查被引消息，第三条要求 `Reply.sender_id` 等于 `self_id`——而 `sender_id` 来自按 `reply` 段 `message_id` 调 `get_msg` 的结果。机器人自己发出的消息不进事件存档，那个号取不回来（`reply` 段的 `id` 是 0），所以用 `at` 段把「这条消息冲着机器人来」说明白。补上之后，「有人引用机器人说过的话」与真 @ 在唤醒这一层等价。
+补这一段的原因在 AstrBot 的唤醒检查里（`astrbot/core/pipeline/waking_check/stage.py`）：它把「被 @ 了」「被 @全体成员」「引用了机器人的消息」并列成三条唤醒条件，前两条不依赖回查被引消息，第三条要求 `Reply.sender_id` 等于 `self_id`——而 `sender_id` 来自按 `reply` 段 `message_id` 调 `get_msg` 的结果。机器人自己发出的消息现在也会进事件存档（`message_sent`），被引消息的号取得到，这条唤醒条件本身就成立。补上的 `at` 段是第二道保险：客户端版本旧、或存档被清过时，仍能按「被 @」认出这条消息冲着机器人来。
 
 正文不受影响：AstrBot 组装 `message_str` 时跳过开头的 at 段（`aiocqhttp_platform_adapter.py`：第一个 at 的是自己时，不写进 `message_str`）。
 

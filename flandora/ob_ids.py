@@ -233,6 +233,35 @@ class MessageIds:
             ).fetchone()
         return int(row["message_id"]) if row is not None else None
 
+    def bind_pending_outgoing(
+        self, talker: str, server_id: str, *, within: float = 300.0
+    ) -> int | None:
+        """把一条还没绑服务端号的出站消息绑到 ``server_id``。
+
+        自己发出的消息在发号时就拿到了 message_id，但服务端号只有回读本地库才看得见
+        （客户端引用机器人自己的消息时，`<refermsg><svrid>` 指着它）。同一会话里发出
+        的顺序与本地库里的行序一致，所以认最早那条空号；发出超过 ``within`` 秒还没
+        回读到就不认了，免得把后来的消息绑到它身上。
+        """
+        if not isinstance(talker, str) or not talker or not server_id:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT message_id FROM msg_ids"
+                " WHERE talker = ? AND outgoing = 1 AND server_id = '' AND created >= ?"
+                " ORDER BY message_id ASC LIMIT 1",
+                (talker, time.time() - max(0.0, float(within))),
+            ).fetchone()
+            if row is None:
+                return None
+            message_id = int(row["message_id"])
+            self._conn.execute(
+                "UPDATE msg_ids SET server_id = ? WHERE message_id = ?",
+                (str(server_id), message_id),
+            )
+            self._conn.commit()
+            return message_id
+
     def lookup(self, message_id: int) -> dict | None:
         """按 message_id 回查归属（会话、本地行号、方向）。"""
         with self._lock:
@@ -328,6 +357,10 @@ def ensure_message_id(talker: str, local_id: int, **kwargs) -> int:
 
 def allocate_message_id(talker: str, **kwargs) -> int:
     return message_ids().allocate(talker, **kwargs)
+
+
+def bind_pending_outgoing(talker: str, server_id: str, **kwargs) -> int | None:
+    return message_ids().bind_pending_outgoing(talker, server_id, **kwargs)
 
 
 # ---------------------------------------------------------------- 机器人身份

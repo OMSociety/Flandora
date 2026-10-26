@@ -199,3 +199,38 @@ def test_message_ids_reject_bad_input(tmp_path):
             ids.allocate("")
     finally:
         ids.close()
+
+
+def test_outgoing_ids_bind_to_server_ids_in_order(tmp_path):
+    """自己发出的号按发出顺序绑到服务端号：客户端引用机器人消息时靠它回查。"""
+    ids = MessageIds(str(tmp_path / "msg.db"))
+    try:
+        first = ids.allocate("wxid_bob")
+        second = ids.allocate("wxid_bob")
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-1") == first
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-2") == second
+        assert ids.message_by_server("srv-1") == first
+        assert ids.message_by_server("srv-2") == second
+        # 两个号都绑完了，没得绑返回 None；别的会话不会捡走这条
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-3") is None
+        assert ids.bind_pending_outgoing("wxid_alice", "srv-1") is None
+    finally:
+        ids.close()
+
+
+def test_stale_or_foreign_ids_are_not_bound(tmp_path):
+    """太久没回读到的号、收件消息的号、坏参数，都不吃绑定。"""
+    ids = MessageIds(str(tmp_path / "msg.db"))
+    try:
+        stale = ids.allocate("wxid_bob")
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-late", within=0.0) is None
+        assert ids.lookup(stale)["server_id"] == ""
+
+        incoming = ids.ensure("wxid_bob", 9, server_id="srv-in", outgoing=False)
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-x") == stale
+        assert ids.lookup(incoming)["server_id"] == "srv-in"
+
+        assert ids.bind_pending_outgoing("", "srv-y") is None
+        assert ids.bind_pending_outgoing("wxid_bob", "") is None
+    finally:
+        ids.close()

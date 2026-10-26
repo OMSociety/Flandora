@@ -298,7 +298,11 @@ async def _handle_ob_api(data: dict):
         # message_id 必须是真实发出去的号：客户端拿它做回复引用与撤回，
         # 顺手给的假号会让「撤回自己刚发的消息」永远找不到目标。
         if sent_count:
-            resp_data["data"] = {"message_id": ob_ids.allocate_message_id(contact_handle)}
+            message_id = ob_ids.allocate_message_id(contact_handle)
+            resp_data["data"] = {"message_id": message_id}
+            # 自己发出的消息也进存档：客户端引用它时 get_msg 要取得到原文，它的服务端号
+            # 由回读本地库时补上（见 bridge_core 的 _bind_outgoing_server）。
+            _archive_sent(message_id, contact_handle, is_group, outcomes)
 
         # 一段都没发出去时必须回报失败，否则调用方会以为消息已送达并把它记进上下文。
         if not sent_count:
@@ -479,7 +483,7 @@ async def _handle_ob_api(data: dict):
         event = await asyncio.to_thread(ob_store.message_store().get, mid)
         if event is None:
             return _failure(
-                f"没有 message_id={mid} 的消息：存档里只有 Flandora 推送过的事件",
+                f"没有 message_id={mid} 的消息：存档里只有 Flandora 推送过与发出去的消息",
                 action_catalog.RETCODE_NOT_FOUND,
                 echo,
             )
@@ -613,6 +617,71 @@ def render_message_event(message: Message, message_format: str) -> dict:
         # 是否真实 @ 了机器人：由客户端决定要不要响应，桥接只如实标记
         event["is_mentioned"] = bool(message.mentioned)
     return event
+
+
+def make_sent_event(
+    *,
+    message_id: int,
+    contact_handle: str,
+    is_group: bool,
+    texts: list,
+    message_format: str = "",
+) -> dict:
+    """把一条自己发出去的消息渲染成 OneBot v11 的 ``message_sent`` 事件。
+
+    OneBot v11 用 ``message_sent`` 表示机器人自己发出的消息。存下它的用处是：客户端
+    引用这条消息时，被引消息的 ``server_id`` 回查到同一个 ``message_id``，``get_msg``
+    取得到原文——客户端「引用了机器人」的唤醒走的就是这条路。
+
+    ``texts`` 是本次真正送达的各段文案（``[图片]``、``@李四 在吗`` 等），与面板的出站
+    记录同一口径：媒体段的临时文件发完就删，存档里落路径没有意义。
+    """
+    rendered = [{"type": "text", "data": {"text": t}} for t in texts if t]
+    raw_cq = ob_segments.segments_to_cq(rendered)
+    self_id = ob_ids.SELF.user_id()
+    event = {
+        "time": int(time.time()),
+        "self_id": self_id,
+        "post_type": "message_sent",
+        "message_id": int(message_id),
+        "message_type": "group" if is_group else "private",
+    }
+    if is_group:
+        group_id = ob_ids.contact_id(contact_handle)
+        event["group_id"] = group_id
+        event["group_wxid"] = contact_handle
+        event["group_name"] = _group_name(contact_handle) or str(group_id)
+    event["user_id"] = self_id if is_group else (ob_ids.contact_id(contact_handle) or 0)
+    fmt = message_format or config.OB_MESSAGE_FORMAT
+    event["message"] = rendered if fmt == "array" else raw_cq
+    event["raw_message"] = raw_cq
+    event["sender"] = {
+        "user_id": self_id,
+        "nickname": ob_ids.SELF.nickname() or str(self_id),
+        "wxid": ob_ids.SELF.wxid(),
+    }
+    return event
+
+
+def _archive_sent(message_id: int, contact_handle: str, is_group: bool, outcomes) -> None:
+    """把本次真正送达的消息存一份：客户端之后按 message_id 取得到原文。
+
+    存档失败只记日志，不影响已经发出去的消息——送达优先级高于归档，与推送侧的
+    :func:`push_event` 同一口径。
+    """
+    texts = [o.text for o in outcomes if o.status is SendStatus.SENT and o.text]
+    if not texts:
+        return
+    event = make_sent_event(
+        message_id=message_id,
+        contact_handle=contact_handle,
+        is_group=is_group,
+        texts=texts,
+    )
+    try:
+        ob_store.message_store().save_event(event)
+    except Exception as e:  # noqa: BLE001 - 存档失败不阻断发送
+        log.error(f"[OB11] 出站消息未能存档（message_id={message_id}）：{e}")
 
 
 # ============ 客户端消息段准备 ============

@@ -239,7 +239,7 @@
       "name": "get_msg",
       "aliases": [],
       "category": "消息",
-      "summary": "按 message_id 取回消息原文（存档只保留 Flandora 推送过的消息）",
+      "summary": "按 message_id 取回消息原文（收件与发出去的消息都在存档里）",
       "readOnly": true,
       "implemented": true,
       "wip": "",

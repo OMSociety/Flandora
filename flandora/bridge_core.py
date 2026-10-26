@@ -260,9 +260,10 @@ class Flandora:
         其余保持文本。还原不出来的一律留在原文里，不改写内容。
 
         被引的是机器人自己发的消息时，最前面再补一个 at 自己的段：客户端把「被 @」
-        当作唤醒条件（AstrBot 的唤醒检查就在其列），而它认「引用机器人」那条路要先按
-        message_id 取回被引消息——机器人自己发出的消息不进事件存档，那个号取不回来，
-        所以在这里用 at 段把「这条消息冲着机器人来」说明白。正文里已经 @ 机器人时不补。
+        当作唤醒条件（AstrBot 的唤醒检查就在其列）。机器人自己发出的消息现在也进事件
+        存档，按被引消息的号取得到原文（见 :meth:`_bind_outgoing_server`），这个 at 段
+        是第二道保险：客户端版本旧或存档被清过时，仍能按「被 @」认出这条消息冲机器人来。
+        正文里已经 @ 机器人时不补。
         """
         segments: list[Segment] = []
         reply = ob_inbound.reply_segment(message.quote, ob_ids.message_ids().message_by_server)
@@ -283,6 +284,17 @@ class Flandora:
             segments.insert(0, Mention(user_id=ob_ids.SELF.user_id(), name=ob_ids.SELF.nickname()))
         segments.extend(mentions)
         return segments
+
+    @staticmethod
+    def _bind_outgoing_server(talker: str, server_id: str) -> None:
+        """把自己发出的一条消息绑到服务端号上。
+
+        客户端引用机器人自己的消息时，`<refermsg><svrid>` 指的就是这个号；绑上之后
+        `get_msg` 回得出原文，客户端「引用了机器人」的唤醒也就自然成立。
+        """
+        bound = ob_ids.bind_pending_outgoing(str(talker), str(server_id))
+        if bound is not None:
+            log.debug(f"[OB11] 出站消息 {bound} 绑上服务端号 {server_id}")
 
     @staticmethod
     def _message_id_for(session_handle: str, local_id, server_id: str = "") -> int:
@@ -432,7 +444,7 @@ class Flandora:
         查询都只认这一份，不会读到上一次运行留下的 store。
         """
         try:
-            source = wx_source.build_source()
+            source = wx_source.build_source(on_outgoing=self._bind_outgoing_server)
         except Exception as e:  # noqa: BLE001
             log.error(f"本地库收件源启动失败：{e}")
             return

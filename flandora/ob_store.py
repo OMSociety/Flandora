@@ -80,7 +80,7 @@ def _local_hour_start(ts: float) -> int:
 
 
 class MessageStore:
-    """推送过的事件按 ``message_id`` 存档，可按 ID 取、按会话列、按文本搜。"""
+    """收发两边的事件按 ``message_id`` 存档，可按 ID 取、按会话列、按文本搜。"""
 
     def __init__(self, path: str):
         self.path = path

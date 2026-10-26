@@ -43,11 +43,11 @@ class _StubStore:
             {"username": username, "is_group": is_group, "last_local_id": last_local_id}
         )
 
-    def add_message(self, username, local_id, create_time, text, outgoing=False):
+    def add_message(self, username, local_id, create_time, text, outgoing=False, server_id=""):
         self._messages.setdefault(username, []).append(
             {
                 "local_id": local_id,
-                "server_id": "",
+                "server_id": server_id,
                 "local_type": 1,
                 "create_time": create_time,
                 "sender": "wxid_other",
@@ -61,8 +61,8 @@ class _StubStore:
         self._names[username] = name
 
 
-def _source(store, backfill_seconds=0):
-    src = WxLocalSource(store, backfill_seconds=backfill_seconds)
+def _source(store, backfill_seconds=0, on_outgoing=None):
+    src = WxLocalSource(store, backfill_seconds=backfill_seconds, on_outgoing=on_outgoing)
     src.started_at = int(time.time())
     return src
 
@@ -138,6 +138,35 @@ def test_new_session_honours_the_backfill_window():
     store.add_message("wxid_new", 1, now - 120, "窗口内的旧消息")
     store.add_message("wxid_new", 2, now - 1, "刚到的消息")
     assert [m["content"] for m in src.poll()] == ["窗口内的旧消息", "刚到的消息"]
+
+
+def test_self_sent_messages_are_reported_not_pushed():
+    """自己发出的消息不推送（防自回环），但要把服务端号交给上层绑号。"""
+    store = _StubStore([{"username": "wxid_a", "is_group": False, "last_local_id": 0}])
+    seen = []
+    src = _source(store, on_outgoing=lambda talker, sid: seen.append((talker, sid)))
+    src.prime()
+
+    now = int(time.time())
+    store.add_message("wxid_a", 1, now, "我发的", outgoing=True, server_id="srv-1")
+    assert src.poll() == []
+    assert seen == [("wxid_a", "srv-1")]
+
+    # 本地库还没回读到服务端号的行：只跳推送，不报空号
+    store.add_message("wxid_a", 2, now, "还没回读到", outgoing=True)
+    assert src.poll() == []
+    assert seen == [("wxid_a", "srv-1")]
+
+    # 绑号抛异常不该挡住收件
+    def boom(talker, sid):
+        raise RuntimeError("bind failed")
+
+    src.on_outgoing = boom
+    store.add_message("wxid_a", 3, now, "又一条", outgoing=True, server_id="srv-2")
+    assert src.poll() == []
+    store.add_message("wxid_a", 4, now, "收到一条", server_id="srv-3")
+    assert [m["content"] for m in src.poll()] == ["收到一条"]
+    assert seen == [("wxid_a", "srv-1")]
 
 
 def test_new_session_refreshes_display_names():

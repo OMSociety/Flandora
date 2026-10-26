@@ -85,7 +85,13 @@ def load_passphrase(path: str = None) -> bytes:
 class WxLocalSource:
     """轮询本地库，产出统一形态的消息字典。"""
 
-    def __init__(self, store, backfill_seconds: int = 0, poll_seconds: float = 1.0):
+    def __init__(
+        self,
+        store,
+        backfill_seconds: int = 0,
+        poll_seconds: float = 1.0,
+        on_outgoing=None,
+    ):
         self.store = store
         self.backfill_seconds = max(0, int(backfill_seconds or 0))
         self.poll_seconds = max(0.2, float(poll_seconds or 1.0))
@@ -94,6 +100,9 @@ class WxLocalSource:
         # 本进程开始收件的时刻：启动之后新出现的会话靠它划分「历史」与「刚到的」
         self.started_at = int(time.time())
         self._primed = False
+        # 自己发出的消息不推送（防自回环），但要把它的服务端号交给上层绑号：
+        # 客户端引用机器人自己的消息时，靠那个号回查得到原文。
+        self.on_outgoing = on_outgoing
 
     # ---------- 启动 ----------
 
@@ -152,9 +161,22 @@ class WxLocalSource:
             for m in msgs:
                 self.cursors[username] = max(self.cursors[username], m["local_id"])
                 if m["outgoing"]:
+                    self._report_outgoing(username, m)
                     continue
                 out.append(self._to_data(s, m))
         return out
+
+    def _report_outgoing(self, username: str, msg) -> None:
+        """把自己发出的一条消息的服务端号报给上层。绑号失败不影响收件。"""
+        if self.on_outgoing is None:
+            return
+        server_id = str(msg.get("server_id") or "")
+        if not server_id:
+            return
+        try:
+            self.on_outgoing(username, server_id)
+        except Exception as e:  # noqa: BLE001 - 绑号只影响引用回查，不该挡住收件
+            log.debug("出站服务端号上报失败（%s）：%s", username, e)
 
     def _boundary_cursor(self, username: str, latest: int) -> int:
         """新会话的起读游标：分界之前最后一条的 local_id（没有就是 0）。
@@ -313,8 +335,12 @@ def _parse_aes_key(raw: str) -> bytes:
     return b""
 
 
-def build_source(key_file: str = None) -> WxLocalSource:
-    """按配置开一个收件源。"""
+def build_source(key_file: str = None, on_outgoing=None) -> WxLocalSource:
+    """按配置开一个收件源。
+
+    ``on_outgoing(talker, server_id)`` 是可选回调：轮询到自己发出的消息时，把它的
+    服务端号交给上层绑到 message_id 上（客户端引用机器人自己的消息时要用）。
+    """
     root = config.WECHAT_FILES_ROOT or wechat_account.default_root()
     account = wechat_account.current_account(root)
     if account is None:
@@ -343,7 +369,10 @@ def build_source(key_file: str = None) -> WxLocalSource:
         ) from None
 
     src = WxLocalSource(
-        store, backfill_seconds=config.WX_BACKFILL_SECONDS, poll_seconds=config.WX_POLL_SECONDS
+        store,
+        backfill_seconds=config.WX_BACKFILL_SECONDS,
+        poll_seconds=config.WX_POLL_SECONDS,
+        on_outgoing=on_outgoing,
     )
     step = ", ".join(sorted(store._decrypted))
     log.info(

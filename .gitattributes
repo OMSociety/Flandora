@@ -3,6 +3,11 @@
 # 本文件自身也钉 LF，免得检出后再改它时多出一条行尾变更
 .gitattributes text eol=lf
 
+# 兜底：其余文本一律 LF 检出。少了这条，无扩展名的 `.gitignore`、`LICENSE` 与 `*.html`
+# 会跟着 core.autocrlf 一起变成 CRLF，工作区常驻一份「内容相同、只差行尾」的差异。
+# 下面 `*.bat` / `*.ps1` 的规则写在更靠后，按 gitattributes 的就近优先覆盖这里。
+* text=auto eol=lf
+
 # 快照文件由 tools/gen_sdk_catalog.py 生成，CI 用「重新生成后 git diff」来防漂移。
 # 若检出时被 core.autocrlf 改成 CRLF，工作区就会常驻一份「内容相同、只差行尾」的
 # 修改，而 diff 为空——闸门看不见，人也会习惯性忽略 git status。

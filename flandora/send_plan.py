@@ -47,7 +47,7 @@ def plan_message(segments: Sequence[Segment] | None) -> list[SendAction]:
     * Reply 段不产生动作：微信 UIA 构造不出引用，调用方据此回报「只有引用段」。
     * Face 段（已换成微信表情码的 QQ 表情）单独成一条文字，不并入前面的文字：
       它是独立的一次输入。
-    * 媒体段各自成一次发送；File 段不产生动作（协议转换层已按「不支持」拒绝）。
+    * 媒体段各自成一次发送（file 也以文件卡片动作发出）。
     """
     plan: list[SendAction] = []
     run: list[Text | Mention] = []

@@ -272,6 +272,46 @@ def classify(local_type, body):
     return "unknown", f"[未支持的消息类型 {local_type}]"
 
 
+def payload_of(
+    *,
+    local_id: int,
+    server_id,
+    local_type: int,
+    sender: str,
+    create_time,
+    body: str,
+    my_wxid: str = "",
+) -> dict:
+    """把一行本地库消息拼成上游用的字典。
+
+    撤回行（`local_type=10002`）不能按正文推：它得带上 `revoke` 字段，桥接才会把它摘成
+    notice（`bridge_core._notice_for`）。这一行的 body 里通常只剩占位文本，撤回了谁要看
+    同一会话的 sysmsg；解不到也照旧上报，昵称回退到这一行的发送者。
+    """
+    kind, text = classify(local_type, body)
+    quote = quote_ref(body) if kind == "quote" else None
+    if kind == "revoke":
+        revoke = revoke_info(body) or {"nickname": ""}
+    elif kind == "system":
+        revoke = revoke_info(body)
+    else:
+        revoke = None
+    pat = pat_info(body) if kind == "pat" else None
+    return {
+        "local_id": local_id,
+        "server_id": str(server_id or ""),
+        "local_type": local_type,
+        "create_time": create_time,
+        "sender": sender,
+        "kind": kind,
+        "text": text,
+        "quote": quote or {},
+        "revoke": revoke or {},
+        "pat": pat or {},
+        "outgoing": bool(my_wxid) and sender == my_wxid,
+    }
+
+
 class WxStore:
     """一个账号的本地库快照。
 
@@ -584,25 +624,16 @@ class WxStore:
             out = []
             for local_id, server_id, local_type, sender_id, create_time, content in rows:
                 sender = names.get(sender_id, "")
-                body = _text_of(content)
-                kind, text = classify(local_type, body)
-                quote = quote_ref(body) if kind == "quote" else None
-                revoke = revoke_info(body) if kind == "system" else None
-                pat = pat_info(body) if kind == "pat" else None
                 out.append(
-                    {
-                        "local_id": local_id,
-                        "server_id": str(server_id or ""),
-                        "local_type": local_type,
-                        "create_time": create_time,
-                        "sender": sender,
-                        "kind": kind,
-                        "text": text,
-                        "quote": quote or {},
-                        "revoke": revoke or {},
-                        "pat": pat or {},
-                        "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
-                    }
+                    payload_of(
+                        local_id=local_id,
+                        server_id=server_id,
+                        local_type=local_type,
+                        sender=sender,
+                        create_time=create_time,
+                        body=_text_of(content),
+                        my_wxid=self.my_wxid,
+                    )
                 )
             return out
         finally:
@@ -631,25 +662,16 @@ class WxStore:
             out = []
             for local_id, server_id, local_type, sender_id, create_time, content in reversed(rows):
                 sender = names.get(sender_id, "")
-                body = _text_of(content)
-                kind, text = classify(local_type, body)
-                quote = quote_ref(body) if kind == "quote" else None
-                revoke = revoke_info(body) if kind == "system" else None
-                pat = pat_info(body) if kind == "pat" else None
                 out.append(
-                    {
-                        "local_id": local_id,
-                        "server_id": str(server_id or ""),
-                        "local_type": local_type,
-                        "create_time": create_time,
-                        "sender": sender,
-                        "kind": kind,
-                        "text": text,
-                        "quote": quote or {},
-                        "revoke": revoke or {},
-                        "pat": pat or {},
-                        "outgoing": bool(self.my_wxid) and sender == self.my_wxid,
-                    }
+                    payload_of(
+                        local_id=local_id,
+                        server_id=server_id,
+                        local_type=local_type,
+                        sender=sender,
+                        create_time=create_time,
+                        body=_text_of(content),
+                        my_wxid=self.my_wxid,
+                    )
                 )
             return out
         finally:

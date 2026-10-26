@@ -291,3 +291,15 @@ def test_password_set_flag_from_browser_is_ignored(saved, monkeypatch):
     assert "webui_password" not in saved.read_raw()
     assert config.WEBUI_PASSWORD == hashed
     assert saved.read_raw()["group_name_map"] == {"g@chatroom": "群名"}
+
+
+def test_empty_password_string_clears_it(saved):
+    """API 客户端显式提交空串 = 清掉密码；不带这个键才是不改。"""
+    config_api.api_put_config({"webui_password": "secret123"}, Response())
+    assert auth.enabled() is True
+
+    rest = config_api.api_put_config({"webui_password": ""}, Response())
+
+    assert not isinstance(rest, JSONResponse)
+    assert saved.read_raw()["webui_password"] == ""
+    assert auth.enabled() is False

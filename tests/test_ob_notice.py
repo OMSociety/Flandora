@@ -157,3 +157,34 @@ def test_unknown_system_message_is_still_reported(isolated_ids, bridge, monkeypa
     assert len(pushed) == 1, pushed
     assert pushed[0]["post_type"] == "message"
     assert pushed[0]["raw_message"] == "有人加入了群聊"
+
+
+def test_revoke_row_is_reported_as_a_recall():
+    """local_type=10002 那一行必须带 revoke 字段，否则会被当正文推成消息事件。"""
+    row = wx_store.payload_of(
+        local_id=7,
+        server_id=0,
+        local_type=wx_store.BASE_REVOKE,
+        sender="wxid_demo",
+        create_time=1700000000,
+        body="[撤回了一条消息]",
+    )
+
+    assert row["kind"] == "revoke"
+    assert row["revoke"], "撤回行没有 revoke 字段，桥接就摘不成 notice"
+    assert row["text"] == "[撤回了一条消息]"
+
+
+def test_sysmsg_revoke_row_keeps_the_nickname():
+    row = wx_store.payload_of(
+        local_id=8,
+        server_id=0,
+        local_type=wx_store.BASE_SYSTEM,
+        sender="wxid_demo",
+        create_time=1700000001,
+        body=REVOKE_BODY.decode("utf-8"),
+    )
+
+    assert row["kind"] == "system"
+    assert row["revoke"]["nickname"] == "豹豹包"
+    assert row["pat"] == {}

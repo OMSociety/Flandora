@@ -155,8 +155,12 @@ def api_put_config(payload: dict, response: Response):
     # 登录密码只以哈希落盘，明文不出后端：面板传上来的明文在这里就地换掉
     payload.pop("webui_password_set", None)
     if "webui_password" in payload or "webui_password_clear" in payload:
+        given = "webui_password" in payload
         plain = str(payload.pop("webui_password", "") or "")
         clear = bool(payload.pop("webui_password_clear", False))
+        # 显式提交空串就是「清掉密码」；要留着旧密码就别带 webui_password 这个键。
+        if given and not plain.strip():
+            clear = True
         if clear:
             hashed = ""
         elif plain:

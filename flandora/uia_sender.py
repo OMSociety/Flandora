@@ -57,6 +57,9 @@ VK_V = 0x56
 # ShowWindow 命令：还原并激活窗口
 SW_RESTORE = 9
 
+# 微信重启后从登录界面自己走进主界面的等待上限。实测十几秒，超过它才算真的没登录
+ISOLATED_ENTER_SECONDS = 20.0
+
 # WM_KEYUP 的 lParam：低位为重复次数 1，其余位标明键已抬起
 KEYUP_LPARAM = 0xC0000001
 
@@ -367,6 +370,31 @@ class UiaSender(BaseSender):
         """按窗口内容判断状态；实现见 ``win32.windows.state_of``。"""
         return win32_windows.state_of(w)
 
+    def _await_isolated_enter(self, auto, hwnd: int):
+        """等微信从登录界面自己走进主界面，返回可用的控件；等不到返回 None。
+
+        微信刚启动时先显示「正在进入」，几秒后才切到主界面。这段过渡里窗口状态
+        仍是 login，直接判「请先在面板里完成登录」会让人以为要重扫二维码。
+        """
+        deadline = time.monotonic() + ISOLATED_ENTER_SECONDS
+        announced = False
+        while time.monotonic() < deadline:
+            time.sleep(0.5)
+            try:
+                control = auto.ControlFromHandle(hwnd)
+            except Exception:  # noqa: BLE001 - 过渡期控件随时失效，下一轮再试
+                continue
+            if not control or not control.Exists(0.3):
+                continue
+            if self._window_state(control) != "login":
+                if announced:
+                    log.info("微信已进入主界面")
+                return control
+            if not announced:
+                log.info("微信正在从登录界面进入主界面，等它一下")
+                announced = True
+        return None
+
     def _find_window_isolated(self) -> bool:
         """在隔离桌面上定位微信主窗口。
 
@@ -387,8 +415,11 @@ class UiaSender(BaseSender):
                 if not w or not w.Exists(0.3):
                     continue
                 if self._window_state(w) == "login":
-                    log.error("隔离桌面上的微信停在登录界面，请先在面板里完成登录")
-                    return False
+                    entered = self._await_isolated_enter(auto, info["hwnd"])
+                    if entered is None:
+                        log.error("隔离桌面上的微信停在登录界面，请先在面板里完成登录")
+                        return False
+                    w = entered
                 self._window = w
                 self._hwnd = info["hwnd"]
                 log.info(

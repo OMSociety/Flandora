@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="hero-title hero-desc">
   <title id="hero-title">Flandora — 微信到 OneBot v11 的桥</title>
-  <desc id="hero-desc">Flandora 在登录瞬间截获数据库口令，只读解密本机库收取消息，并用 UI 自动化在隔离桌面上以本人身份发送，对外提供 OneBot v11 正向 WebSocket 服务端与控制台。</desc>
+  <desc id="hero-desc">Flandora 在登录瞬间截获数据库口令，只读解密本机库收取消息，并用 UI 自动化在隔离桌面上以本人身份发送，对外提供 OneBot v11 的四类入口（WS 服务端、HTTP 服务端、反向 WS、HTTP 上报）与面板。</desc>
 
   <defs>
     <linearGradient id="hero-bg" x1="0" y1="0" x2="1" y2="1">

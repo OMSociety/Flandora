@@ -404,7 +404,7 @@ def grab_key(
     """扫出 AES 密钥、反推 XOR 密钥、写入文件，返回本次取到的密钥。
 
     落盘的是 DPAPI 密文（``aes_key_dpapi``），与数据库口令用同一套保护；返回的字典里
-    仍带明文 ``aes_key``，供向导与控制台现场显示——明文只留在内存里。
+    仍带明文 ``aes_key``，供面板现场显示——明文只留在内存里。
     """
     attach = sample_from or attach_dir(root)
     aes_key = scan_for_key(

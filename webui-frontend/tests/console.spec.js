@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test'
 import { mockApi } from './fixtures.js'
 
 // 页面登记表与图标白名单都从页面侧的 Vite 模块图读取：Playwright 运行器不编译 .vue，
-// 而登记表静态引入页面组件。读到的仍是控制台真正使用的那份模块，字段与源文件一致。
+// 而登记表静态引入页面组件。读到的仍是面板真正使用的那份模块，字段与源文件一致。
 async function readRegistry(page) {
   return page.evaluate(async () => {
     const [{ PAGES, NAV_GROUPS }, { ICON_NAMES }] = await Promise.all([
@@ -72,10 +72,10 @@ test('all registered routes render and mobile layout has no horizontal overflow'
   await expect(page.locator('.desktop-sidebar')).toBeHidden()
   await page.screenshot({ path: '../.impeccable/review/mobile.png', fullPage: true })
   await page.getByRole('button', { name: '打开导航', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: '控制台导航' })).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '面板导航' })).toBeVisible()
   await page.screenshot({ path: '../.impeccable/review/mobile-navigation.png', fullPage: true })
   await page.getByRole('button', { name: '消息记录', exact: false }).click()
-  await expect(page.getByRole('dialog', { name: '控制台导航' })).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: '面板导航' })).toHaveCount(0)
 
   for (const path of PAGES.filter((item) => item.menu !== false).map((item) => item.id)) {
     await page.goto(`/#/${path}`)
@@ -400,15 +400,15 @@ test('password gate blocks the console until login succeeds', async ({ page }) =
   await mockApi(page, { auth: { password: 'secret123' } })
   await page.goto('/#/dashboard')
 
-  await expect(page.locator('.login-card h1')).toHaveText('进入控制台')
+  await expect(page.locator('.login-card h1')).toHaveText('进入面板')
   await expect(page.locator('.page-heading h1')).toHaveCount(0)
 
   await page.getByLabel('密码').fill('wrong-pass')
-  await page.getByRole('button', { name: '进入控制台' }).click()
+  await page.getByRole('button', { name: '进入面板' }).click()
   await expect(page.locator('.login-error')).toHaveText('密码不对')
 
   await page.getByLabel('密码').fill('secret123')
-  await page.getByRole('button', { name: '进入控制台' }).click()
+  await page.getByRole('button', { name: '进入面板' }).click()
   await expect(page.locator('.page-heading h1')).toBeVisible()
   await expect(page.locator('.status-grid article')).toHaveCount(4)
 })

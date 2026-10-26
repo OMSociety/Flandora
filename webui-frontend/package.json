@@ -1,7 +1,7 @@
 {
   "name": "flandora-webui",
   "version": "1.0.0",
-  "description": "Flandora 控制台 - 微信 ↔ OneBot 桥接 WebUI",
+  "description": "Flandora 面板 - 微信 ↔ OneBot 桥接 WebUI",
   "private": true,
   "type": "module",
   "scripts": {

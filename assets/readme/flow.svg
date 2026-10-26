@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="map-title map-desc">
   <title id="map-title">Flandora 运行链路</title>
-  <desc id="map-desc">微信 PC 客户端与本机数据库构成收件侧，隔离桌面与 UI 自动化构成发送侧；两侧在 Flandora 内合流，对外只暴露 OneBot v11 正向 WebSocket 服务端与控制台。</desc>
+  <desc id="map-desc">微信 PC 客户端与本机数据库构成收件侧，隔离桌面与 UI 自动化构成发送侧；两侧在 Flandora 内合流，对外只暴露 OneBot v11 的入口（WS 服务端、HTTP 服务端、反向 WS、HTTP 上报）与面板。</desc>
 
   <defs>
     <marker id="arrow-right" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto">

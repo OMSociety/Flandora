@@ -1,7 +1,7 @@
 """OneBot v11 动作目录：Flandora 支持哪些动作、各自要什么参数、能不能真正执行。
 
 本模块是动作面的唯一真相源。派发层（ob_protocol）用它判断「已知 / 未实现 / 未知」，
-控制台调试台、Python SDK 与 MCP Server 用它生成表单与工具清单，因此新增或下线
+面板的调试台、Python SDK 与 MCP Server 用它生成表单与工具清单，因此新增或下线
 动作只改这里一处，三处消费方自动跟上。
 
 口径：
@@ -677,7 +677,7 @@ def validate_params(action: Action | str, params: dict | None) -> list[str]:
 
 
 def catalog_dict() -> dict:
-    """整份目录的 JSON 形状，供控制台、SDK 与 MCP 生成清单。"""
+    """整份目录的 JSON 形状，供面板、SDK 与 MCP 生成清单。"""
     return {
         "categories": list(CATEGORIES),
         "actions": [action.to_dict() for action in ACTIONS],

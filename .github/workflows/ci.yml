@@ -129,7 +129,7 @@ jobs:
           Write-Host ("载荷清单通过：" + $payload.Name + "，" + $zip.Name + " " + [math]::Round($zip.Length / 1MB, 2) + " MB")
 
   frontend:
-    name: WebUI 控制台（build · playwright）
+    name: 面板（build · playwright）
     runs-on: windows-latest
     timeout-minutes: 20
     defaults:
@@ -148,5 +148,5 @@ jobs:
         run: npm run build
       - name: 安装浏览器
         run: npx playwright install chromium
-      - name: 控制台冒烟测试
+      - name: 面板冒烟测试
         run: npm test

@@ -113,7 +113,7 @@ def test_grab_key_writes_sealed_key():
             stored = json.load(fh)
         assert "aes_key" not in stored, f"落盘文件里还有明文密钥：{stored}"
         assert stored["aes_key_dpapi"], stored
-        assert payload["aes_key"] == "0123456789abcdef", "返回值里应保留明文，供控制台显示"
+        assert payload["aes_key"] == "0123456789abcdef", "返回值里应保留明文，供面板显示"
         with config.temporary(
             os.path.join(d, "config.json"), overrides={"wx_image_key_file": path}
         ):

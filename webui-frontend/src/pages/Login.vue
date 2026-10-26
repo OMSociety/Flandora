@@ -32,7 +32,7 @@ onMounted(() => inputEl.value?.focus())
   <div class="login-shell">
     <form class="login-card" @submit.prevent="submit">
       <div class="login-brand"><BrandMark :size="38" /><span>Flandora</span></div>
-      <h1>进入控制台</h1>
+      <h1>进入面板</h1>
       <p class="login-sub">这个面板设了登录密码。密码只在这台机器上校验，浏览器只拿到一张会话 Cookie。</p>
       <label for="login-password">密码</label>
       <input
@@ -47,7 +47,7 @@ onMounted(() => inputEl.value?.focus())
       />
       <p id="login-error" class="login-error" role="alert">{{ error }}</p>
       <button type="submit" class="btn login-submit" :disabled="pending || !password">
-        <AppIcon name="LogIn" :size="15" />{{ pending ? '正在校验…' : '进入控制台' }}
+        <AppIcon name="LogIn" :size="15" />{{ pending ? '正在校验…' : '进入面板' }}
       </button>
     </form>
   </div>

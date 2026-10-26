@@ -168,7 +168,7 @@ onBeforeUnmount(() => {
     <aside class="desktop-sidebar" :class="{ collapsed: sidebarCollapsed }"><Sidebar :active="tab" :collapsed="sidebarCollapsed" @change="changePage" @about="openAbout" /></aside>
     <Teleport to="body">
       <div v-if="drawerOpen" class="drawer-mask" @click.self="closeDrawer">
-        <aside ref="drawerEl" class="mobile-nav" role="dialog" aria-modal="true" aria-label="控制台导航">
+        <aside ref="drawerEl" class="mobile-nav" role="dialog" aria-modal="true" aria-label="面板导航">
           <button class="icon-btn drawer-close" aria-label="关闭导航" @click="closeDrawer"><AppIcon name="X" /></button>
           <Sidebar :active="tab" @change="changePage" @about="openAbout" />
         </aside>

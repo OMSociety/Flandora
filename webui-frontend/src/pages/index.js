@@ -8,7 +8,7 @@ import DevPanel from './DevPanel.vue'
 import Config from './Config.vue'
 
 /**
- * 控制台页面的唯一登记处：导航、路由解析与页面渲染都从这张表派生。
+ * 面板页面的唯一登记处：导航、路由解析与页面渲染都从这张表派生。
  *
  * 新增页面只需在 `src/pages/` 写组件，然后在这里加一条；没有第二处要同步。
  * 字段约定：

@@ -21,7 +21,7 @@ const version = computed(() => status.version || '')
       </div>
     </div>
 
-    <nav class="nav" aria-label="控制台导航">
+    <nav class="nav" aria-label="面板导航">
       <section v-for="group in NAV_GROUPS" :key="group.label || 'standalone'" class="nav-group">
         <h2 v-if="group.label">{{ group.label }}</h2>
         <button

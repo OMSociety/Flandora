@@ -44,6 +44,7 @@ WM_KEYUP = 0x0101
 WM_CHAR = 0x0102
 WM_MOUSEMOVE = 0x0200
 WM_LBUTTONDOWN = 0x0201
+MK_LBUTTON = 0x0001
 WM_LBUTTONUP = 0x0202
 VK_CONTROL = 0x11
 VK_LCONTROL = 0xA2
@@ -370,29 +371,129 @@ class UiaSender(BaseSender):
         """按窗口内容判断状态；实现见 ``win32.windows.state_of``。"""
         return win32_windows.state_of(w)
 
-    def _await_isolated_enter(self, auto, hwnd: int):
-        """等微信从登录界面自己走进主界面，返回可用的控件；等不到返回 None。
+    @staticmethod
+    def _find_button(window, name: str, max_depth: int = 12):
+        """在控件树里按名字找按钮。
 
-        微信刚启动时先显示「正在进入」，几秒后才切到主界面。这段过渡里窗口状态
-        仍是 login，直接判「请先在面板里完成登录」会让人以为要重扫二维码。
+        微信的登录界面是自绘窗口，`进入微信` 埋在三层 Pane/Group 之下，直接按
+        子控件找（`window.ButtonControl(Name=…)`）只搜一层，永远找不到。
+        """
+        pending = [(window, 0)]
+        while pending:
+            control, depth = pending.pop()
+            if depth > max_depth:
+                continue
+            try:
+                children = control.GetChildren()
+            except Exception:  # noqa: BLE001 - 过渡期控件随时失效，换下一支
+                continue
+            for child in children:
+                try:
+                    if child.Name == name and child.ControlTypeName == "ButtonControl":
+                        return child
+                except Exception:  # noqa: BLE001
+                    continue
+                pending.append((child, depth + 1))
+        return None
+
+    @staticmethod
+    def _client_point(button_rect, window_rect) -> tuple[int, int]:
+        """按钮中心换算成窗口客户区坐标（UIA 的矩形是屏幕坐标）。"""
+        x = (button_rect.left + button_rect.right) // 2 - window_rect.left
+        y = (button_rect.top + button_rect.bottom) // 2 - window_rect.top
+        return x, y
+
+    @staticmethod
+    def _post_left_click(hwnd: int, x: int, y: int) -> bool:
+        """向窗口投递一次左键点击。
+
+        隔离桌面上 `InvokePattern.Invoke()` 会报告成功但界面不动——Qt 在窗口未
+        激活时不处理 UIA 触发的动作；投鼠标消息这条路径有效。
+        """
+        user32 = ctypes.windll.user32
+        lparam = (y << 16) | (x & 0xFFFF)
+        try:
+            user32.PostMessageW(hwnd, WM_MOUSEMOVE, 0, lparam)
+            time.sleep(0.05)
+            user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lparam)
+            time.sleep(0.05)
+            user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lparam)
+        except Exception as exc:  # noqa: BLE001
+            log.debug(f"投递点击失败：{exc}")
+            return False
+        return True
+
+    def _click_enter_wechat(self, hwnd: int) -> bool:
+        """登录界面上有「进入微信」时点它：那是自动登录的确认按钮，不是扫码。
+
+        换一张桌面读控件树要求线程先归位，而归位只能在没建过窗口的线程里做，所以
+        这一段另起线程（每线程只归位一次，命中的线程结束即回收）。
+        """
+        if not self.isolated_desktop:
+            return False
+        hit: list[str] = []
+
+        def act() -> None:
+            try:
+                ensure_com()
+                if not win32_windows.join_thread_to_desktop(self.isolated_desktop):
+                    log.debug(f"线程没能归位到 {self.isolated_desktop}，放弃点登录按钮")
+                    return
+                control = self._auto.ControlFromHandle(hwnd)
+                if not control or not control.Exists(0.3):
+                    return
+                window_rect = control.BoundingRectangle
+                for name in ("进入微信", "进入"):
+                    button = self._find_button(control, name)
+                    if button is None:
+                        continue
+                    x, y = self._client_point(button.BoundingRectangle, window_rect)
+                    if self._post_left_click(hwnd, x, y):
+                        hit.append(name)
+                        return
+            except Exception as exc:  # noqa: BLE001 - 点不动就退回等用户
+                log.debug(f"点登录按钮失败：{exc}")
+
+        worker = threading.Thread(target=act, name="enter-wechat", daemon=True)
+        worker.start()
+        worker.join(6.0)
+        if hit:
+            log.info(f"登录界面上有「{hit[0]}」，已点它")
+            return True
+        return False
+
+    def _await_isolated_enter(self, auto, hwnd: int):
+        """等微信从登录界面走进主界面，返回可用的控件；等不到返回 None。
+
+        微信刚启动时先显示「正在进入」，十几秒后才切到主界面；自动登录还会停在
+        「进入微信」这个确认按钮上等一次点击。点过之后窗口句柄会换掉，所以每轮
+        重新枚举，而不是一直盯着旧句柄。
         """
         deadline = time.monotonic() + ISOLATED_ENTER_SECONDS
         announced = False
+        clicked = False
         while time.monotonic() < deadline:
             time.sleep(0.5)
             try:
-                control = auto.ControlFromHandle(hwnd)
-            except Exception:  # noqa: BLE001 - 过渡期控件随时失效，下一轮再试
+                cands = win32_windows.enum_wechat_windows(self.isolated_desktop)
+            except Exception:  # noqa: BLE001 - 枚举失败按「还没起来」处理
                 continue
-            if not control or not control.Exists(0.3):
-                continue
-            if self._window_state(control) != "login":
-                if announced:
-                    log.info("微信已进入主界面")
-                return control
-            if not announced:
-                log.info("微信正在从登录界面进入主界面，等它一下")
-                announced = True
+            for info in cands:
+                try:
+                    control = auto.ControlFromHandle(info["hwnd"])
+                except Exception:  # noqa: BLE001 - 过渡期控件随时失效，下一轮再试
+                    continue
+                if not control or not control.Exists(0.3):
+                    continue
+                if self._window_state(control) != "login":
+                    if announced or clicked:
+                        log.info("微信已进入主界面")
+                    return control
+                if not clicked:
+                    clicked = self._click_enter_wechat(info["hwnd"])
+                if not announced:
+                    log.info("微信正在从登录界面进入主界面，等它一下")
+                    announced = True
         return None
 
     def _find_window_isolated(self) -> bool:
@@ -417,7 +518,9 @@ class UiaSender(BaseSender):
                 if self._window_state(w) == "login":
                     entered = self._await_isolated_enter(auto, info["hwnd"])
                     if entered is None:
-                        log.error("隔离桌面上的微信停在登录界面，请先在面板里完成登录")
+                        log.error(
+                            "隔离桌面上的微信需要登录：在面板「微信画面」里点「进入微信」或扫码"
+                        )
                         return False
                     w = entered
                 self._window = w

@@ -140,7 +140,7 @@ def _frida():
 
 def _weixin_pids() -> list[int]:
     frida = _frida()
-    # frida 17 起进程枚举挪到了设备对象上，模块级的 enumerate_processes 已移除。
+    # frida 17 把进程枚举挂在设备对象上：device.enumerate_processes()
     device = getattr(frida, "get_local_device", lambda: None)()
     source = device if device is not None else frida
     return [p.pid for p in source.enumerate_processes() if p.name.lower() == "weixin.exe"]

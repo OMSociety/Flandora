@@ -84,8 +84,8 @@ def default_key_file() -> str:
 def seal_aes_key(aes_key: bytes) -> str:
     """把 AES 密钥用当前 Windows 账户的 DPAPI 凭据封起来。
 
-    与数据库口令（``wx_key.dat``）用同一套保护：同机同账户才解得开。密钥文件以前
-    写的是明文，同一个磁盘上的任何程序都能拿去解密图片。
+    与数据库口令（``wx_key.dat``）用同一套保护：同机同账户才解得开，磁盘上的
+    其它程序读不走明文密钥。
     """
     return base64.b64encode(wxkey_store.protect(aes_key)).decode("ascii")
 

@@ -1,8 +1,8 @@
 """两条发送入口收敛到同一个执行函数。
 
-send_msg 与面板的 /api/send 曾经各拼一套发送逻辑：一处改了去重或错误文案，
-另一处不会跟着变。这里打桩 :func:`flandora.domain.send.execute`，证明两条入口
-都真的走到它，并且给出的动作是同一种形状。
+send_msg 与面板的 /api/send 共用同一个执行函数：去重、错误文案与结果形状只写
+一处，两条入口跟着同一份规则走。这里打桩 :func:`flandora.domain.send.execute`，
+证明两条入口都真的走到它，并且给出的动作是同一种形状。
 """
 
 import asyncio

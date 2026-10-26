@@ -56,5 +56,4 @@ CurrentVersion\Run`），登录时由资源管理器按这条值拉起管理器�
 python -m pip install -r manager/requirements.txt
 ```
 
-只有 `pystray`（托盘图标与菜单）与 `Pillow`（画图标）两个包。管理器自己不带设置界面：
-设置是桥接自带的网页面板，用浏览器打开。
+只有 `pystray`（托盘图标与菜单）与 `Pillow`（画图标）两个包。设置都在桥接自带的网页面板里，用浏览器打开。

@@ -322,11 +322,11 @@ def _ps_literal(value: str) -> str:
 
 
 def swap_script(info: dict, backup_dir: str | None = None) -> str:
-    """生成「等本进程退出 → 备份旧目录 → 覆盖 → 重启并观察」的 PowerShell 脚本。
+    """生成「等本进程退出 → 备份程序目录 → 覆盖 → 重启并观察」的 PowerShell 脚本。
 
     失败时把备份挪回去，保证程序至少还能启动。新版本拉起后观察
     ``STARTUP_GRACE_SECONDS`` 秒；进程提前退出同样算失败并回滚——「更新成功但起不来」
-    比不更新更糟，用户至少还能回到能跑的旧版。
+    比不更新更糟，用户至少还能回到备份里那份能跑的版本。
     """
     target = info.get("app_dir") or app_dir()
     staging = info["staging"]
@@ -335,7 +335,7 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
     exe = os.path.join(target, MAIN_EXE)
     lines = [
         '$ErrorActionPreference = "Stop"',
-        f"# 旧进程 {os.getpid()} 退出后再动程序目录，最多等 60 秒",
+        f"# 本进程 {os.getpid()} 退出后再动程序目录，最多等 60 秒",
         f"Wait-Process -Id {os.getpid()} -Timeout 60 -ErrorAction SilentlyContinue",
         "Start-Sleep -Milliseconds 800",
         f"$target = {_ps_literal(target)}",
@@ -365,12 +365,12 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
         "  Write-Host '更新完成，新版本正在运行'",
         "} catch {",
         "  Write-Host ('更新失败：' + $_.Exception.Message)",
-        "  # 回滚只做覆盖，不先删目标目录：备份里一定有旧版的每个文件，覆盖回旧版即可；",
-        "  # 先删会把「搬到一半失败」时留在目标里的旧文件一起删掉，反而救不回来。",
+        "  # 回滚只做覆盖，不先删目标目录：备份里一定有原版本的每个文件，覆盖回去即可；",
+        "  # 先删会把「搬到一半失败」时留在目标里的文件一起删掉，反而救不回来。",
         "  Get-ChildItem -LiteralPath $backup -Force | ForEach-Object {",
         "    Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force",
         "  }",
-        "  Write-Host ('已回滚到旧版本，备份留在：' + $backup)",
+        "  Write-Host ('已回滚到原版本，备份留在：' + $backup)",
         "  Pause",
         "}",
     ]

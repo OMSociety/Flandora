@@ -98,7 +98,7 @@ VERSION_ISS_TEXT = """\
 #define PayloadDir "..\\dist\\Flandora-v{version}"
 """
 
-# 不许再出现版本字面量的约定：这些文件改为从包内读。
+# 版本号只从包内读：下面这些文件不得出现版本字面量。
 GUARDS: tuple[tuple[str, str, str], ...] = (
     (
         "build.py",
@@ -236,7 +236,7 @@ def check(root: str = ROOT) -> list[str]:
                 line = _line_at(text, match.start())
                 problems.append(f"{rule.path}:{line} 期望 {version} 实际 {actual}（{rule.label}）")
 
-    # 3. 契约：这些文件必须已经改成从包内读
+    # 3. 契约：这些文件的版本号从包内读
     for path, pattern, reason in GUARDS:
         if not re.search(pattern, _read(root, path)):
             problems.append(f"{path}:1 期望 匹配 {pattern} 实际 没有（{reason}）")

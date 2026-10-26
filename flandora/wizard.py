@@ -101,9 +101,8 @@ def parse_passphrase(text: str) -> list[bytes]:
 def verify_summary(passed: int, total: int, failed: list[str]) -> str:
     """校验结论：只说核对过的事实，不拿失败个数去猜库的种类。
 
-    「未通过的是索引库，不影响正文」曾经是 ``len(failed) <= 3`` 推出来的——
-    名字和类型都没看过，三个正文库一起解不开也会被说成无害。现在把失败的名字
-    照实列出来，让结论能对上校验日志。
+    失败的名字与类型照实列出来，让结论能对上校验日志；按个数推断会出现
+    「三个正文库一起解不开也被说成无害」这种与事实相反的结论。
     """
     if total and passed == total:
         return f"{passed}/{total} 个库全部通过"

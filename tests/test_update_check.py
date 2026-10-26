@@ -221,11 +221,10 @@ def test_check_async_is_quiet_when_offline(opener, clean_update_state):
 
 
 def main() -> int:
-    """脚本直跑：本文件已改成 pytest 原生用例（fixture + parametrize）。
+    """脚本直跑：委托给 pytest 执行同一个文件。
 
-    双模式的通用 main() 只能直接调用无参函数，而这里的用例依赖 fixture 与
-    参数化表，直接调会 TypeError。所以脚本模式改为委托给 pytest，两条入口
-    仍是同一套断言，不会出现「pytest 绿、脚本红」的分裂。
+    本文件的用例依赖 fixture 与参数化表，逐条直接调用会 TypeError。委托之后
+    两条入口跑的是同一套断言，不会出现「pytest 绿、脚本红」的分裂。
     """
     import pytest
 

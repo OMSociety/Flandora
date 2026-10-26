@@ -42,7 +42,7 @@ def split_mentions(text: str, resolve) -> list[Segment]:
     这一处 @ 保留「@昵称」这段文字，不做任何猜测。
 
     标记字符必须先用后清：它是判断「这是不是真 @」的唯一依据，清早了就再也认不出
-    提及（那正是本函数与调用方之间曾经踩过的坑）；输出的文本段里不留它。
+    提及；输出的文本段里不留它。
     """
     segments: list[Segment] = []
     if not text:

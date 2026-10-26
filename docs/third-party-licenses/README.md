@@ -50,7 +50,7 @@
 
 ## 说明
 
-- frida 只随 `tools\Flandora-KeyTool.exe` 分发；主程序不含它。
+- frida 只随 `tools\Flandora-KeyTool.exe` 分发。
 - pystray 与 Pillow 只随托盘管理器 `Flandora.exe` 分发。
 - 若你要基于本仓库重新打包分发，请自行确认上述条款对你的分发方式是否满足，尤其是
   LGPL-3.0（pystray）对「允许使用者替换该库」的要求。

@@ -1,8 +1,8 @@
 """面板全部 /api 路由的冒烟：每条要么真打一次，要么登记为「要有外部条件才打」。
 
-为什么要有这一层：单元测试与路由函数测试都只覆盖被人记得的那些路径，而
-``/api/control`` 曾经因为一句错误的 ``from main import ...`` 整条 500，404 条
-用例全绿也没发现。这里用真 HTTP 走一遍中间件与路由表，只断言「不是 500」——
+为什么要有这一层：单元测试与路由函数测试都只覆盖被人记得的那些路径，而接线
+一旦出错（例如一条 import 写错），整条路由就是 500，几百条用例全绿也发现不了。
+这里用真 HTTP 走一遍中间件与路由表，只断言「不是 500」——
 它不关心业务结果，只保证接线是通的。
 
 路由表分两档，来源是各业务组自己登记的表（``flandora.webui.api.ALL_ROUTES()``）：
@@ -144,8 +144,8 @@ def test_control_endpoints_reach_the_bridge_module(monkeypatch, client):
 def test_internal_errors_do_not_leak_exception_text(monkeypatch, client, caplog):
     """B-06：面板的 500 只给能照着做的原因，异常原文只进日志。
 
-    以前的写法是 ``str(e)`` 或 ``f"{type(e).__name__}: {e}"``：内部路径、SQL、
-    连接池的重试栈这些文本会直接发到浏览器，而排障需要它们待在日志里。
+    发到浏览器的文案不带异常类名、路径、SQL 与连接池重试栈；那些文本留在
+    日志里，排障时去那边看。
     """
     detail = "RuntimeError: 打不开 C:\\data\\config.json（SQLITE_BUSY）"
 

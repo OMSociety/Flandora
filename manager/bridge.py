@@ -205,7 +205,7 @@ class BridgeProcess:
                         return True, "已停止桥接"
                     time.sleep(0.2)
 
-            # 兜底：还活着的全部结束（旧版本桥接没有停止信号监听时也走这里）
+            # 兜底：超时后仍活着的进程直接结束（桥接不响应停止请求时走这里）
             notes: list[str] = [note]
             if self._child_alive():
                 notes.append(self._terminate(self.process, 3.0))

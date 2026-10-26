@@ -604,7 +604,7 @@ def _restore_payload_data() -> bool:
     if target.exists():
         shutil.rmtree(target)
     shutil.move(str(stash), str(target))
-    return True
+    return any(target.iterdir())
 
 
 def _zip_payload(rel: Path, zip_path: Path) -> Path:
@@ -799,7 +799,12 @@ def main(argv: list[str] | None = None) -> int:
     build_keytool()
     build_manager()
     zip_path = assemble_zip()
-    if stashed and _restore_payload_data():
+    if stashed:
+        # 暂存没放回来就等于把用户的配置、微信口令与消息存档弄丢了，宁可打包失败也要喊出来
+        if not _restore_payload_data():
+            raise SystemExit(
+                f"载荷的 data/ 暂存在 {payload_data_stash()}，没能放回 {DIST / PKG_NAME / 'data'}"
+            )
         print("  已保留上次的 data/（配置、口令与存档）")
     setup_path = build_installer()
     # 这里不要用 emoji：Windows 控制台默认 GBK 编码，编码失败会让打包成功却以退出码 1 结束

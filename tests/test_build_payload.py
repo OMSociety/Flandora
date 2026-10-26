@@ -106,6 +106,15 @@ def test_payload_rebuild_carries_the_user_data_over(tmp_path, monkeypatch):
     assert not build.payload_data_stash().exists()
 
 
+def test_restore_reports_failure_when_the_stash_is_gone(tmp_path, monkeypatch):
+    """暂存没了要说「没放回」，不能静默当成成功。"""
+    monkeypatch.setattr(build, "DIST", tmp_path / "dist")
+    monkeypatch.setattr(build, "payload_data_stash", lambda: tmp_path / "stash")
+    (build.DIST / build.PKG_NAME / "data").mkdir(parents=True)
+
+    assert build._restore_payload_data() is False
+
+
 def test_zip_leaves_the_user_data_out(tmp_path, monkeypatch):
     rel = tmp_path / "payload"
     (rel / "data").mkdir(parents=True)

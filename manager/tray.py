@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import ctypes
 import os
 import threading
 import time
@@ -24,6 +25,36 @@ RUNNING_COLOUR = (7, 193, 96, 255)
 STOPPED_COLOUR = (150, 150, 150, 255)
 POLL_SECONDS = 2.0
 PANEL_WAIT_SECONDS = 10.0
+
+# uxtheme.dll 的序号导出（未公开，但 Windows 10/11 上稳定）：让经典 Win32 菜单
+# 跟随系统深浅色。135 = SetPreferredAppMode，136 = FlushMenuThemes；
+# 模式 1 = AllowDark，即"系统用深色就跟，系统用浅色就浅"。
+_SET_PREFERRED_APP_MODE = 135
+_FLUSH_MENU_THEMES = 136
+_ALLOW_DARK = 1
+
+
+def enable_dark_menus() -> bool:
+    """让右键菜单按系统的深浅色主题绘制；系统不支持时返回 False 保持默认外观。
+
+    经典菜单的颜色由 uxtheme 决定，进程不声明偏好就一律画成浅色。这条调用必须在
+    创建图标（也就是第一次建菜单）之前完成，否则已经建好的菜单不会重画。
+    """
+    if os.name != "nt":
+        return False
+    try:
+        uxtheme = ctypes.WinDLL("uxtheme", use_last_error=True)
+        set_preferred = uxtheme[_SET_PREFERRED_APP_MODE]
+        set_preferred.argtypes = [ctypes.c_int]
+        set_preferred.restype = ctypes.c_int
+        flush = uxtheme[_FLUSH_MENU_THEMES]
+        flush.argtypes = []
+        flush.restype = None
+        set_preferred(_ALLOW_DARK)
+        flush()
+    except (OSError, AttributeError, TypeError):
+        return False
+    return True
 
 
 def make_icon_image(colour: tuple[int, int, int, int], size: int = 64) -> Image.Image:
@@ -82,6 +113,7 @@ class ManagerTray:
         self.process = process
         self._open_panel_when_ready = open_panel_when_ready
         self._running = process.is_running()
+        enable_dark_menus()
         self._icon = pystray.Icon(
             "flandora-manager",
             icon=self._image(),

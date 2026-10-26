@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import types
 from pathlib import Path
 
 import pytest
@@ -170,3 +171,47 @@ def test_icon_image_uses_two_colours():
     running = tray_mod.make_icon_image(tray_mod.RUNNING_COLOUR)
     stopped = tray_mod.make_icon_image(tray_mod.STOPPED_COLOUR)
     assert running.getpixel((32, 58)) != stopped.getpixel((32, 58))
+
+
+class _FakeUxtheme:
+    def __init__(self):
+        self.modes: list[int] = []
+        self.flushed = 0
+
+    def __getitem__(self, index):
+        def set_mode(mode):
+            self.modes.append(mode)
+            return 0
+
+        def flush():
+            self.flushed += 1
+
+        return set_mode if index == tray_mod._SET_PREFERRED_APP_MODE else flush
+
+
+def test_dark_menus_follow_the_system_theme(monkeypatch):
+    dll = _FakeUxtheme()
+    monkeypatch.setattr(tray_mod.ctypes, "WinDLL", lambda *_args, **_kwargs: dll)
+    assert tray_mod.enable_dark_menus() is True
+    assert dll.modes == [tray_mod._ALLOW_DARK]
+    assert dll.flushed == 1
+
+
+def test_dark_menus_fall_back_without_uxtheme(monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise OSError("uxtheme 不存在")
+
+    monkeypatch.setattr(tray_mod.ctypes, "WinDLL", boom)
+    assert tray_mod.enable_dark_menus() is False
+
+
+def test_dark_menus_are_a_windows_thing(monkeypatch):
+    monkeypatch.setattr(tray_mod, "os", types.SimpleNamespace(name="posix"))
+    assert tray_mod.enable_dark_menus() is False
+
+
+def test_manager_tray_asks_for_dark_menus(icon, monkeypatch):
+    calls = []
+    monkeypatch.setattr(tray_mod, "enable_dark_menus", lambda: calls.append(True) or True)
+    tray_mod.ManagerTray(_FakeProcess(True))
+    assert calls == [True]

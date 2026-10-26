@@ -3,6 +3,7 @@ import { ref, computed, onMounted } from 'vue'
 import { get, post } from '../../api'
 import { status } from '../../store'
 import AppIcon from '../AppIcon.vue'
+import ConfirmDialog from '../ConfirmDialog.vue'
 
 const REPO_URL = 'https://github.com/OMSociety/Flandora'
 
@@ -10,6 +11,8 @@ const updateInfo = ref({ mode: '', current: '', app_dir_writable: true, pending:
 const updateBusy = ref('')
 const updateMsg = ref('')
 const updateError = ref(false)
+// 安装会退出程序并替换文件，属于破坏性操作：先走确认框，别让一次误点直接换掉正在运行的程序。
+const installDialog = ref(false)
 const pendingUpdate = computed(() => updateInfo.value.pending)
 const latestUpdate = computed(() => updateInfo.value.latest)
 const canInstallUpdate = computed(() => updateInfo.value.mode === 'frozen' && updateInfo.value.app_dir_writable)
@@ -83,7 +86,7 @@ onMounted(loadUpdate)
     <div v-if="pendingUpdate" class="update-line pending">
       <span><AppIcon name="ArrowDownToLine" :size="15" />{{ pendingUpdate.version }} 已下载暂存</span>
       <template v-if="canInstallUpdate">
-        <button class="btn btn-sm" :disabled="!!updateBusy" @click="installUpdate">{{ updateBusy === 'install' ? '安装中…' : '安装并重启' }}</button>
+        <button class="btn btn-sm" :disabled="!!updateBusy" @click="installDialog = true">{{ updateBusy === 'install' ? '安装中…' : '安装并重启' }}</button>
         <button class="btn btn-outline btn-sm" :disabled="!!updateBusy" @click="cancelUpdate">取消</button>
       </template>
       <span v-else class="hint">{{ updateInfo.mode === 'frozen' ? '程序目录不可写，请以管理员身份运行 data/updates 里的脚本' : '源码模式：在仓库里 git pull 后重装依赖' }}</span>
@@ -97,6 +100,15 @@ onMounted(loadUpdate)
         <a :href="`${REPO_URL}/issues`" target="_blank" rel="noreferrer">反馈问题<AppIcon name="ArrowUpRight" :size="13" /></a>
       </div>
     </div>
+    <ConfirmDialog
+      :open="installDialog"
+      title="安装并重启"
+      message="安装会退出当前程序并替换程序文件，期间消息收发中断，替换完成后自动重新启动。确定现在安装吗？"
+      confirm-text="安装并重启"
+      :danger="true"
+      @cancel="installDialog = false"
+      @confirm="installDialog = false; installUpdate()"
+    />
   </section>
 </template>
 

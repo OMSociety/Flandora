@@ -5,6 +5,7 @@ import Modal from '../Modal.vue'
 import PasswordInput from '../PasswordInput.vue'
 import ToggleSwitch from '../ToggleSwitch.vue'
 import { toast } from '../../store'
+import { copyText } from '../../utils/clipboard'
 import { ROLES, isServerNode, nodeProblem, randomToken, typeMeta } from './nodeMeta'
 
 const props = defineProps({
@@ -26,12 +27,9 @@ function regenerate() {
   form.value.access_token = randomToken()
 }
 async function copyToken() {
-  try {
-    await navigator.clipboard.writeText(form.value?.access_token || '')
-    toast('令牌已复制到剪贴板', 'success')
-  } catch (err) {
-    toast('复制失败：' + (err?.message || err), 'error')
-  }
+  // 明文 HTTP 下面板拿不到 navigator.clipboard，复制失败也只说人话，不把浏览器的报错抛给用户。
+  if (await copyText(form.value?.access_token || '')) toast('令牌已复制到剪贴板', 'success')
+  else toast('复制失败，请手动选中令牌后复制', 'error')
 }
 function submit() {
   if (!form.value || problem.value) return

@@ -44,16 +44,30 @@ const pwNew = ref('')
 const { saving: pwSaving, saved: pwSaved, save: savePassword } = useSettingsSave()
 watch(() => props.cfg.webui_password_set, (set) => { pwEnabled.value = !!set })
 const pwDirty = computed(() => pwEnabled.value !== !!props.cfg.webui_password_set || !!pwNew.value)
+// 清密码要顺带收回监听：绑在所有网卡上时，后端不许留「0.0.0.0 + 无密码」，
+// 硬这么干的话重启后面板直接拒绝启动。
+const clearDialog = ref(false)
+const clearingOpenBind = computed(() => !pwEnabled.value && props.cfg.web_bind_host === '0.0.0.0')
 
 async function applyPassword() {
   let payload
-  if (!pwEnabled.value) payload = { webui_password_clear: true }
-  else if (pwNew.value) {
+  if (!pwEnabled.value) {
+    if (clearingOpenBind.value) { clearDialog.value = true; return }
+    payload = { webui_password_clear: true }
+  } else if (pwNew.value) {
     if (pwNew.value.length < 6) { toast('密码至少 6 位', 'error'); return }
     payload = { webui_password: pwNew.value }
   } else if (!props.cfg.webui_password_set) { toast('启用登录要设一个密码', 'error'); return }
   else return
   if (await savePassword(payload)) {
+    pwNew.value = ''
+    emit('reload')
+  }
+}
+
+async function clearPasswordAndBind() {
+  clearDialog.value = false
+  if (await savePassword({ webui_password_clear: true, web_bind_host: '127.0.0.1' })) {
     pwNew.value = ''
     emit('reload')
   }
@@ -201,7 +215,7 @@ async function applyRestore() {
         <div class="field">
           <label class="check-label"><input type="checkbox" v-model="pwEnabled" /> 打开面板时要密码</label>
           <PasswordInput v-if="pwEnabled" id="webui-password" v-model="pwNew" :placeholder="cfg.webui_password_set ? '已设置，留空表示不改' : '至少 6 位'" />
-          <p class="hint">{{ cfg.webui_password_set ? '改密码会让其它浏览器上已登录的会话立刻失效。' : '设置后这块面板与它的全部接口都要先登录；不开密码时只有本机能连。' }}</p>
+          <p class="hint">{{ cfg.webui_password_set ? '改密码会让其它浏览器上已登录的会话立刻失效。' : '设置后这块面板与它的全部接口都要先登录；不开密码时面板只监听本机（要绑所有网卡得先设密码）。' }}</p>
         </div>
       </div>
       <SectionFoot :saving="pwSaving" :saved="pwSaved" :disabled="!pwDirty" label="保存密码" @save="applyPassword" />
@@ -300,6 +314,15 @@ async function applyRestore() {
       confirm-text="重启"
       @cancel="restartDialog = false"
       @confirm="restartBridge"
+    />
+    <ConfirmDialog
+      :open="clearDialog"
+      title="清掉密码并收回监听"
+      message="面板现在绑在所有网卡上，没有密码就不允许这么绑。确定后密码会被清掉、绑定地址同时改回 127.0.0.1（只有本机能连）；绑定地址要重启桥接才换。"
+      confirm-text="清掉密码"
+      :danger="true"
+      @cancel="clearDialog = false"
+      @confirm="clearPasswordAndBind"
     />
     <ConfirmDialog
       :open="restoreDialog"

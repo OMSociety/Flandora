@@ -8,6 +8,9 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 const desktopStatus = ref(null)
 const busy = ref(false)
 const stopDialog = ref(false)
+// 结束桌面上的微信会关掉用户自己开着的会话，与「结束隔离桌面上的微信」同级：
+// 两处都先确认，别让一次误点直接关掉正在用的微信。
+const quitDialog = ref(false)
 const autoRefresh = ref(true)
 const { imgUrl, lastError, shotAt, natural, refresh: refreshShot, onImgLoad, click, clear } = useDesktopShot()
 let timer = null
@@ -67,7 +70,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
     <div class="page-tools"><span class="badge" :class="running ? 'badge-green' : 'badge-gray'">{{ stateLabel }}</span></div>
     <div v-if="!enabled" class="banner"><AppIcon name="Info" :size="17" /><span>隔离桌面模式未开启。请在「系统设置」中将 <code>isolated_desktop</code> 设为 true 并重启。开启后，自动化操作不会抢占你正在使用的桌面。</span></div>
     <div v-if="desktopStatus && !desktopStatus.exe_found" class="banner banner-danger"><AppIcon name="CircleAlert" :size="17" /><span>这台电脑上没找到微信。装好微信桌面版后刷新本页即可；装在非默认目录的话，在「系统设置」里把 <code>wechat_exe</code> 填成 <code>Weixin.exe</code> 的完整路径。</span></div>
-    <section class="card viewer-card"><div class="viewer-toolbar"><div class="viewer-title"><AppIcon name="Monitor" :size="17" /><strong>隔离桌面实况</strong><span v-if="desktopStatus?.desktop" class="desktop-name">{{ desktopStatus.desktop }}</span></div><div class="viewer-actions"><label class="chk"><input v-model="autoRefresh" type="checkbox" />自动刷新</label><button class="icon-btn" title="立即刷新" aria-label="立即刷新微信画面" @click="refreshShot"><AppIcon name="RefreshCw" :size="16" /></button><button class="btn btn-outline btn-sm" :disabled="busy || (desktopStatus && !desktopStatus.exe_found)" @click="startWeChat"><AppIcon name="Play" :size="13" />{{ running ? '重新确认启动' : '启动微信' }}</button><button v-if="running" class="btn btn-outline-danger btn-sm" :disabled="busy" @click="stopDialog = true"><AppIcon name="Square" :size="12" />结束</button></div></div><div v-if="lastError || desktopStatus?.error" class="viewer-error"><AppIcon name="CircleAlert" :size="16" />{{ lastError || desktopStatus.error }}</div><div v-if="defaultWeChatBlocking" class="viewer-quit"><button class="btn btn-outline-danger btn-sm" :disabled="busy" @click="quitDefaultWeChat"><AppIcon name="Square" :size="12" />结束桌面上的微信</button><span>结束的是你在自己桌面上开着的微信，点一下才会关。</span></div><div class="shot-wrap"><img v-if="imgUrl" :src="imgUrl" class="shot" alt="隔离桌面上的微信窗口，点击可转发操作" @load="onImgLoad" @click="onClickShot" /><div v-else class="shot-empty"><div class="empty-screen"><AppIcon name="Monitor" :size="32" /></div><strong>{{ running ? '正在等待微信画面' : (desktopStatus && !desktopStatus.exe_found ? '没有可启动的微信' : '微信尚未启动') }}</strong><span>{{ running ? '画面将在就绪后自动显示。' : (desktopStatus && !desktopStatus.exe_found ? '装好微信桌面版后刷新本页。' : '点击「启动微信」开始查看隔离桌面。') }}</span></div></div><div class="viewer-footer"><span><AppIcon name="Info" :size="13" />点击画面可将操作转发到微信</span><div><span v-if="natural.w">{{ natural.w }} × {{ natural.h }}</span><span v-if="shotAt">更新于 {{ shotAt }}</span></div></div></section>
+    <section class="card viewer-card"><div class="viewer-toolbar"><div class="viewer-title"><AppIcon name="Monitor" :size="17" /><strong>隔离桌面实况</strong><span v-if="desktopStatus?.desktop" class="desktop-name">{{ desktopStatus.desktop }}</span></div><div class="viewer-actions"><label class="chk"><input v-model="autoRefresh" type="checkbox" />自动刷新</label><button class="icon-btn" title="立即刷新" aria-label="立即刷新微信画面" @click="refreshShot"><AppIcon name="RefreshCw" :size="16" /></button><button class="btn btn-outline btn-sm" :disabled="busy || (desktopStatus && !desktopStatus.exe_found)" @click="startWeChat"><AppIcon name="Play" :size="13" />{{ running ? '重新确认启动' : '启动微信' }}</button><button v-if="running" class="btn btn-outline-danger btn-sm" :disabled="busy" @click="stopDialog = true"><AppIcon name="Square" :size="12" />结束</button></div></div><div v-if="lastError || desktopStatus?.error" class="viewer-error"><AppIcon name="CircleAlert" :size="16" />{{ lastError || desktopStatus.error }}</div><div v-if="defaultWeChatBlocking" class="viewer-quit"><button class="btn btn-outline-danger btn-sm" :disabled="busy" @click="quitDialog = true"><AppIcon name="Square" :size="12" />结束桌面上的微信</button><span>结束的是你在自己桌面上开着的微信，点一下才会关。</span></div><div class="shot-wrap"><img v-if="imgUrl" :src="imgUrl" class="shot" alt="隔离桌面上的微信窗口，点击可转发操作" @load="onImgLoad" @click="onClickShot" /><div v-else class="shot-empty"><div class="empty-screen"><AppIcon name="Monitor" :size="32" /></div><strong>{{ running ? '正在等待微信画面' : (desktopStatus && !desktopStatus.exe_found ? '没有可启动的微信' : '微信尚未启动') }}</strong><span>{{ running ? '画面将在就绪后自动显示。' : (desktopStatus && !desktopStatus.exe_found ? '装好微信桌面版后刷新本页。' : '点击「启动微信」开始查看隔离桌面。') }}</span></div></div><div class="viewer-footer"><span><AppIcon name="Info" :size="13" />点击画面可将操作转发到微信</span><div><span v-if="natural.w">{{ natural.w }} × {{ natural.h }}</span><span v-if="shotAt">更新于 {{ shotAt }}</span></div></div></section>
     <section class="desktop-info"><div><span class="info-label">运行模式</span><strong>{{ enabled ? '隔离桌面' : '未开启' }}</strong></div><div><span class="info-label">微信进程</span><strong>{{ running ? '运行中' : '未运行' }}</strong></div><div><span class="info-label">登录状态</span><strong :class="{ warning: state === 'login' }">{{ stateLabel }}</strong></div><p>登录时在画面中点击「登录」，然后按微信提示使用手机扫码或确认。</p></section>
     <ConfirmDialog
       :open="stopDialog"
@@ -77,6 +80,15 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
       :danger="true"
       @cancel="stopDialog = false"
       @confirm="stopWeChat"
+    />
+    <ConfirmDialog
+      :open="quitDialog"
+      title="结束桌面上的微信"
+      message="结束的是你自己桌面上开着的微信：未发送的内容与登录状态会一起丢失，重新启动后要重新登录。确定结束吗？"
+      confirm-text="结束微信"
+      :danger="true"
+      @cancel="quitDialog = false"
+      @confirm="quitDialog = false; quitDefaultWeChat()"
     />
   </div>
 </template>

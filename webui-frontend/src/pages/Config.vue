@@ -1,5 +1,5 @@
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount } from 'vue'
 import { get } from '../api'
 import { toast } from '../store'
 import AppIcon from '../components/AppIcon.vue'
@@ -53,11 +53,22 @@ function selectSection(id) {
   activeSection.value = id
   history.replaceState(null, '', `#/config?section=${id}`)
 }
-onMounted(() => {
+function sectionFromHash() {
   const raw = new URLSearchParams((window.location.hash.split('?')[1] || '')).get('section')
-  if (SECTIONS.some((s) => s.id === raw)) activeSection.value = raw
+  return SECTIONS.some((s) => s.id === raw) ? raw : ''
+}
+function syncSectionFromHash() {
+  const id = sectionFromHash()
+  if (id) activeSection.value = id
+}
+onMounted(() => {
+  syncSectionFromHash()
+  // 面板内的分区切换走自己的 selectSection；但侧栏「查看版本与更新」与手改地址栏只改
+  // hash，不监听它就会出现「地址栏指向 about、内容仍停在原来那节」的错位。
+  window.addEventListener('hashchange', syncSectionFromHash)
   load()
 })
+onBeforeUnmount(() => window.removeEventListener('hashchange', syncSectionFromHash))
 </script>
 
 <template>

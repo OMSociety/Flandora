@@ -179,13 +179,21 @@ def api_put_config(payload: dict, response: Response):
                 )
     context = _clean_context()
     try:
-        # 监听地址：只认回环与全网卡两种；对外之前必须有密码，否则等于把面板公开
-        if "web_bind_host" in payload:
-            bind = _strict("web_bind_host", payload.get("web_bind_host"), context)
+        # 监听地址：只认回环与全网卡两种；对外之前必须有密码，否则等于把面板公开。
+        # 清密码是同一件事的另一面：只带 webui_password 时也要按现行绑定复查，
+        # 否则盘上会留下「0.0.0.0 + 无密码」，下次启动面板直接拒绝启动。
+        if "web_bind_host" in payload or "webui_password" in payload:
+            bind = _strict(
+                "web_bind_host", payload.get("web_bind_host", config.WEB_BIND_HOST), context
+            )
             pending = payload.get("webui_password", config.WEBUI_PASSWORD)
             if bind == "0.0.0.0" and not auth.is_hashed(pending):
-                raise config.ConfigError("绑所有网卡之前先设面板密码：没密码时局域网里谁都能改配置")
-            payload = dict(payload, web_bind_host=bind)
+                raise config.ConfigError(
+                    "绑所有网卡之前先设面板密码：没密码时局域网里谁都能改配置"
+                    "（要清密码，就把「绑定地址」一并改回 127.0.0.1）"
+                )
+            if "web_bind_host" in payload:
+                payload = dict(payload, web_bind_host=bind)
         # 证书/私钥：校验成对可解析后再落文件，内容不进 config.json
         if any(field in payload for field in PEM_FIELDS):
             problem = _install_tls_pem(payload)

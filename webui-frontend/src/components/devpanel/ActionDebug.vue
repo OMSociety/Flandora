@@ -4,6 +4,7 @@ import { get, post } from '../../api'
 import { toast } from '../../store'
 import AppIcon from '../AppIcon.vue'
 import { segmentsToCq } from '../../utils/cq'
+import { copyText } from '../../utils/clipboard'
 
 const catalog = ref({ categories: [], actions: [] })
 const category = ref('')
@@ -103,12 +104,8 @@ function fillSendMsg() {
 }
 
 async function copyCq() {
-  try {
-    await navigator.clipboard.writeText(builderCq.value)
-    toast('CQ 码已复制', 'success')
-  } catch {
-    toast('复制失败，请手动选中文本', 'error')
-  }
+  if (await copyText(builderCq.value)) toast('CQ 码已复制', 'success')
+  else toast('复制失败，请手动选中文本', 'error')
 }
 
 async function loadEvents() {

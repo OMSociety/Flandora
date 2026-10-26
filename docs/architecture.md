@@ -165,5 +165,5 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
 | 加一个 HTTP 端点 | `webui/api/<组>.py` 写处理函数 | 在同文件 `ROUTES` 登档位，`defer` 写原因 |
 | 加一个收件消息类型 | `wx_store` 解出字段 → `domain.message` 的段类型 → `ob_inbound` 解码 | `ob_protocol.to_segment_dict` 补渲染 |
 | 加一个发送能力 | `domain/send.py` 的动作 → `send_plan` → `uia_sender` 的投递 | 面板与 OneBot 都自动复用 |
-| 加一个配置项 | `config/fields.py` 加字段与 `desc` → 跑 `python tools/gen_config_example.py` → README「配置详解」 | 前端 `Config.vue` 的 `DEFAULTS`、`tests/fixtures.js` |
+| 加一个配置项 | `config/fields.py` 加字段与 `desc` → 跑 `python tools/gen_config_example.py` → `docs/config.md` | 前端 `Config.vue` 的 `DEFAULTS`、`tests/fixtures.js` |
 | 加一个面板页面 | `webui-frontend/src/pages/index.js` 的 `PAGES` | 图标名要在 `ICON_NAMES` 里 |

@@ -238,6 +238,39 @@ def test_clearing_password_disables_login(saved):
     assert auth.sessions.valid(token) is False
 
 
+def test_clearing_password_is_refused_while_bound_to_all_interfaces(saved, monkeypatch):
+    """绑在所有网卡上时不许把密码留空。
+
+    盘上若出现「0.0.0.0 + 无密码」，下次启动面板会直接拒绝启动（main.start_web），
+    而不是悄悄退回本机——所以清密码这一步必须同时把绑定收回来。
+    """
+    config_api.api_put_config({"webui_password": "secret123"}, Response())
+    config_api.api_put_config({"web_bind_host": "0.0.0.0"}, Response())
+    monkeypatch.setattr(config, "WEB_BIND_HOST", "0.0.0.0")
+
+    rest = config_api.api_put_config({"webui_password_clear": True}, Response())
+
+    assert isinstance(rest, JSONResponse)
+    assert rest.status_code == 400
+    assert saved.read_raw()["webui_password"] != ""
+    assert config.WEBUI_PASSWORD != ""
+
+
+def test_clearing_password_with_loopback_bind_in_one_request(saved):
+    """面板的「清密码」是一步做完的：同一份请求里把绑定改回 127.0.0.1 就放行。"""
+    config_api.api_put_config({"webui_password": "secret123"}, Response())
+    config_api.api_put_config({"web_bind_host": "0.0.0.0"}, Response())
+
+    rest = config_api.api_put_config(
+        {"webui_password_clear": True, "web_bind_host": "127.0.0.1"}, Response()
+    )
+
+    assert not isinstance(rest, JSONResponse)
+    raw = saved.read_raw()
+    assert raw["webui_password"] == ""
+    assert raw["web_bind_host"] == "127.0.0.1"
+
+
 def test_bad_password_length_is_refused(saved):
     rest = config_api.api_put_config({"webui_password": "123"}, Response())
 

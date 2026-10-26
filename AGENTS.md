@@ -135,7 +135,7 @@ run_bridge.py -> flandora.main
   `--check` 判为漂移。
 - 增删配置项：依次改 `flandora/config/fields.py`（字段声明：键名、默认值、kind、校验与 `desc`）
   → 跑 `python tools/gen_config_example.py` 重新生成 `flandora/config.example.json`（示例与 `_comment_`
-  说明都由字段表派生，不要手改）→ `README.md`「配置详解」→
+  说明都由字段表派生，不要手改）→ `docs/config.md` 里对应的一节 →
   `webui-frontend/src/pages/Config.vue` 的 `DEFAULTS`（仅少数需兜底的键）→
   `webui-frontend/tests/fixtures.js`。
   界面没有逐字段表单：多数配置项在「系统设置 → 高级」里直接编辑 JSON，右侧逐键说明与默认值来自

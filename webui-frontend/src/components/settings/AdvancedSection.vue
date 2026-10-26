@@ -1,8 +1,9 @@
 <script setup>
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import AppIcon from '../AppIcon.vue'
 import SectionFoot from './SectionFoot.vue'
 import { useSettingsSave } from '../../composables/useSettingsSave'
+import { useDirtyGuard } from '../../composables/useDirtyGuard'
 import { get } from '../../api'
 
 const props = defineProps({
@@ -26,14 +27,28 @@ const SEND_KEY_OPTIONS = [
 const sendKey = ref('auto')
 
 // 与旧的「编辑原始 JSON」一致：每次打开面板或配置重载后，都从当前配置重新生成文本。
+// 未保存的编辑（`edited`）不被覆盖：切走再切回来该看到自己写的内容，
+// 而不是被悄悄换回保存过的值。
+const baseline = ref('')
+const edited = computed(() => jsonText.value !== baseline.value)
+const staleBase = ref(false)
+const { markDirty, clearDirty } = useDirtyGuard()
+watch(edited, (value) => (value ? markDirty() : clearDirty()))
+
 function resync() {
   jsonText.value = JSON.stringify(props.cfg, null, 2)
+  baseline.value = jsonText.value
+  staleBase.value = false
   jsonValid.value = true
   sendKey.value = SEND_KEY_OPTIONS.some((o) => o.value === props.cfg.send_key)
     ? props.cfg.send_key
     : 'auto'
 }
-watch(() => props.epoch, () => { if (props.active) resync() })
+watch(() => props.epoch, () => {
+  // 底稿变过（别处保存过配置）：不覆盖手上的编辑，只标出它基于改动前的值。
+  if (edited.value) { staleBase.value = true; return }
+  if (props.active) resync()
+})
 
 async function changeSendKey() {
   const ok = await save({ send_key: sendKey.value })
@@ -59,7 +74,8 @@ async function loadSchema() {
 
 watch(() => props.active, (on) => {
   if (!on) return
-  resync()
+  // 切走再切回来只同步底稿：没保存的编辑留着，否则看起来像被自动保存了。
+  if (!edited.value) resync()
   if (!schemaLoaded) loadSchema()
 }, { immediate: true })
 
@@ -77,7 +93,13 @@ async function apply() {
   try { parsed = JSON.parse(jsonText.value) }
   catch { return }
   const ok = await save(parsed)
-  if (ok) await emit('reload')
+  if (ok) {
+    // 存下去了：编辑框就是新底稿。先认下来（否则重载回来会被当成未保存编辑而卡住），
+    // 随后 reload 回来的配置会再按服务端归一化后的值刷一遍。
+    baseline.value = jsonText.value
+    staleBase.value = false
+    await emit('reload')
+  }
 }
 </script>
 
@@ -114,6 +136,11 @@ async function apply() {
         </ul>
       </aside>
     </div>
+    <p v-if="staleBase" class="json-stale">
+      <AppIcon name="CircleAlert" :size="14" />
+      <span>配置在别处被改过，编辑框里还是改动前的内容；点「应用并保存」会以编辑框为准。</span>
+      <button type="button" class="json-stale-refresh" @click="resync">放弃编辑并刷新</button>
+    </p>
     <SectionFoot :saving="saving" :saved="saved" :disabled="!jsonValid" label="应用并保存" hint="这里的改动以整份配置为单位保存" @save="apply" />
   </section>
 </template>
@@ -137,6 +164,9 @@ async function apply() {
 .schema-default code { font-family:var(--mono); font-size:10px; color:var(--muted); }
 .schema-error { font-size:11px; line-height:1.7; color:var(--danger); }
 .schema-empty { font-size:11px; color:var(--muted); }
+.json-stale { display:flex; flex-wrap:wrap; align-items:center; gap:6px; margin-top:12px; font-size:11px; line-height:1.75; color:var(--warning); }
+.json-stale .app-icon { flex:none; }
+.json-stale-refresh { padding:0; border:0; background:none; color:var(--primary-deep); font-family:inherit; font-size:11px; text-decoration:underline; cursor:pointer; }
 @media(max-width:1199px) {
   .advanced-grid { grid-template-columns:1fr; }
   .schema-panel { position:static; max-height:none; }

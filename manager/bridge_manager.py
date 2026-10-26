@@ -5,14 +5,15 @@
 
 功能：
 - 启动 / 停止 / 重启 bridge（运行 main.py）
-- 实时显示：进程状态、端口 7999 连接数、最近日志
-- 打开 WebUI（http://127.0.0.1:4950）
+- 实时显示：进程状态、OneBot 端口客户端连接数、最近日志
+- 打开 WebUI（默认 http://127.0.0.1:4950，端口以 data/config.json 为准）
 - 打开日志目录
 - 开机自启动（写 Startup 快捷方式）
 """
 
 from __future__ import annotations
 
+import json
 import os
 import queue
 import subprocess
@@ -45,6 +46,36 @@ else:
 # data_dir() 取值一致：打包 = exe 同级，源码 = 仓库根。
 DATA_DIR = BRIDGE_DIR / "data"
 BRIDGE_LOG = DATA_DIR / "flandora.log"
+
+# 两个端口都能在配置里改，管理器不能写死：状态栏的客户端连接数与「打开 WebUI」
+# 都按这里读到的值走，否则改了端口以后管理器还在盯 7999。
+DEFAULT_OB_PORT = 7999
+DEFAULT_WEB_PORT = 4950
+
+
+def _port_from(raw: dict, key: str, fallback: int) -> int:
+    value = raw.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        return fallback
+    return value if 1 <= value <= 65535 else fallback
+
+
+def read_config_ports() -> tuple[int, int]:
+    """读 bridge 的 data/config.json，返回 (OneBot 端口, 面板端口)。
+
+    文件不存在、不是 JSON、值不合法都退回默认值：校验归 bridge 自己
+    （flandora/config/fields.py），管理器只按同一份文件显示。
+    """
+    try:
+        raw = json.loads((DATA_DIR / "config.json").read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001  —— 读不到就按默认端口显示
+        return DEFAULT_OB_PORT, DEFAULT_WEB_PORT
+    if not isinstance(raw, dict):
+        return DEFAULT_OB_PORT, DEFAULT_WEB_PORT
+    return (
+        _port_from(raw, "ob_server_port", DEFAULT_OB_PORT),
+        _port_from(raw, "web_port", DEFAULT_WEB_PORT),
+    )
 
 
 def _acquire_manager_lock():
@@ -158,6 +189,8 @@ class BridgeController:
         self.process: Optional[subprocess.Popen] = None
         self.external_pid: Optional[int] = None  # 领养的外部 bridge PID
         self.lock = threading.Lock()
+        # 端口来自 data/config.json（refresh_cached_state 里会重读）
+        self.ob_port, self.web_port = read_config_ports()
         self.log_tail_proc: Optional[subprocess.Popen] = None
         self.log_queue: "queue.Queue[str]" = queue.Queue()
         # 主线程用来知道队列里有新数据（reader_thread 在此设置）
@@ -168,7 +201,7 @@ class BridgeController:
         self._external_flag_cached: bool = False  # True 表示 external PID（"外部"标签）
 
     # 以下方法**只能在 worker 线程**调用（会跑 PowerShell）——主线程禁止！
-    def _find_listening_pid(self, port: int = 7999) -> Optional[int]:
+    def _find_listening_pid(self, port: int) -> Optional[int]:
         """查找正在监听 port 的 PID（Windows）"""
         if not IS_WINDOWS:
             return None
@@ -203,7 +236,7 @@ class BridgeController:
         if self.external_pid is not None and self._alive_pid(self.external_pid):
             return True, self.external_pid
         # 3) 端口扫描兜底
-        pid = self._find_listening_pid(7999)
+        pid = self._find_listening_pid(self.ob_port)
         if pid and pid != os.getpid():
             self.external_pid = pid
             return True, pid
@@ -211,6 +244,8 @@ class BridgeController:
 
     def refresh_cached_state(self) -> None:
         """worker 线程调用：更新 _running_cached / _pid_text_cached / _external_flag_cached"""
+        # 端口可能刚被面板改过，重读一次再查监听（文件很小，worker 线程每 tick 读得起）
+        self.ob_port, self.web_port = read_config_ports()
         running, pid = self.live_check()
         with self.lock:
             self._running_cached = running
@@ -324,7 +359,7 @@ class BridgeController:
                     msg_parts.append(f"外部进程停止失败: {exc}")
             self.external_pid = None
             # 3) 兜底：端口仍被占用就强制 kill 监听者
-            still = self._find_listening_pid(7999)
+            still = self._find_listening_pid(self.ob_port)
             if still and still != os.getpid():
                 try:
                     subprocess.run(
@@ -437,7 +472,7 @@ class BridgeManagerApp:
 
         self.info_vars = {
             "PID": tk.StringVar(value="-"),
-            "端口 7999 客户端": tk.StringVar(value="-"),
+            "客户端连接数": tk.StringVar(value="-"),
             "微信进程": tk.StringVar(value="-"),
             "日志文件": tk.StringVar(value="-" if not BRIDGE_LOG.exists() else str(BRIDGE_LOG)),
         }
@@ -501,7 +536,7 @@ class BridgeManagerApp:
 
     def _open_webui(self) -> None:
         if IS_WINDOWS:
-            os.startfile("http://127.0.0.1:4950")  # noqa: S606
+            os.startfile(f"http://127.0.0.1:{self.controller.web_port}")  # noqa: S606
         return None
 
     def _open_log_dir(self) -> None:
@@ -675,7 +710,7 @@ class BridgeManagerApp:
                     self.info_vars["PID"].set(pid_info[0] + ("（外部）" if pid_info[1] else ""))
                 else:
                     self.info_vars["PID"].set("-")
-                self.info_vars["端口 7999 客户端"].set(str(snap.get("port_clients", "-")))
+                self.info_vars["客户端连接数"].set(str(snap.get("port_clients", "-")))
                 self.info_vars["微信进程"].set(snap.get("wechat", "?"))
 
                 state_run = "disabled" if running else "normal"
@@ -694,12 +729,12 @@ class BridgeManagerApp:
             self.root.after(500, self._poll_status)
 
     def _count_clients(self) -> int:
-        """7999 上客户端连接数（Established 数）"""
+        """OneBot 端口上的客户端连接数（Established 数）"""
         if not IS_WINDOWS:
             return 0
         try:
             out = _run_powershell(
-                "Get-NetTCPConnection -LocalPort 7999 -State Established | Measure-Object | Select-Object -ExpandProperty Count",
+                f"Get-NetTCPConnection -LocalPort {self.controller.ob_port} -State Established | Measure-Object | Select-Object -ExpandProperty Count",
                 timeout=5,
             )
             return int(out.strip().decode("ascii", errors="ignore"))

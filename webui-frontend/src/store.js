@@ -87,6 +87,7 @@ export function addMessage(m) {
   if (messages.length > MSG_CAP) messages.length = MSG_CAP
 }
 
+// 只清空内存里的列表（消息页那个「清空当前列表」）；存档在服务端，删它要走「存档」页。
 export function clearMessages() {
   messages.splice(0, messages.length)
 }

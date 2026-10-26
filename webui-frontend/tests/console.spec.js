@@ -218,9 +218,9 @@ test('messages filter, clear confirmation and log controls work', async ({ page 
   await expect(page.getByText('没有匹配的消息', { exact: true })).toBeVisible()
   await page.getByRole('searchbox', { name: '搜索消息' }).fill('读书会')
   await expect(page.locator('.message-item')).toHaveCount(2)
-  await page.getByRole('button', { name: '清空记录', exact: true }).click()
-  await expect(page.getByRole('button', { name: '再次点击确认清空' })).toBeVisible()
-  await page.getByRole('button', { name: '再次点击确认清空' }).click()
+  await page.getByRole('button', { name: '清空当前列表', exact: true }).click()
+  await expect(page.getByRole('button', { name: '再点一次：只清页面，存档不动' })).toBeVisible()
+  await page.getByRole('button', { name: '再点一次：只清页面，存档不动' }).click()
   await expect(page.getByText('还没有消息', { exact: true })).toBeVisible()
 
   await page.goto('/#/logs')

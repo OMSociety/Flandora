@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import zipfile
 from pathlib import Path
@@ -564,8 +565,8 @@ def assemble_zip() -> Path:
 
 
 def payload_data_stash() -> Path:
-    """载荷里 data/ 的暂存位置：放在 build/ 下，clean() 清 dist 时碰不到它。"""
-    return BUILD / f"{PKG_NAME}-data"
+    """载荷里 data/ 的暂存位置：放系统临时目录，clean() 清 dist/ 与 build/ 都碰不到。"""
+    return Path(tempfile.gettempdir()) / f"flandora-payload-data-{PKG_NAME}"
 
 
 def _stash_payload_data() -> bool:

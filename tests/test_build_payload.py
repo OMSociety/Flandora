@@ -82,7 +82,7 @@ def test_dirty_tree_is_refused_until_explicitly_allowed():
 def test_payload_rebuild_carries_the_user_data_over(tmp_path, monkeypatch):
     """打包前先挪走 data/，打包中 dist 被清空也不会丢配置与口令。"""
     monkeypatch.setattr(build, "DIST", tmp_path / "dist")
-    monkeypatch.setattr(build, "BUILD", tmp_path / "build")
+    monkeypatch.setattr(build, "payload_data_stash", lambda: tmp_path / "stash")
     payload = build.DIST / build.PKG_NAME
     (payload / "data").mkdir(parents=True)
     (payload / "data" / "wx_key.dat").write_bytes(b"secret-key")

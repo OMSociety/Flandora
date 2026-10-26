@@ -52,7 +52,6 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：只读解密聊�
 | --- | --- |
 | 微信标识与 OneBot 整数怎么对应、支持哪些动作、消息段与事件面的实际形态、返回码含义 | [docs/protocol.md](docs/protocol.md) |
 | 面板八个页面各做什么，`data/` 下每个文件是干什么的 | [docs/console.md](docs/console.md) |
-| 托盘图标的菜单、开机自启与再双击的行为 | [manager/README.md](manager/README.md) |
 | 每个配置项的类型、默认值与说明，以及版本更新的工作机制 | [docs/config.md](docs/config.md) |
 | 用 Python 自己写客户端，或把动作面挂给支持 MCP 的 AI 客户端 | [docs/sdk.md](docs/sdk.md) |
 | 开发环境、命令、CI 与该跑哪些闸门 | [docs/development.md](docs/development.md) |

@@ -38,6 +38,14 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
    | `Flandora-v1.0.0-setup.exe` | 安装到 `%LOCALAPPDATA%\Programs\Flandora`，可勾选开机自启与桌面快捷方式；卸载时单独询问是否删除配置与已存口令 |
    | `Flandora-v1.0.0.zip` | 便携包，解压到任意目录，双击 `Flandora.exe` |
 
+   发行包还没放出来时，直接从源码运行：
+
+   ```powershell
+   python -m venv .venv
+   .venv\Scripts\python -m pip install -r requirements-dev.txt
+   .venv\Scripts\python manager\main.py
+   ```
+
 2. 退出自己的微信，双击 `Flandora.exe`。它在任务栏托盘里常驻并拉起桥接，需要时从菜单打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)，或等它第一次运行时自己弹出面板。
 3. 进入「取钥向导」，四步走完：勾选免责声明 → 开始取钥 → 在向导右侧的实况画面里完成登录 → 想让机器人看图就继续抓图片密钥 → 校验。
 

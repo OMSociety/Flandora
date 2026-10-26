@@ -15,8 +15,8 @@ from flandora import bridge_core  # noqa: E402
 
 VOICE_MSG = {
     "sessionId": "wxid_peer_001",
-    "sourceName": "斯兰德Slandre",
-    "senderName": "斯兰德Slandre",
+    "sourceName": "示例成员A",
+    "senderName": "示例成员A",
     "content": "[语音]",
     "sessionType": "single",
 }

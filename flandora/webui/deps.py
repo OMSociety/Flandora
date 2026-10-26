@@ -77,8 +77,6 @@ def status_payload() -> dict:
             "tls": bool(config.WEBUI_TLS),
             "tls_cert_set": os.path.isfile(config.WEBUI_TLS_CERT_FILE),
             "tls_key_set": os.path.isfile(config.WEBUI_TLS_KEY_FILE),
-            "tls_cert_path": config.WEBUI_TLS_CERT_FILE,
-            "tls_key_path": config.WEBUI_TLS_KEY_FILE,
             "password_set": auth.enabled(),
         },
         "send_method": "uia",

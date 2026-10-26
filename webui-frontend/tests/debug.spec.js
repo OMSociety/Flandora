@@ -34,6 +34,31 @@ test('message builder renders CQ preview', async ({ page }) => {
   await expect(page.getByLabel('CQ 码预览')).toHaveValue('你好，&#91;世界&#93;')
 })
 
+test('message builder maps a face row to the expression id', async ({ page }) => {
+  await mockApi(page)
+  await page.goto('/#/dev')
+
+  await page.getByRole('button', { name: 'face', exact: true }).click()
+  await page.locator('.builder-row input').first().fill('你好')
+  await page.locator('.builder-row input').nth(1).fill('14')
+
+  // face 段的规范字段是 id，不是 file：填 14 就该产出 [CQ:face,id=14]
+  await expect(page.getByLabel('CQ 码预览')).toHaveValue('你好[CQ:face,id=14]')
+  await expect(page.locator('.builder-row input').nth(1)).toHaveAttribute('placeholder', 'QQ 表情编号（如 14）')
+})
+
+test('events panel reports a failed load instead of showing an empty state', async ({ page }) => {
+  await mockApi(page)
+  await page.route('**/api/debug/events**', (route) =>
+    route.fulfill({ status: 500, contentType: 'application/json', body: JSON.stringify({ ok: false, error: '存档打不开' }) }),
+  )
+  await page.goto('/#/dev')
+
+  await expect(page.getByText('存档打不开')).toBeVisible()
+  await expect(page.getByRole('button', { name: '重试' })).toBeVisible()
+  await expect(page.getByText('还没有推送过消息')).toHaveCount(0)
+})
+
 test('debug panel switches tabs and keeps the tab in the address', async ({ page }) => {
   await mockApi(page)
   await page.goto('/#/dev')

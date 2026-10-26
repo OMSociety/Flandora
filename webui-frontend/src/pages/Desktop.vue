@@ -18,11 +18,21 @@ let refreshing = false
 const enabled = computed(() => !!desktopStatus.value?.enabled)
 const running = computed(() => !!desktopStatus.value?.running)
 const state = computed(() => desktopStatus.value?.state || 'absent')
-const stateLabel = computed(() => ({ chat: '已登录，正在使用', login: '等待扫码或手机确认', absent: '微信未运行' }[state.value] || '状态未知'))
+const statusError = ref('')
+const stateLabel = computed(() => {
+  // 「读不到状态」与「微信没在跑」是两回事：前者不能显示成后者
+  if (statusError.value) return '读不到微信状态'
+  return { chat: '已登录，正在使用', login: '等待扫码或手机确认', absent: '微信未运行' }[state.value] || '状态未知'
+})
 async function loadStatus() {
   const res = await get('/api/desktop/status', true)
-  if (res.ok && res.data?.ok) desktopStatus.value = res.data
-  else if (res.data?.error) lastError.value = res.data.error
+  if (res.ok && res.data?.ok) {
+    desktopStatus.value = res.data
+    statusError.value = ''
+    return
+  }
+  statusError.value = res.data?.error || '面板连不上后端'
+  if (res.data?.error) lastError.value = res.data.error
 }
 async function onClickShot(event) {
   const error = await click(event)

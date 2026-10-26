@@ -271,6 +271,32 @@ def test_clearing_password_with_loopback_bind_in_one_request(saved):
     assert raw["web_bind_host"] == "127.0.0.1"
 
 
+def test_rejected_save_keeps_the_existing_sessions(saved, monkeypatch):
+    """保存被拒时用户不该被登出：会话只在配置真的落盘后才作废。"""
+    config_api.api_put_config({"webui_password": "secret123"}, Response())
+    config_api.api_put_config({"web_bind_host": "0.0.0.0"}, Response())
+    token = auth.sessions.issue()
+    monkeypatch.setattr(config, "WEB_BIND_HOST", "0.0.0.0")
+
+    rest = config_api.api_put_config({"webui_password_clear": True}, Response())
+
+    assert isinstance(rest, JSONResponse)
+    assert rest.status_code == 400
+    assert auth.sessions.valid(token) is True, "保存被拒却把会话清了"
+
+
+def test_restore_of_only_sensitive_keys_is_refused(saved):
+    """备份里只有凭据类配置时什么都没恢复，不能回 200 装作成功。"""
+    rest = config_api.api_config_restore(
+        {"config": {"webui_password": "x", "ob_server_token": "y"}}
+    )
+
+    assert isinstance(rest, JSONResponse)
+    assert rest.status_code == 400
+    body = rest.body.decode("utf-8")
+    assert "凭据" in body or "敏感" in body
+
+
 def test_bad_password_length_is_refused(saved):
     rest = config_api.api_put_config({"webui_password": "123"}, Response())
 

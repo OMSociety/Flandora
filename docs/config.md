@@ -60,7 +60,7 @@
 | 类型 | 方向 | 谁发起连接 | 说明 |
 | --- | --- | --- | --- |
 | `ws_server` | 正向 WebSocket | 机器人框架连过来 | 最常用；框架作为正向 WS 客户端连本机 7999 |
-| `http_server` | 正向 HTTP | 机器人框架调过来 | 同时收 GET 查询串与 POST JSON，响应体是 OneBot 标准响应 |
+| `http_server` | 正向 HTTP | 机器人框架调过来 | 只收 POST JSON（GET 被 CSRF 防线拒绝，回 405/1400），响应体是 OneBot 标准响应 |
 | `ws_client` | 反向 WebSocket | 桥接连出去 | 适配只会起服务端的框架，断了按 `reconnect_interval_ms` 重连 |
 | `http_client` | 反向 HTTP | 桥接连出去 | 事件用 POST 上报到框架，不做 API |
 
@@ -74,10 +74,10 @@
 | `name` | 字符串 | 必填 | 入口名字，同一份配置里不能重复 |
 | `enabled` | 布尔 | `true` | 关掉后这个入口不启动 |
 | `role` | 字符串 | `universal` | `universal` 收动作也推事件；`api` 只收动作；`event` 只推事件 |
-| `host` / `port` | 字符串 / 整数 | `127.0.0.1` / 见下 | 仅服务端类入口 |
+| `host` / `port` | 字符串 / 整数 | `127.0.0.1` / 无 | 仅服务端类入口；`port` 必填（1–65535），不填这一项报「缺少 port」 |
 | `path` | 字符串 | `/` | 仅服务端类入口，握手路径 |
 | `url` | 字符串 | 必填 | 仅客户端类入口，`ws://` 或 `http://` |
-| `access_token` | 字符串 | 空 | Bearer 头或 `?access_token=` 都认，留空不校验 |
+| `access_token` | 字符串 | 空 | Bearer 头或 `?access_token=` 都认；留空不校验，`http_server` 入口必须填 |
 | `message_format` | 字符串 | 空 | 该入口的事件形态，留空跟随全局 `ob_message_format` |
 | `timeout_ms` | 整数 | `5000` | 仅 `http_client`，上报超时 |
 | `reconnect_interval_ms` | 整数 | `5000` | 仅 `ws_client`，重连间隔 |

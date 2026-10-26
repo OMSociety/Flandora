@@ -154,6 +154,7 @@ def api_put_config(payload: dict, response: Response):
         return JSONResponse({"ok": False, "error": "请求体必须是 JSON 对象"}, 400)
     # 登录密码只以哈希落盘，明文不出后端：面板传上来的明文在这里就地换掉
     payload.pop("webui_password_set", None)
+    hashed: str | None = None
     if "webui_password" in payload or "webui_password_clear" in payload:
         given = "webui_password" in payload
         plain = str(payload.pop("webui_password", "") or "")
@@ -172,17 +173,6 @@ def api_put_config(payload: dict, response: Response):
             hashed = None  # 两者都没给实质内容：不动现有密码
         if hashed is not None:
             payload["webui_password"] = hashed
-            # 密码变了，之前发出去的会话一律作废；当前这个浏览器立刻换一张新的
-            auth.sessions.clear()
-            if hashed:
-                response.set_cookie(
-                    auth.COOKIE_NAME,
-                    auth.sessions.issue(),
-                    max_age=int(auth.SESSION_TTL),
-                    httponly=True,
-                    samesite="lax",
-                    path="/",
-                )
     context = _clean_context()
     try:
         # 监听地址：只认回环与全网卡两种；对外之前必须有密码，否则等于把面板公开。
@@ -239,12 +229,28 @@ def api_put_config(payload: dict, response: Response):
     try:
         result = deps.config_store().update(payload)
         log.info(f"[WebUI] 配置已保存 (字段: {', '.join(payload.keys())})")
+        if "webui_password" in payload:
+            # 落盘成功才作废旧会话：保存被拒时用户留在原会话里，不会被莫名登出。
+            auth.sessions.clear()
+            if hashed:
+                response.set_cookie(
+                    auth.COOKIE_NAME,
+                    auth.sessions.issue(),
+                    max_age=int(auth.SESSION_TTL),
+                    httponly=True,
+                    samesite="lax",
+                    path="/",
+                )
         events.notify_status()
         return {
             "ok": True,
             "restart_required": list(result.restart_required),
             "ignored_keys": list(result.ignored_keys),
         }
+    except config.ConfigError as e:
+        # 落盘前的严格校验（与文件加载共用）在这一层抛出：值不合法是用户输入问题，
+        # 回 400 并原样给出原因，不能混进「保存失败，见日志」的 500 里。
+        return JSONResponse({"ok": False, "error": str(e)}, 400)
     except Exception as e:
         log.error(f"[WebUI] 保存配置异常: {e}")
         return JSONResponse({"ok": False, "error": "保存失败，详细原因见运行日志"}, 500)
@@ -291,10 +297,14 @@ def api_config_restore(payload: dict):
         # 不带敏感项的备份本来就没有这些键；万一有也不覆盖本地现值
         for key in config_fields.secret_keys():
             incoming.pop(key, None)
+        if not incoming:
+            # 剔完只剩敏感项：什么都没恢复，不能回 ok 让调用方以为恢复成功
+            return JSONResponse(
+                {"ok": False, "error": "备份里只有凭据类配置，勾上「包含敏感项」再恢复"}, 400
+            )
     store = deps.config_store()
     try:
-        backup_path = f"{store.path}.bak-{time.strftime('%Y%m%d-%H%M%S')}"
-        config.write_json(backup_path, store.read_raw())
+        previous = store.read_raw()
         store.replace(incoming)
     except config.ConfigError as e:
         # 备份里的值过不了校验：当成请求数据的问题，别写进文件
@@ -303,19 +313,26 @@ def api_config_restore(payload: dict):
     except Exception as e:
         log.error(f"[WebUI] 恢复配置失败: {e}")
         return JSONResponse({"ok": False, "error": "恢复配置失败，详细原因见运行日志"}, 500)
+    # 替换成功之后才落备份：被拒的恢复不该在数据目录里留下含密码哈希的副本
+    backup_name = ""
+    try:
+        backup_name = f"config.json.bak-{time.strftime('%Y%m%d-%H%M%S')}"
+        config.write_json(os.path.join(store.data_dir(), backup_name), previous)
+    except OSError as e:
+        log.error(f"[WebUI] 恢复配置后写备份失败: {e}")
     # 能即时生效的（HOT）已经由订阅者套上；密码哈希换了要连会话一起作废
     password_restored = "webui_password" in incoming
     if password_restored:
         auth.sessions.clear()
     log.info(
         f"[WebUI] 已从备份恢复配置 (字段: {', '.join(sorted(incoming))})，"
-        f"原文件已备份为 {os.path.basename(backup_path)}"
+        f"恢复前的文件存为 {backup_name or '（写备份失败，见错误日志）'}"
     )
     events.notify_status()
     return {
         "ok": True,
         "restored": sorted(incoming),
-        "backup_path": backup_path,
+        "backup_name": backup_name,
         "password_restored": password_restored,
         "restart_required": sorted(key for key in incoming if config_fields.is_restart(key)),
     }

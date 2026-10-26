@@ -34,6 +34,17 @@ DEFER_REASONS: dict[str, str] = {
 }
 
 
+def _fail(label: str, exc: Exception):
+    """可预期的前置错误原样回给面板；真正的异常才收进日志、对外只说看日志。"""
+    from ...wizard import WizardError
+
+    if isinstance(exc, WizardError):
+        log.info(f"[WebUI] {label}被拒绝: {exc}")
+        return JSONResponse({"ok": False, "error": str(exc)}, 400)
+    log.error(f"[WebUI] {label}失败: {exc}")
+    return JSONResponse({"ok": False, "error": f"{label}失败，详细原因见运行日志"}, 400)
+
+
 def _wizard_or_error():
     """取向导单例；模块缺失或不满足前置条件时返回 (None, 错误响应)。"""
     try:
@@ -69,8 +80,7 @@ def api_wizard_disclaimer():
     try:
         return {"ok": True, **wiz.accept_disclaimer()}
     except Exception as e:
-        log.error(f"[WebUI] 确认免责声明失败: {e}")
-        return JSONResponse({"ok": False, "error": "确认免责声明失败，详细原因见运行日志"}, 400)
+        return _fail("确认免责声明", e)
 
 
 @router.post("/api/wizard/dbkey/start")
@@ -82,8 +92,7 @@ def api_wizard_dbkey_start():
     try:
         return {"ok": True, **wiz.start_dbkey()}
     except Exception as e:
-        log.error(f"[WebUI] 启动取数据库口令失败: {e}")
-        return JSONResponse({"ok": False, "error": "启动取数据库口令失败，详细原因见运行日志"}, 400)
+        return _fail("启动取数据库口令", e)
 
 
 @router.post("/api/wizard/dbkey/cancel")
@@ -103,8 +112,7 @@ def api_wizard_dbkey_manual(payload: dict):
     try:
         return {"ok": True, **wiz.save_manual_passphrase((payload or {}).get("passphrase", ""))}
     except Exception as e:
-        log.error(f"[WebUI] 手动填入口令失败: {e}")
-        return JSONResponse({"ok": False, "error": "手动填入口令失败，详细原因见运行日志"}, 400)
+        return _fail("手动填入口令", e)
 
 
 @router.post("/api/wizard/imagekey/start")
@@ -116,8 +124,7 @@ def api_wizard_imagekey_start():
     try:
         return {"ok": True, **wiz.start_imagekey()}
     except Exception as e:
-        log.error(f"[WebUI] 启动图片密钥扫描失败: {e}")
-        return JSONResponse({"ok": False, "error": "启动图片密钥扫描失败，详细原因见运行日志"}, 400)
+        return _fail("启动图片密钥扫描", e)
 
 
 @router.post("/api/wizard/imagekey/cancel")
@@ -137,8 +144,7 @@ def api_wizard_verify():
     try:
         return {"ok": True, **wiz.verify()}
     except Exception as e:
-        log.error(f"[WebUI] 口令校验失败: {e}")
-        return JSONResponse({"ok": False, "error": "口令校验失败，详细原因见运行日志"}, 400)
+        return _fail("口令校验", e)
 
 
 @router.post("/api/wizard/reset")

@@ -228,6 +228,8 @@ def test_restore_refuses_values_that_fail_validation(monkeypatch, tmp_path):
         assert rest.status_code == 400
         assert "web_bind_host" in json.loads(rest.body)["error"]
         assert json.loads(cfg_file.read_text(encoding="utf-8")) == {"web_port": 4950}
+        # 被拒的恢复不落备份：数据目录里不该多出含密码哈希的副本
+        assert [p.name for p in tmp_path.glob("config.json.bak-*")] == []
 
 
 def test_restore_merges_and_backs_up_the_old_file(monkeypatch, tmp_path):
@@ -253,7 +255,9 @@ def test_restore_merges_and_backs_up_the_old_file(monkeypatch, tmp_path):
         assert written["web_port"] == 9000
         # 能即时生效的那一项当场生效
         assert config.GROUP_NAME_MAP == {"a@chatroom": "新群名"}
-        old = json.loads(open(rest["backup_path"], encoding="utf-8").read())
+        assert rest["backup_name"].startswith("config.json.bak-")
+        backup = cfg_file.parent / rest["backup_name"]
+        old = json.loads(backup.read_text(encoding="utf-8"))
         assert old == {"web_port": 4950, "group_name_map": {"a@chatroom": "老群名"}}
 
 
@@ -429,3 +433,59 @@ def test_stop_signal_finishes_the_cleanup_then_ends_the_process(monkeypatch, tmp
     assert steps == ["bridge", "desktop", "webui", "flush", ("exit", 0)]
     assert shutdown.is_set()
     assert not pid_file.exists()
+
+
+# ---------- 错误口径与响应字段 ----------
+
+
+def test_validation_errors_speak_the_same_shape(monkeypatch, tmp_path):
+    """请求形状不对也回 {ok:false,error}，不留 pydantic 的英文 detail。"""
+    from fastapi.testclient import TestClient
+
+    cfg_file = tmp_path / "config.json"
+    cfg_file.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(events, "notify_status", lambda: None)
+    monkeypatch.setattr(events, "attach_log_relay", lambda: None)
+
+    with config.temporary(cfg_file):
+        client = TestClient(webui_app.app)
+        resp = client.put("/api/config", json=["not-an-object"])
+
+    assert resp.status_code == 422
+    body = resp.json()
+    assert body["ok"] is False
+    assert body["error"].startswith("请求参数不正确")
+
+
+def test_status_does_not_leak_internal_paths(saved, monkeypatch):
+    """状态里不展示证书与备份的绝对路径：界面用不到，路径不外泄。"""
+    from flandora.webui import deps
+
+    payload = deps.status_payload()
+    webui = payload["webui"]
+
+    assert "tls_cert_path" not in webui
+    assert "tls_key_path" not in webui
+    assert webui["tls_cert_set"] is False
+
+
+def test_wizard_preconditions_reach_the_caller():
+    """向导的前置错误原样回给面板，不笼统化成「见运行日志」。"""
+    from flandora.webui.api import wizard as wizard_api
+    from flandora.wizard import WizardError
+
+    resp = wizard_api._fail("确认免责声明", WizardError("请先勾选并确认免责声明"))
+    body = json.loads(resp.body)
+
+    assert resp.status_code == 400
+    assert body["error"] == "请先勾选并确认免责声明"
+
+
+def test_wizard_unexpected_errors_stay_generic():
+    from flandora.webui.api import wizard as wizard_api
+
+    resp = wizard_api._fail("确认免责声明", RuntimeError("boom"))
+    body = json.loads(resp.body)
+
+    assert resp.status_code == 400
+    assert "详细原因见运行日志" in body["error"]

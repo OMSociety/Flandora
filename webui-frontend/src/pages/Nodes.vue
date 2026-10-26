@@ -232,7 +232,7 @@ onMounted(load)
           <div class="endpoint-preview">
             <span class="mini-dot"></span>OneBot v11 正向 WebSocket<span class="mono">{{ endpoint }}</span>
           </div>
-          <p class="hint">这些值只在没有启用中的入口时兜底；下面按类型配了入口，事件就按入口分发。</p>
+          <p class="hint">这些值只在没有任何入口条目时兜底；把所有入口停用不会造出兜底监听。</p>
         </div>
 
         <div v-else class="tab-panel" role="tabpanel">

@@ -14,6 +14,7 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -58,6 +59,17 @@ def _no_build():
     )
 
 
+async def _validation_error(_request: Request, exc: RequestValidationError):
+    """请求形状不对也回 ``{ok:false,error}``：全站错误只有这一种口径。"""
+    errors = exc.errors()
+    loc = ""
+    if errors:
+        parts = [str(part) for part in errors[0].get("loc", ()) if part != "body"]
+        loc = ".".join(parts)
+    where = f"：{loc}" if loc else ""
+    return JSONResponse({"ok": False, "error": f"请求参数不正确{where}"}, 422)
+
+
 def create_app() -> FastAPI:
     """按固定顺序装好中间件、业务路由与静态前端，返回可跑的应用。"""
     app = FastAPI(
@@ -68,6 +80,7 @@ def create_app() -> FastAPI:
         openapi_url=None,
     )
     app.middleware("http")(_require_login)
+    app.add_exception_handler(RequestValidationError, _validation_error)
     for router in ALL_ROUTERS:
         app.include_router(router)
     app.add_api_websocket_route("/ws", monitor.ws_endpoint)

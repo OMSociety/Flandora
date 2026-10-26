@@ -7,6 +7,7 @@ import AppIcon from '../components/AppIcon.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 const wiz = ref(null)
 const busy = ref(false)
+const statusError = ref('')
 const accepted = ref(false)
 // 勾选是本地意图：轮询不能每 2 秒把它覆盖回后端事实，否则用户来不及点确认就被清空。
 let acceptedTouched = false
@@ -63,7 +64,12 @@ const chipText = (state) => ({ idle: '待开始', running: '进行中', ok: '已
 function shortWxid(id) { return !id ? '未知' : id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-3)}` : id }
 async function loadStatus() {
   const res = await get('/api/wizard/status', true)
-  if (!res.ok || !res.data?.ok) return
+  if (!res.ok || !res.data?.ok) {
+    // 读不到状态就明说，别把「后端不可达」渲染成一张停在第一步的新向导
+    statusError.value = res.data?.error || '读不到取钥进度，后端可能没起来'
+    return
+  }
+  statusError.value = ''
   wiz.value = res.data
   // 只在用户还没动过勾选时同步服务端状态；确认成功后重置，改由后端事实驱动。
   if (res.data.disclaimer_accepted) {
@@ -136,6 +142,12 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); if (tickTimer) clearInt
     <div class="page-tools"><span class="local-only"><AppIcon name="ShieldCheck" :size="15" />密钥仅保存在本机</span></div>
     <ol class="wizard-steps" aria-label="取钥进度"><li v-for="(item, i) in steps" :key="item.name" :class="{ current: currentIndex === i, complete: item.state === 'ok' || currentIndex > i }"><span class="step-marker"><AppIcon v-if="item.state === 'ok' || currentIndex > i" name="Check" :size="13" /><template v-else>{{ i + 1 }}</template></span><div><strong>{{ item.name }}</strong><small>{{ item.detail }}</small></div></li></ol>
 
+    <div v-if="statusError" class="card wizard-offline">
+      <AppIcon name="CircleAlert" :size="16" />
+      <span>{{ statusError }}</span>
+      <button class="btn btn-outline btn-sm" type="button" @click="loadStatus">重试</button>
+    </div>
+
     <div class="wizard-layout">
       <div class="wizard-main">
         <section class="card wizard-card" :class="{ inactive: currentIndex !== 0 && disclaimer.state !== 'ok' }">
@@ -206,6 +218,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer); if (tickTimer) clearInt
 </template>
 
 <style scoped>
+.wizard-offline { display:flex; align-items:center; gap:10px; margin-bottom:18px; padding:12px 16px; color:var(--danger); }
 .wiz-page { display:flex; flex-direction:column; gap:16px; }
 .local-only { display:flex; align-items:center; gap:6px; color:var(--success); font-size:11px; white-space:nowrap; }
 .wizard-steps { display:grid; grid-template-columns:repeat(4,1fr); padding:0 10px 22px; list-style:none; border-bottom:1px solid var(--border); }

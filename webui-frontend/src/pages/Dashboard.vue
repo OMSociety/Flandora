@@ -2,6 +2,7 @@
 import { ref, onMounted, onBeforeUnmount, computed } from 'vue'
 import { get, post } from '../api'
 import { status, refreshStatus, toast } from '../store'
+import { on } from '../ws'
 import { formatUptime, fmt, hexHwnd, formatClock } from '../utils/format'
 import HourlyBarChart from '../components/HourlyBarChart.vue'
 import Modal from '../components/Modal.vue'
@@ -66,11 +67,22 @@ async function applyControl(action) {
   refreshStatus(true)
 }
 async function loadStats() {
-  const res = await get('/api/stats')
+  const res = await get('/api/stats', true)
   if (res.ok && res.data) stats.value = { today: res.data.today || {}, hourly: res.data.hourly || [], top_contacts: res.data.top_contacts || [] }
   else toast('加载消息统计失败', 'error')
 }
-onMounted(() => { loadStats() })
+// 统计跟着事件走：桥接推来新消息就刷新，另每 30 秒兜底拉一次
+let statsTimer = null
+let offMessage = null
+onMounted(() => {
+  loadStats()
+  offMessage = on('message', loadStats)
+  statsTimer = setInterval(loadStats, 30000)
+})
+onBeforeUnmount(() => {
+  if (offMessage) offMessage()
+  if (statsTimer) clearInterval(statsTimer)
+})
 </script>
 
 <template>

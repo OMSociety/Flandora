@@ -15,6 +15,7 @@ const result = ref(null)
 
 const events = ref([])
 const eventsLoading = ref(false)
+const eventsError = ref('')
 const openedEvent = ref(null)
 
 const builder = ref([{ type: 'text', value: '你好' }])
@@ -29,10 +30,22 @@ const builderSegments = computed(() =>
     .map((row) => {
       if (row.type === 'text') return { type: 'text', data: { text: row.value } }
       if (row.type === 'at') return { type: 'at', data: { qq: Number(row.value) || 0 } }
+      // face 段的规范字段是 id（QQ 表情编号），image 才是 file
+      if (row.type === 'face') return { type: 'face', data: { id: row.value } }
       return { type: row.type, data: { file: row.value } }
     }),
 )
 const builderCq = computed(() => segmentsToCq(builderSegments.value))
+
+const BUILDER_PLACEHOLDERS = {
+  text: '文字内容',
+  at: '群成员的 user_id',
+  face: 'QQ 表情编号（如 14）',
+  image: '文件路径或 base64://',
+}
+function builderPlaceholder(type) {
+  return BUILDER_PLACEHOLDERS[type] || '文件路径或 base64://'
+}
 
 async function loadCatalog() {
   const res = await get('/api/debug/actions')
@@ -112,7 +125,13 @@ async function loadEvents() {
   eventsLoading.value = true
   const res = await get('/api/debug/events?limit=30', true)
   eventsLoading.value = false
-  if (res.ok && res.data?.events) events.value = res.data.events
+  if (res.ok && res.data?.events) {
+    events.value = res.data.events
+    eventsError.value = ''
+    return
+  }
+  // 读失败与「确实还没有事件」是两件事：前者显示错误行并给重试，不装成空态
+  eventsError.value = res.data?.error || '读不到事件存档，详细原因见运行日志'
 }
 
 function toggleEvent(event) {
@@ -225,7 +244,7 @@ onMounted(() => {
             <input
               v-model="row.value"
               class="input"
-              :placeholder="row.type === 'at' ? '群成员的 user_id' : row.type === 'text' ? '文字内容' : '文件路径或 base64://'"
+              :placeholder="builderPlaceholder(row.type)"
               :aria-label="`第 ${i + 1} 段内容`"
             />
             <button class="row-del" type="button" aria-label="删除这一段" @click="removeRow(i)">
@@ -258,7 +277,11 @@ onMounted(() => {
               <AppIcon name="RefreshCw" :size="14" />刷新
             </button>
           </div>
-          <div v-if="!events.length" class="hint">还没有推送过消息。等微信来一条，或让机器人发一条。</div>
+          <div v-if="eventsError" class="hint error-text">
+          {{ eventsError }}
+          <button class="btn btn-outline btn-sm" type="button" @click="loadEvents">重试</button>
+        </div>
+        <div v-else-if="!events.length" class="hint">还没有推送过消息。等微信来一条，或让机器人发一条。</div>
           <ul v-else class="event-list">
             <li v-for="event in events" :key="event.message_id">
               <button class="event-row" type="button" :aria-expanded="openedEvent === event" @click="toggleEvent(event)">
@@ -277,6 +300,7 @@ onMounted(() => {
 
 <style scoped>
 .debug-panel { display:flex; flex-direction:column; gap:16px; }
+.error-text { display:flex; align-items:center; gap:10px; color:var(--danger); }
 .debug-layout { display:grid; grid-template-columns:minmax(0,1.6fr) minmax(280px,1fr); gap:16px; align-items:start; max-width:1180px; }
 .invoke-card, .builder-card, .events-card { padding:20px; }
 .section-head > .app-icon { color:var(--primary-deep); }

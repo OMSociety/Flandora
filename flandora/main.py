@@ -171,7 +171,7 @@ def start_web():
         log.warning(f"[面板] {config.WEB_BIND_HOST_ERROR}")
     scheme = "https" if config.WEBUI_TLS else "http"
     scope = "监听所有网卡" if config.WEB_BIND_HOST == "0.0.0.0" else "仅本机"
-    log.info(f"WebUI: {scheme}://{config.WEB_BIND_HOST}:{config.WEB_PORT}（{scope}）")
+    log.info(f"面板: {scheme}://{config.WEB_BIND_HOST}:{config.WEB_PORT}（{scope}）")
     run_webui(config.WEB_BIND_HOST, config.WEB_PORT)
     return True
 
@@ -263,7 +263,7 @@ def main() -> int:
         log.info("Bridge 版本: %s", __version__)
         if config.CONFIG_GENERATED:
             log.info(
-                "首次启动：已按默认值生成 %s，请到 WebUI 里把示例值改成你的真实值",
+                "首次启动：已按默认值生成 %s，请到面板里把示例值改成你的真实值",
                 config.CONFIG_FILE,
             )
         # 后台查一次新版，失败静默（见 update_check）
@@ -280,7 +280,7 @@ def main() -> int:
             # 面板被安全闸拦下来了：原因已写进日志，但 OneBot 服务得继续跑。
             shutdown.wait()
     except (Exception, SystemExit) as e:
-        # 主线程靠 uvicorn 常驻。WebUI 起不来（端口被占、发布包缺少 webui 模块等）时
+        # 主线程靠 uvicorn 常驻。面板起不来（端口被占、发布包缺少 webui 模块等）时
         # 不能让进程退出：OneBot 服务端跑在后台线程里，主线程一退，桥梁就断了。
         # 注意 uvicorn 绑定端口失败时走的是 sys.exit()，SystemExit 不是 Exception 的子类，
         # 必须显式接住。
@@ -290,7 +290,7 @@ def main() -> int:
         else:
             log.error(f"[面板] 启动失败: {type(e).__name__}: {e}")
         log.error(
-            f"[面板] WebUI 不可用，但 OneBot 入口（{ob_endpoints_summary()}）仍在运行，"
+            f"[面板] 面板服务不可用，但 OneBot 入口（{ob_endpoints_summary()}）仍在运行，"
             "已连接的客户端不受影响"
         )
         log.error(

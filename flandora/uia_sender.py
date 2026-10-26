@@ -264,7 +264,7 @@ class UiaSender(BaseSender):
         self._last_contact = ""
         # 本次发送开始时的前台窗口（0 = 无需还原）
         self._fg_before = 0
-        # 最近一次发送失败的原因（供 WebUI 回显，不只是留在日志里）
+        # 最近一次发送失败的原因（供面板回显，不只是留在日志里）
         self._last_error = ""
         # 微信里配置的发送快捷键："" 表示还没探过，"enter" 回车，"ctrl_enter" Ctrl+回车
         self._send_key = ""
@@ -365,7 +365,7 @@ class UiaSender(BaseSender):
                 if not w or not w.Exists(0.3):
                     continue
                 if self._window_state(w) == "login":
-                    log.error("隔离桌面上的微信停在登录界面，请先在 WebUI 里完成登录")
+                    log.error("隔离桌面上的微信停在登录界面，请先在面板里完成登录")
                     return False
                 self._window = w
                 self._hwnd = info["hwnd"]
@@ -467,7 +467,7 @@ class UiaSender(BaseSender):
         return False
 
     def current_window_info(self) -> dict | None:
-        """当前绑定的微信窗口信息（供 WebUI 状态展示）。句柄已失效则返回 None。"""
+        """当前绑定的微信窗口信息（供面板状态展示）。句柄已失效则返回 None。"""
         if not self._hwnd:
             return None
         try:
@@ -498,7 +498,7 @@ class UiaSender(BaseSender):
         return str(self._last_error or "")
 
     def rebind_window(self, hwnd: int) -> bool:
-        """重新绑定到指定窗口（WebUI 窗口选择）。hwnd=0 表示恢复自动查找。"""
+        """重新绑定到指定窗口（面板上的窗口选择）。hwnd=0 表示恢复自动查找。"""
         with self._lock:
             if not hwnd:
                 self._window = None

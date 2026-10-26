@@ -134,7 +134,7 @@ async def _validation_error(_request: Request, exc: RequestValidationError):
 def create_app() -> FastAPI:
     """按固定顺序装好中间件、业务路由与静态前端，返回可跑的应用。"""
     app = FastAPI(
-        title="Flandora WebUI",
+        title="Flandora 面板",
         lifespan=lifespan,
         docs_url=None,
         redoc_url=None,

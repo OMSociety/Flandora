@@ -196,7 +196,7 @@ def flash_window(hwnd: int, count: int = 5) -> bool:
 def state_from_handle(hwnd: int) -> str:
     """按窗口句柄判断微信状态，返回 'login' / 'chat' / 'unknown'。
 
-    供 WebUI 与桌面管理器复用：`ControlFromHandle` 能取到**别的桌面**上的
+    供面板与桌面管理器复用：`ControlFromHandle` 能取到**别的桌面**上的
     控件，所以隔离桌面上的窗口也能这样判状态。
     """
     try:

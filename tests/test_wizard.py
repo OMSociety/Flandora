@@ -295,3 +295,56 @@ def test_verify_summary_counts_when_the_list_is_long():
 def test_verify_summary_all_passed_and_none_passed():
     assert wizard_mod.verify_summary(5, 5, []) == "5/5 个库全部通过"
     assert "口令可能不属于当前账号" in wizard_mod.verify_summary(0, 5, ["a.db"] * 5)
+
+
+# ===== 图片密钥试解：认取钥器写的 DPAPI 密文 =====
+
+
+def _write_sealed_image_key(accepted, sealed="c2VhbGVk"):
+    with open(accepted.image_key_path(), "w", encoding="utf-8") as fh:
+        json.dump({"wxid": "wxid_restart", "xor_key": 17, "aes_key_dpapi": sealed}, fh)
+
+
+@pytest.fixture
+def sample_image(monkeypatch):
+    """把「找一张本地图片」换成固定样本：试解只验密钥本身，不碰真实微信目录。"""
+    from flandora import wx_image, wx_image_key
+
+    magic, _ext = wx_image._MAGICS[0]
+    monkeypatch.setattr(wx_image_key, "attach_dir", lambda root=None: "attach")
+    monkeypatch.setattr(wx_image_key, "sample_block", lambda folder: (b"\x00" * 32, "sample.dat"))
+    monkeypatch.setattr(wx_image, "aes_ecb_decrypt", lambda key, block: magic + b"rest")
+    return magic
+
+
+def test_imagekey_trial_uses_the_sealed_key(accepted, account_as, sample_image, monkeypatch):
+    """取钥器落盘的是 aes_key_dpapi；试解要按同一条规则取密钥。"""
+    from flandora import wx_image_key
+
+    _write_sealed_image_key(accepted)
+    account_as("wxid_restart")
+    seen = {}
+
+    def open_sealed(sealed):
+        seen["sealed"] = sealed
+        return b"k" * 16
+
+    monkeypatch.setattr(wx_image_key, "open_aes_key", open_sealed)
+    info = wizard_mod.Wizard().imagekey_status()
+    assert seen["sealed"] == "c2VhbGVk", seen
+    assert info["works"] is True, info
+    assert info["error"] == "", info
+
+
+def test_imagekey_trial_explains_an_unreadable_seal(
+    accepted, account_as, sample_image, monkeypatch
+):
+    """密文在别的 Windows 账户或别的机器上取的：说清要重新取，而不是报长度不对。"""
+    from flandora import wx_image_key
+
+    _write_sealed_image_key(accepted)
+    account_as("wxid_restart")
+    monkeypatch.setattr(wx_image_key, "aes_key_from_payload", lambda payload: b"")
+    info = wizard_mod.Wizard().imagekey_status()
+    assert info["works"] is None, info
+    assert "重新取一次" in info["error"], info

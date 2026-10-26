@@ -101,6 +101,35 @@ def open_aes_key(sealed: str) -> bytes:
         return b""
 
 
+def parse_aes_key_text(raw: str) -> bytes:
+    """把密钥文本解析成 16 字节：32 位十六进制与 16 个 ASCII 字符两种写法都接受。"""
+    text = raw.strip()
+    if len(text) == 32:
+        try:
+            return bytes.fromhex(text)
+        except ValueError:
+            pass
+    if len(text) == 16 and text.isascii():
+        return text.encode("ascii")
+    log.warning("图片 AES 密钥格式不对：应为 32 位十六进制或 16 个 ASCII 字符，实为 %r", text[:40])
+    return b""
+
+
+def aes_key_from_payload(payload: dict) -> bytes:
+    """从落盘的字典里取出 AES 密钥：DPAPI 密文优先，其次手填的明文字段。
+
+    取钥向导写的是 ``aes_key_dpapi``（同机同账户才解得开）；手工编辑密钥文件时也可以
+    直接写明文 ``aes_key``。两处读密钥的地方（收件源与向导的试解）走同一条规则，
+    免得一处认、一处不认。
+    """
+    sealed = str(payload.get("aes_key_dpapi") or "")
+    if sealed:
+        key = open_aes_key(sealed)
+        if key:
+            return key
+    return parse_aes_key_text(str(payload.get("aes_key") or ""))
+
+
 def current_wxid(root: Optional[str] = None) -> str:
     acct = wechat_account.current_account(root)
     return acct.wxid if acct is not None else ""

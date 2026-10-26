@@ -17,7 +17,7 @@ import time
 
 from . import config, wechat_account, wx_crypto, wx_store
 from .domain.content import IMAGE_PLACEHOLDER
-from .wx_image_key import open_aes_key
+from .wx_image_key import aes_key_from_payload
 from .wx_store import WxStoreError
 from .wxkey.store import KeyStore, KeyStoreError
 
@@ -333,9 +333,7 @@ def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
         )
         return b"", -1
 
-    aes = open_aes_key(str(payload.get("aes_key_dpapi") or ""))
-    if not aes:
-        aes = _parse_aes_key(payload.get("aes_key") or "")
+    aes = aes_key_from_payload(payload)
     if not aes:
         return b"", -1
     try:
@@ -348,20 +346,6 @@ def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
         "已配置" if xor_int >= 0 else "未配置（将自动反推）",
     )
     return aes, xor_int
-
-
-def _parse_aes_key(raw: str) -> bytes:
-    """把密钥文本解析成 16 字节。兼容 ASCII 与十六进制两种写法。"""
-    text = raw.strip()
-    if len(text) == 32:
-        try:
-            return bytes.fromhex(text)
-        except ValueError:
-            pass
-    if len(text) == 16 and text.isascii():
-        return text.encode("ascii")
-    log.warning("图片 AES 密钥格式不对：应为 32 位十六进制或 16 个 ASCII 字符，实为 %r", text[:40])
-    return b""
 
 
 def build_source(key_file: str = None, on_outgoing=None) -> WxLocalSource:

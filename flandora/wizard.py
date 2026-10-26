@@ -280,7 +280,12 @@ class Wizard:
             try:
                 attach = wx_image_key.attach_dir(config.WECHAT_FILES_ROOT or None)
                 block, _src = wx_image_key.sample_block(attach)
-                key = (payload.get("aes_key") or "").encode("ascii")
+                key = wx_image_key.aes_key_from_payload(payload)
+                if not key:
+                    info["error"] = (
+                        "密钥解不开：它是在别的 Windows 账户或别的机器上取的，重新取一次"
+                    )
+                    return info
                 plain = wx_image.aes_ecb_decrypt(key, block)
                 info["works"] = any(plain.startswith(m) for m, _ in wx_image._MAGICS)
             except Exception as exc:

@@ -351,6 +351,7 @@ def _selftest(argv):
     import sqlite3
     import tempfile
     import time
+    from urllib.parse import quote
 
     t0 = time.time()
     data = decrypt_db(passphrase, db_path)
@@ -358,7 +359,7 @@ def _selftest(argv):
     out = os.path.join(tempfile.gettempdir(), "wx_selftest.db")
     with open(out, "wb") as f:
         f.write(data)
-    con = sqlite3.connect(f"file:{out}?mode=ro", uri=True)
+    con = sqlite3.connect(f"file:{quote(out)}?mode=ro", uri=True)
     ok = con.execute("PRAGMA integrity_check").fetchone()[0]
     tables = [
         r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")

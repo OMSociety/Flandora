@@ -10,10 +10,10 @@ if exist "%HERE%..\.venv\Scripts\pythonw.exe" (
     start "" "%HERE%..\.venv\Scripts\python.exe" "%HERE%main.py"
 ) else (
     where pyw >nul 2>nul
-    if %errorlevel%==0 (
-        start "" pyw -3 "%HERE%main.py"
-    ) else (
+    if errorlevel 1 (
         start "" pythonw "%HERE%main.py"
+    ) else (
+        start "" pyw -3 "%HERE%main.py"
     )
 )
 endlocal

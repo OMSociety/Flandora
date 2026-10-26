@@ -52,6 +52,11 @@ class UnsupportedBuild(LocatorError):
     """当前微信版本的结构不符合已知调用形态，无法定位。"""
 
 
+# PE 首选基址的缺省值（4.1.15.56 上是 0x180000000）；解析出真实值后以 PE 为准，
+# 运行期挂钩再用实际加载基址。
+DEFAULT_IMAGE_BASE = 0x180000000
+
+
 @dataclass(frozen=True)
 class HookPoint:
     """一个可挂钩的位置。"""
@@ -61,11 +66,12 @@ class HookPoint:
     dll_path: str
     dll_sha256: str
     file_version: str
+    image_base: int = DEFAULT_IMAGE_BASE
 
     @property
     def va(self) -> int:
-        """按 PE 首选基址算出的映像内地址；运行期还要再加上实际加载基址差。"""
-        return IMAGE_MIN + self.rva
+        """按这张 DLL 的首选基址算出的映像内地址；运行期还要再加上实际加载基址差。"""
+        return self.image_base + self.rva
 
     def describe(self) -> str:
         ver = self.file_version or "未知版本"
@@ -73,10 +79,6 @@ class HookPoint:
             f"微信 {ver}，口令设置函数 RVA {self.rva:#x}"
             f"（{self.size} 字节），Weixin.dll {self.dll_sha256[:16]}…"
         )
-
-
-# PE 可选头里的首选基址在 4.1.15.56 上是 0x180000000；真正挂钩时用运行期基址。
-IMAGE_MIN = 0x180000000
 
 
 def _u16(buf: bytes, off: int) -> int:
@@ -118,9 +120,7 @@ class PeImage:
             preferred = _u32(data, opt + 28)
         else:
             raise LocatorError(f"未知的可选头 magic {magic:#x}")
-        global IMAGE_MIN  # noqa: PLW0603  —— 只有解析首部这一处会改它
-        IMAGE_MIN = preferred
-
+        self.image_base = preferred
         self.sections: dict[str, tuple[int, int, int, int]] = {}
         sec_off = opt + opt_size
         for i in range(n_sec):
@@ -459,6 +459,7 @@ def resolve(dll_path: Optional[str] = None, manual_rva: int = 0) -> HookPoint:
             dll_path=str(dll),
             dll_sha256=digest,
             file_version=version,
+            image_base=image.image_base,
         )
         log.info("按手动指定的地址定位：%s", hook.describe())
         return hook
@@ -472,6 +473,7 @@ def resolve(dll_path: Optional[str] = None, manual_rva: int = 0) -> HookPoint:
         dll_path=str(dll),
         dll_sha256=digest,
         file_version=version,
+        image_base=image.image_base,
     )
     log.info("定位成功：%s，调用点 %d 处", hook.describe(), len(sites))
     return hook

@@ -47,7 +47,7 @@ CATEGORIES = (
     CAT_EXTEND,
 )
 
-PARAM_TYPES = ("int", "id", "string", "bool", "float", "list", "dict", "message")
+PARAM_TYPES = ("int", "id", "string", "bool", "list", "message")
 
 # 类型的中文说法：`id` 是这一层的专用类型，报错时说清楚它接受什么
 TYPE_LABELS = {"id": "整数 ID 或微信标识（wxid / xxx@chatroom）"}
@@ -88,7 +88,6 @@ class Action:
     read_only: bool = False
     implemented: bool = True
     wip: str = ""
-    aliases: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.category not in CATEGORIES:
@@ -99,7 +98,6 @@ class Action:
     def to_dict(self) -> dict:
         return {
             "name": self.name,
-            "aliases": list(self.aliases),
             "category": self.category,
             "summary": self.summary,
             "readOnly": self.read_only,
@@ -520,7 +518,7 @@ ACTIONS: tuple[Action, ...] = (
     Action(
         name="friend_poke",
         category=CAT_EXTEND,
-        summary="拍一拍好友（send_poke 的别名）",
+        summary="拍一拍好友（私聊形态）",
         params=(P("user_id", "id", required=True),),
         implemented=False,
         wip="拍一拍要双击成员头像，UIA 无法稳定定位头像；见 docs/needs-user.md",
@@ -600,10 +598,10 @@ ACTIONS: tuple[Action, ...] = (
 
 
 def _build_index() -> dict[str, Action]:
-    """建立「名字与别名 → 动作」的索引，重名或别名冲突在导入期就报错。"""
+    """建立「名字 → 动作」的索引，重名在导入期就报错。"""
     index: dict[str, Action] = {}
     for action in ACTIONS:
-        for key in (action.name, *action.aliases):
+        for key in (action.name,):
             existing = index.get(key)
             if existing is not None:
                 raise ValueError(
@@ -632,9 +630,7 @@ _TYPE_CHECKS = {
     ),
     "string": lambda v: isinstance(v, str),
     "bool": lambda v: isinstance(v, bool),
-    "float": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
     "list": lambda v: isinstance(v, list),
-    "dict": lambda v: isinstance(v, dict),
     # 消息既可以是消息段数组，也可以是 CQ 码字符串（auto_escape 为真时按纯文本）
     "message": lambda v: isinstance(v, (str, list)),
 }

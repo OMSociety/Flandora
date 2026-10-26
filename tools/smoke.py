@@ -126,7 +126,14 @@ def build_check() -> tuple[str, bool]:
         errors="replace",
     )
     lines = (done.stdout or "").strip().splitlines()
-    return (lines[-1] if lines else "没有输出"), done.returncode == 0
+    if done.returncode == 0:
+        return (lines[-1] if lines else "没有输出"), True
+    # 失败时把完整输出带出来：真正的问题行常在 stderr 的「检查不通过：N 项」之后
+    detail = "\n".join(lines)
+    err = (done.stderr or "").strip()
+    if err:
+        detail = (detail + "\n" + err).strip()
+    return (detail or "没有输出"), False
 
 
 def stop_and_wait(timeout: float = 30.0) -> tuple[bool, str]:

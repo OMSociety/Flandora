@@ -240,7 +240,7 @@ run_bridge.py -> flandora.main
 | `flandora/wxkey/store.py` | DPAPI 额外熵参与派生，改动即作废已存口令 | 改熵值或字段布局须同时抬 `FORMAT_VERSION`；见「禁止操作」 |
 | `webui-frontend/src/pages/Wizard.vue` | 2 秒轮询曾把免责声明勾选冲回 false，第一步永远无法完成 | 跑 Playwright 用例 `wizard keeps the disclaimer tick across status polling` |
 | `flandora/webui/dist` 与 `build.py` | 前端产物比源码旧时会把旧界面打进安装包 | 打包前跑 `python build.py --check`；确认它打印的产物时间不早于源码 |
-| `flandora/updater.py` | 替换脚本在程序退出后才动手，写错路径或新版本起不来会让程序目录处于半更新状态 | 改完跑 `tests/test_updater.py`；发版前按 `docs/smoke-test.md` 第 9 节走一遍回滚路径 |
+| `flandora/updater.py` | 替换脚本在程序退出后才动手，写错路径或新版本起不来会让程序目录处于半更新状态 | 改完跑 `tests/test_updater.py`；发版前按 `docs/smoke-test.md` 第 10 节走一遍回滚路径 |
 
 ## 出错怎么办
 

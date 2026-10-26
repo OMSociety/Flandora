@@ -22,18 +22,12 @@ _BY_NAME: dict[str, dict[str, Any]] = {a["name"]: a for a in ACTIONS}
 
 
 def get(name: str) -> dict[str, Any] | None:
-    """按名字取动作；别名也会命中（返回的是正名那条）。"""
-    spec = _BY_NAME.get(name)
-    if spec is not None:
-        return spec
-    for action in ACTIONS:
-        if name in (action.get("aliases") or []):
-            return action
-    return None
+    """按名字取动作。"""
+    return _BY_NAME.get(name)
 
 
 def search(query: str, limit: int = 20) -> list[dict[str, Any]]:
-    """在名字、别名、摘要、分类里找子串，按「名字命中」优先排。"""
+    """在名字、摘要、分类里找子串，按「名字命中」优先排。"""
     needle = (query or "").strip().lower()
     if not needle:
         return []
@@ -41,12 +35,9 @@ def search(query: str, limit: int = 20) -> list[dict[str, Any]]:
     for action in ACTIONS:
         name = action["name"].lower()
         summary = (action.get("summary") or "").lower()
-        aliases = " ".join(action.get("aliases") or []).lower()
         category = (action.get("category") or "").lower()
         if needle in name:
             hits.append((0, action))
-        elif needle in aliases:
-            hits.append((1, action))
         elif needle in summary:
             hits.append((2, action))
         elif needle in category:

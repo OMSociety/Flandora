@@ -59,9 +59,9 @@ class Lifecycle:
         self._thread: threading.Thread | None = None
 
     def begin_start(self) -> bool:
-        """进入 STARTING；已在起或已在跑时返回 False，调用方据此跳过重复启动。"""
+        """进入 STARTING；已在起、已在跑或正在停时返回 False，调用方据此跳过重复启动。"""
         with self._lock:
-            if self._state in (RunState.STARTING, RunState.RUNNING):
+            if self._state in (RunState.STARTING, RunState.RUNNING, RunState.STOPPING):
                 return False
             self._state = RunState.STARTING
             self._paused = False

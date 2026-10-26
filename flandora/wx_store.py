@@ -29,6 +29,7 @@ import os
 import re
 import sqlite3
 import time
+from urllib.parse import quote
 
 from . import wechat_account, wx_crypto, wx_image
 from .domain.content import EMOJI_PLACEHOLDER, IMAGE_PLACEHOLDER
@@ -381,7 +382,7 @@ class WxStore:
         path = os.path.join(self.work_dir, name)
         if name not in self._decrypted or not os.path.isfile(path):
             raise WxStoreError(f"{name} 尚未解密，先调用 refresh()")
-        return sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        return sqlite3.connect(f"file:{quote(path)}?mode=ro", uri=True)
 
     # ---------- 会话 ----------
 

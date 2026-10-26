@@ -25,6 +25,9 @@ import paths
 # 桥接收到停止请求后自尽的宽限：够它 join 收件线程（5s）再关面板
 STOP_TIMEOUT = 10.0
 
+# 起桥接后确认它真的挂上端口（或至少还活着）的等待上限：秒退时要把失败报出来。
+START_CONFIRM_SECONDS = 3.0
+
 
 def _stop_request():
     """取桥接侧的停止信号模块（同一个仓库，不在 manager/ 目录里）。"""
@@ -68,7 +71,8 @@ def find_listening_pid(port: int) -> Optional[int]:
     needle = f":{int(port)}"
     for line in done.stdout.splitlines():
         parts = line.split()
-        if len(parts) < 5 or parts[0].upper() != "TCP":
+        # TCP 与 TCPv6 都是这个命令的输出，行首按前缀认，别把 v6 行漏掉
+        if len(parts) < 5 or not parts[0].upper().startswith("TCP"):
             continue
         if not parts[1].endswith(needle) or parts[3].upper() != "LISTENING":
             continue
@@ -182,7 +186,19 @@ class BridgeProcess:
                 )
             except OSError as exc:
                 return False, f"启动失败：{exc}"
-            return True, f"已启动（PID {self.process.pid}）"
+            # 桥接可能因配置拒启而秒退：等它把端口挂上（或确认进程还在），再报成功
+            deadline = time.monotonic() + START_CONFIRM_SECONDS
+            while time.monotonic() < deadline:
+                code = self.process.poll()
+                if code is not None:
+                    self.process = None
+                    return False, f"桥接启动后立即退出（退出码 {code}），看一眼「打开日志」"
+                if self._ports_listening():
+                    return True, f"已启动（PID {self.process.pid}）"
+                time.sleep(0.2)
+            if self._child_alive():
+                return True, f"已启动（PID {self.process.pid}）"
+            return False, "桥接没有起来，看一眼「打开日志」"
 
     def stop(self, timeout: float = STOP_TIMEOUT) -> tuple[bool, str]:
         """请桥接自己退出；超过 ``timeout`` 秒还在就按端口找 PID 强杀。"""

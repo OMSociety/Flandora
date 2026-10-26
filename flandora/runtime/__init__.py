@@ -1,8 +1,9 @@
 """进程级状态：生命周期与运行期对象。
 
-架构边界：``LIFECYCLE`` 与 ``RUNTIME`` 是进程内唯一允许创建的可变全局对象，
-所有桥接状态都必须落在这两者身上（或 ``ob_ids`` 的身份/名字索引上），
-其它模块不得再引入模块级可变全局或共享状态模块。
+架构边界：桥接状态只有三个落点——``LIFECYCLE``（起停与暂停）、``RUNTIME``
+（sender/bridge/入口占用/更新提示）与 ``ob_ids.SELF``（身份与名字索引）。别的模块
+不许再存一份；确实需要模块级可变状态时，登记到 ``tests/architecture_allowlist.py``，
+未登记会被架构用例拦下。
 """
 
 from .lifecycle import LIFECYCLE, Lifecycle, RunState, Snapshot

@@ -20,6 +20,7 @@ import os
 import shutil
 import sqlite3
 import time
+from urllib.parse import quote
 
 from . import config, ob_store, updater, wx_source
 from .runtime import RUNTIME
@@ -59,7 +60,7 @@ def _sqlite_rows(path: str) -> int:
         return 0
     total = 0
     try:
-        con = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        con = sqlite3.connect(f"file:{quote(path)}?mode=ro", uri=True)
     except sqlite3.Error:
         return 0
     try:

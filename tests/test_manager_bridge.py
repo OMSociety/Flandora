@@ -112,14 +112,21 @@ def test_start_clears_the_stop_event_before_launching(ports, monkeypatch, tmp_pa
     monkeypatch.setattr(bridge_mod, "_stop_request", lambda: stop)
     launched = {}
 
+    up = {"listening": False}
+
     class _Popen:
         pid = 12345
 
         def __init__(self, cmd, **kwargs):
             launched["cmd"] = cmd
             launched["kwargs"] = kwargs
+            up["listening"] = True  # 起来之后端口才在听
+
+        def poll(self):
+            return None  # 还活着
 
     monkeypatch.setattr(bridge_mod.subprocess, "Popen", _Popen)
+    monkeypatch.setattr(bridge_mod, "port_is_listening", lambda _port: up["listening"])
     bridge = bridge_mod.BridgeProcess()
     ok, message = bridge.start()
     assert ok, message
@@ -205,3 +212,30 @@ def test_force_kill_reports_failure(monkeypatch):
     monkeypatch.setattr(subprocess, "run", boom)
     message = bridge_mod.BridgeProcess._force_kill(777)
     assert "777" in message and "失败" in message
+
+
+def test_start_reports_a_bridge_that_exits_immediately(ports, monkeypatch, tmp_path):
+    """配置拒启时桥接会秒退：托盘要说「立即退出」，不能报「已启动」。"""
+    main_py = tmp_path / "main.py"
+    main_py.write_text("# entry", encoding="utf-8")
+    monkeypatch.setattr(paths, "bridge_main", lambda: main_py)
+    monkeypatch.setattr(paths, "bridge_exe", lambda: tmp_path / "missing.exe")
+    monkeypatch.setattr(paths, "python_for_scripts", lambda: Path(sys.executable))
+    monkeypatch.setattr(bridge_mod, "_stop_request", lambda: _FakeStopRequest())
+
+    class _Popen:
+        pid = 54321
+
+        def __init__(self, cmd, **kwargs):
+            pass
+
+        def poll(self):
+            return 3  # 已退出
+
+    monkeypatch.setattr(bridge_mod.subprocess, "Popen", _Popen)
+    bridge = bridge_mod.BridgeProcess()
+    ok, message = bridge.start()
+
+    assert ok is False
+    assert "立即退出（退出码 3）" in message
+    assert bridge.process is None

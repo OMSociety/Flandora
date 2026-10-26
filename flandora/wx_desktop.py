@@ -490,8 +490,8 @@ def find_weixin_exe(configured: str = "") -> str:
     逐盘扫 `Program Files` 与 `Program Files (x86)`（两条都扫，微信有装在 32 位
     目录下的，也有装在非 C 盘的）。
 
-    `Weixin.exe` 只是启动器，真正的版本目录里是 `Weixin.dll`——但我们要启动的
-    就是启动器本身，所以找它是对的。
+    `Weixin.exe` 只是启动器，真正的版本目录里是 `Weixin.dll`——要启动的就是启动器
+    本身，所以找它是对的。
     """
     if configured and os.path.isfile(configured):
         return configured

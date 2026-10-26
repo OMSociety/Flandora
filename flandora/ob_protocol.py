@@ -882,7 +882,7 @@ def _prepare_message(message: list) -> _OutboundPrep:
             prep.segments.append(Text(text=str(data.get("text") or "")))
         elif seg_type == "at":
             raw_qq = data.get("qq")
-            if str(raw_qq) in ("all", "all_pending"):
+            if str(raw_qq) == "all":
                 # v11 用 qq="all" 表示 @全体；微信没有这个入口，归一成显示名
                 # 交给解析层如实拒绝
                 prep.segments.append(Mention(user_id=None, name="全体成员"))

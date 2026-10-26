@@ -425,17 +425,25 @@ def capture_and_recover(
     started = time.time()
 
     pids: list[int] = []
+    running = False
     try:
         blobs, calls, pids = capture_live(
             hook, timeout_s=quick_s, out_path=out_path, on_status=on_status
         )
-    except (WeChatNotRunning, NoKeyEvent):
+        running = True
+    except WeChatNotRunning:
         blobs, calls = [], 0
+    except NoKeyEvent:
+        blobs, calls = [], 0
+        running = True
     if blobs:
         return _finish(blobs, calls, pids, hook, targets=_account_db_paths(root), started=started)
 
     if on_status:
-        on_status("请在微信里退出登录，然后重新登录；登录完成会自动继续。")
+        if running:
+            on_status("请在微信里退出登录，然后重新登录；登录完成会自动继续。")
+        else:
+            on_status("微信没在运行：先打开微信并登录，登录完成会自动继续。")
     blobs, calls, pids = capture_login(
         hook,
         login_wait_s=login_wait_s,

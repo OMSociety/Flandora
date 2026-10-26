@@ -37,7 +37,6 @@ def test_image_md5_reference_is_not_a_path():
 def test_emoji_placeholders_are_emoji():
     assert classify("[表情]") == (ContentKind.EMOJI, ())
     assert classify(f'[表情] md5="{MD5_REF}"') == (ContentKind.EMOJI, ())
-    assert classify("[动画表情]") == (ContentKind.EMOJI, ())
 
 
 def test_empty_text_is_text():

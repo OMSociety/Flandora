@@ -29,7 +29,8 @@ def start_bridge():
 
     # 先把 OB11 服务端拉起来——发消息可能依赖微信窗口搜索，先保证能收消息。
     # 已在跑时 start() 自己返回 False，这里不需要另设标志。
-    ONEBOT_SERVER.start()
+    if not ONEBOT_SERVER.start():
+        log.error("[OB11] 服务端没起来（端口被占或已在停止中），桥接继续跑但客户端连不上")
 
     # create_sender() 会做 UIA 窗口枚举，可能阻塞（微信最小化/锁屏时尤甚），
     # 放到独立线程避免卡住 _bridge_loop（SSE 收消息）的启动。
@@ -106,14 +107,26 @@ def watch_stop_signal(shutdown: threading.Event, pid_file: str | None = None):
     os._exit(0)
 
 
+def ob_endpoints_summary() -> str:
+    """当前启用的 OneBot 入口，写进日志用；没配入口时退回通用设置的地址。"""
+    nodes = config.OB_NETWORKS or []
+    entries = [
+        f"{node.get('type')}「{node.get('name')}」" for node in nodes if node.get("enabled", True)
+    ]
+    if entries:
+        return "、".join(entries)
+    if nodes:
+        return "（入口全部停用）"
+    return f"ws://{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT}"
+
+
 def _bridge_loop():
     import ctypes
 
     ctypes.windll.ole32.CoInitialize(None)
 
-    log.info(
-        f"Bridge | 收件: local | OB11: ws://{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT} | 发送: uia"
-    )
+    where = ob_endpoints_summary()
+    log.info(f"Bridge | 收件: local | OB11: {where} | 发送: uia")
 
     LIFECYCLE.mark_running()
     bridge = Flandora(RUNTIME.sender)
@@ -277,8 +290,8 @@ def main() -> int:
         else:
             log.error(f"[WebUI] 启动失败: {type(e).__name__}: {e}")
         log.error(
-            f"[WebUI] WebUI 不可用，但 OneBot 服务仍在监听 "
-            f"{config.OB_SERVER_HOST}:{config.OB_SERVER_PORT}，已连接的客户端不受影响"
+            f"[WebUI] WebUI 不可用，但 OneBot 入口（{ob_endpoints_summary()}）仍在运行，"
+            "已连接的客户端不受影响"
         )
         log.error(
             f"[WebUI] 请检查端口 {config.WEB_PORT} 是否被占用；"

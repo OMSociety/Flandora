@@ -35,7 +35,7 @@ def list_actions(category: str | None = None) -> list[dict[str, Any]]:
 
 def get_action(name: str) -> dict[str, Any]:
     for action in catalog()["actions"]:
-        if action["name"] == name or name in action.get("aliases", []):
+        if action["name"] == name:
             return action
     raise ActionNotFound(name)
 

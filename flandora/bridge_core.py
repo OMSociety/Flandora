@@ -4,7 +4,7 @@
 职责：
 1. 从微信本地库收件（WxLocalSource 轮询，见 wx_source）
 2. 把收件字典整理成领域消息，交给 ob_protocol 渲染成 OneBot 事件
-3. 多层消息去重（rawid、内容、自回复）
+3. 两道去重：本地库 rawid（`processed_ids`）与自回环（推送过的不再当收件）
 
 一条收件消息对应一个事件：合并、排队与回复策略都属于客户端，桥接不替它决定。
 """
@@ -13,7 +13,6 @@ import logging
 import re
 import threading
 import time
-from collections import defaultdict
 
 from . import config, ob_ids, ob_inbound, ob_store, wx_crypto, wx_source
 from .domain.content import IMAGE_PLACEHOLDER, ContentKind, classify
@@ -68,9 +67,6 @@ class Flandora:
         self.sender = sender
         self.processed_ids = set()
         self.start_timestamp = int(time.time())
-        self.chat_histories = defaultdict(list)
-        self.contact_map = {}
-        self._recent_seen = {}
         self._member_cache = {}  # session_id → (缓存时间, {wxid: 显示名})
         self._nick_store = None  # 自己昵称的缓存宿主（store 换掉就重读）
         self._nick = ""

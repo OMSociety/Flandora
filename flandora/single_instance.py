@@ -52,6 +52,7 @@ def acquire_mutex(name: str = BRIDGE_MUTEX_NAME):
     kernel32.CreateMutexW.argtypes = (wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR)
     kernel32.CreateMutexW.restype = wintypes.HANDLE
 
+    ctypes.set_last_error(0)
     handle = kernel32.CreateMutexW(None, False, name)
     if not handle:
         log.warning(

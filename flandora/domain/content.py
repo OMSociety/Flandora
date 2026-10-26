@@ -2,16 +2,16 @@
 
 微信本地库的解码器把「不是文本」的消息也拼成一段正文：图片是
 ``[图片] <本地路径>``（解不出文件时尾巴是 ``md5="…"``），表情包是
-``[表情] md5="…"`` 或旧的 ``[动画表情]``。这段正文会被当成 OneBot 文本推给
-客户端，所以判定必须贴着**产生**这些字符串的地方：占位符字面量只在这里
-定义，``wx_store`` 造文本、``wx_source`` 拼路径都引用这几个常量。
+``[表情] md5="…"``。这段正文会被当成 OneBot 文本推给客户端，所以判定必须贴着
+**产生**这些字符串的地方：占位符字面量只在这里定义，``wx_store`` 造文本、
+``wx_source`` 拼路径都引用这几个常量。
 """
 
 from enum import StrEnum
 
 IMAGE_PLACEHOLDER = "[图片]"
 EMOJI_PLACEHOLDER = "[表情]"
-EMOJI_PLACEHOLDERS = (EMOJI_PLACEHOLDER, "[动画表情]")
+EMOJI_PLACEHOLDERS = (EMOJI_PLACEHOLDER,)
 
 # 解不出图片文件时，解码器把图片的引用写成 md5="…"；那不是能渲染的路径。
 _MD5_PREFIX = "md5="

@@ -55,6 +55,12 @@ _NETWORK_KEYS = frozenset(
     {"ob_networks", "ob_server_host", "ob_server_port", "ob_server_token", "ob_heartbeat_seconds"}
 )
 
+# 单个 HTTP 动作请求的请求体上限：与 WS 侧一帧的上限同量级，超过就回 413。
+MAX_HTTP_BODY_BYTES = 16 * 1024 * 1024
+
+# 向单个入口写一帧的超时：慢消费者只会丢自己的这一条，不拖住整轮广播。
+SEND_TIMEOUT = 5.0
+
 ROLE_API = "api"
 ROLE_EVENT = "event"
 ROLE_UNIVERSAL = "universal"
@@ -186,9 +192,9 @@ _ROLE_HEADERS = {ROLE_API: "API", ROLE_EVENT: "Event", ROLE_UNIVERSAL: "Universa
 def handshake_headers(node: dict) -> dict[str, str]:
     """反向 WS 的握手头。
 
-    机器人身份要等认出登录的微信账号才知道，那之前用 ``*``（OneBot 服务端
-    约定的通配身份）。身份变了必须重连——``X-Self-ID`` 是握手那一刻定下的，
-    见 ``NetworkManager.refresh_identity``。
+    ``X-Self-ID`` 按规范是机器人 QQ 号。账号还没认出来时这里只能发 ``*``（第三方
+    实现可能因此拒绝握手），``refresh_identity`` 会在认出账号后重连、用真实号码
+    重新握手。
     """
     self_id = ob_ids.SELF.user_id()
     headers = {
@@ -336,7 +342,7 @@ class NetworkManager:
             log.warning("[OB11] 没有启用的网络入口，事件无处可发")
         self._sync_heartbeat(nodes)
         # 配置保存后由 `_on_settings_changed` 把运行态对齐到新入口表。订阅挂在
-        # 启动时，配置门面会把它带给之后换上的 store；`stop()` 之后 `apply` 只
+        # 启动时，配置门面会把它带给之后换上的 store；`stop()` 之后 `apply`
         # 只更新配置镜像，不动任务。
         config.subscribe(self._on_settings_changed)
 
@@ -651,6 +657,17 @@ class NetworkManager:
             while True:
                 msg = await receive()
                 body += msg.get("body", b"")
+                if len(body) > MAX_HTTP_BODY_BYTES:
+                    await _asgi_json(
+                        send,
+                        413,
+                        {
+                            "status": "failed",
+                            "retcode": RETCODE_BAD_PARAM,
+                            "message": f"请求体超过 {MAX_HTTP_BODY_BYTES // (1024 * 1024)} MB",
+                        },
+                    )
+                    return
                 if not msg.get("more_body"):
                     break
             payload = {}
@@ -927,6 +944,7 @@ async def _serve_action(ws, raw: str):
         log.warning("[OB11] 收到无效 JSON")
         return
     if not isinstance(data, dict):
+        log.debug(f"[OB11] 收到合法 JSON 但不是对象：{type(data).__name__}")
         return
     try:
         resp = await _handle_ob_api(data)
@@ -945,7 +963,10 @@ async def _serve_action(ws, raw: str):
 
 async def _safe_send(ws, payload: dict, name: str) -> bool:
     try:
-        await ws.send(json.dumps(payload, ensure_ascii=False))
+        # 慢消费者不能把整轮广播拖住：单帧写超过 SEND_TIMEOUT 就放弃这一条。
+        await asyncio.wait_for(
+            ws.send(json.dumps(payload, ensure_ascii=False)), timeout=SEND_TIMEOUT
+        )
         return True
     except Exception as e:  # noqa: BLE001
         log.warning(f"[OB11] 入口 {name} 发送失败：{e}")

@@ -98,8 +98,8 @@ class MessageStore:
         """存一条已推送的事件。
 
         没有合法 ``message_id`` 的事件（心跳、生命周期一类）不入库：它们不是
-        客户端能用 ID 回查的东西。同一 ID 重复推送按覆盖处理——内容只会更完整，
-        不会把旧存档顶掉成空。
+        客户端能用 ID 回查的东西。同一 ID 重复推送按最新一次覆盖：补档与重推都以
+        后写的为准。
         """
         message_id = event.get("message_id")
         if not isinstance(message_id, int) or message_id <= 0:

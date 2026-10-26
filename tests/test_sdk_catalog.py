@@ -25,11 +25,9 @@ def test_list_actions_can_filter_by_category():
     assert all(a["category"] == category for a in filtered)
 
 
-def test_get_action_accepts_alias():
+def test_get_action_returns_the_spec():
     action = get_action("get_login_info")
     assert action["implemented"] is True
-    if action["aliases"]:
-        assert get_action(action["aliases"][0])["name"] == action["name"]
 
 
 def test_get_action_rejects_unknown_name():

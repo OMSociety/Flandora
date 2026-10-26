@@ -459,3 +459,51 @@ def test_looks_like_pil_repr_only_matches_the_repr():
     assert uia_sender._looks_like_pil_repr("<PIL.Image.Image image mode=RGB size=8x8>")
     assert not uia_sender._looks_like_pil_repr("PIL.Image.open 很好用")
     assert not uia_sender._looks_like_pil_repr("用 PIL 打开图片")
+
+
+# ------------------------------------------------- 图片/文件发送的失败原因与路径转义
+
+
+def test_send_image_clears_a_stale_error_and_records_a_new_one(monkeypatch):
+    """图片发送失败要在 _last_error 里留原因，成功路径不留上一次的旧原因。"""
+    sender = _sender()
+    sender._last_error = "上一次的旧原因"
+    monkeypatch.setattr(sender, "_foreground_gate", lambda contact: False)
+    assert sender.send_image("张三", "不存在.png") is False
+    assert "前台占用" in sender._last_error, sender._last_error
+
+    sender._foreground_gate = lambda contact: True
+    sender._send_lock = threading.Lock()
+    sender._lock = threading.Lock()
+    sender._fg_before = 0
+    monkeypatch.setattr(sender, "_foreground_window", lambda: 0)
+    monkeypatch.setattr(sender, "_restore_foreground", lambda hwnd: None)
+
+    def boom(contact, path):
+        raise RuntimeError("窗口没了")
+
+    monkeypatch.setattr(sender, "_send_image_impl", boom)
+    monkeypatch.setattr(sender, "_invalidate_window", lambda: None)
+    assert sender.send_image("张三", "不存在.png") is False
+    assert "窗口没了" in sender._last_error, sender._last_error
+
+
+def test_send_file_clears_a_stale_error(monkeypatch):
+    sender = _sender()
+    sender._last_error = "上一次的旧原因"
+    monkeypatch.setattr(sender, "_foreground_gate", lambda contact: False)
+    assert sender.send_file("张三", "不存在.txt") is False
+    assert "前台占用" in sender._last_error, sender._last_error
+
+
+def test_image_path_with_a_quote_survives_powershell(monkeypatch):
+    """文件名里有单引号时，PowerShell 单引号字符串要按 '' 转义，否则脚本语法就断了。"""
+    sender = _sender()
+    seen = {}
+    monkeypatch.setattr(
+        sender, "_run_powershell", lambda script: seen.setdefault("script", script) or True
+    )
+    sender._copy_image_to_clipboard(os.path.join("C:\\tmp", "it's.png"))
+    script = seen["script"]
+    assert "it''s.png" in script, script
+    assert "it's.png" not in script, script

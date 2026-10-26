@@ -1245,7 +1245,7 @@ class UiaSender(BaseSender):
         """
         self._last_error = ""
         if not self._foreground_gate(contact):
-            self._last_error = self._last_error or "发送通道未启用或被前台占用"
+            self._last_error = "发送通道未启用或被前台占用"
             return False
         with self._send_lock:
             self._fg_before = self._foreground_window()
@@ -1516,7 +1516,7 @@ class UiaSender(BaseSender):
             self._last_error = "没有可以 @ 的成员名"
             return False
         if not self._foreground_gate(contact):
-            self._last_error = self._last_error or "发送通道未启用或被前台占用"
+            self._last_error = "发送通道未启用或被前台占用"
             return False
         with self._send_lock:
             self._fg_before = self._foreground_window()
@@ -1741,14 +1741,17 @@ class UiaSender(BaseSender):
         顶层防护：通道未启用时直接拒绝；微信重启/COM 失效时安全失败并自动重绑；
         发送结束后把前台还给发送前的前台窗口。
         """
+        self._last_error = ""
         if not self._foreground_gate(contact):
+            self._last_error = "发送通道未启用或被前台占用"
             return False
         with self._send_lock:
             self._fg_before = self._foreground_window()
             try:
                 return self._send_image_impl(contact, image_path)
             except Exception as e:
-                log.error(f"[UIA失败] 图片 -> {contact}: 发送异常（窗口可能已失效）: {e}")
+                self._last_error = f"发送异常，窗口可能已失效: {e}"
+                log.error(f"[UIA失败] 图片 -> {contact}: {self._last_error}")
                 with self._lock:
                     self._invalidate_window()
                 return False
@@ -1815,14 +1818,17 @@ class UiaSender(BaseSender):
 
         顶层防护：通道未启用时直接拒绝；发送结束后把前台还给发送前的前台窗口。
         """
+        self._last_error = ""
         if not self._foreground_gate(contact):
+            self._last_error = "发送通道未启用或被前台占用"
             return False
         with self._send_lock:
             self._fg_before = self._foreground_window()
             try:
                 return self._send_file_impl(contact, file_path)
             except Exception as e:
-                log.error(f"[UIA失败] 文件 -> {contact}: 发送异常（窗口可能已失效）: {e}")
+                self._last_error = f"发送异常，窗口可能已失效: {e}"
+                log.error(f"[UIA失败] 文件 -> {contact}: {self._last_error}")
                 with self._lock:
                     self._invalidate_window()
                 return False
@@ -1961,7 +1967,7 @@ class UiaSender(BaseSender):
         必须显式加载 System.Drawing 程序集，否则 [System.Drawing.Image] 类型
         找不到，SetImage 会因参数为 null 而失败。
         """
-        abs_path = os.path.abspath(path)
+        abs_path = os.path.abspath(path).replace("'", "''")
         return self._run_powershell(
             "Add-Type -AssemblyName System.Drawing;"
             "Add-Type -AssemblyName System.Windows.Forms;"

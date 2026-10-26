@@ -457,7 +457,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "--seconds",
         type=float,
         default=None,
-        help="等待上限（--live 时为截获时长，否则为等登录的时长）",
+        help="截获时长（秒），默认 20；等登录最多 300 秒，登录后的截获固定 180 秒",
     )
     parser.add_argument("--capture-out", default=None, help="把截获片段另存为 JSONL，便于复算")
     args = parser.parse_args(argv)

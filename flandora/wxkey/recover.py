@@ -10,18 +10,13 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional, Sequence
 
-try:
-    from .. import wx_crypto
-except ImportError:  # 从包外单独跑时，把包目录加进来
-    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-    from .. import wx_crypto
+from .. import wx_crypto
 
 log = logging.getLogger("wxkey.recover")
 

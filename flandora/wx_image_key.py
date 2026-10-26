@@ -54,6 +54,10 @@ class ImageKeyError(Exception):
     """取图片密钥失败。"""
 
 
+class ImageKeyCancelled(ImageKeyError):
+    """用户主动停止了取钥。"""
+
+
 class WeChatNotRunning(ImageKeyError):
     """微信没在运行。"""
 
@@ -378,6 +382,8 @@ def scan_for_key(
         close_handles(handles)
 
     if found is None:
+        if stop is not None and stop.is_set():
+            raise ImageKeyCancelled("已取消取钥")
         raise ImageKeyError(
             f"扫了 {rounds} 轮仍未找到。多半是这张图已经缓存过——"
             "换一个没打开过的会话、或双击一张没看过的图片再试。"

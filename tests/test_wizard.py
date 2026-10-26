@@ -348,3 +348,20 @@ def test_imagekey_trial_explains_an_unreadable_seal(
     info = wizard_mod.Wizard().imagekey_status()
     assert info["works"] is None, info
     assert "重新取一次" in info["error"], info
+
+
+def test_imagekey_stopped_by_user_is_cancelled(accepted, monkeypatch):
+    """用户点停止不是失败：步骤标「已取消」，不报「扫了 N 轮仍未找到」。"""
+    from flandora import wx_image_key
+
+    monkeypatch.setattr(wizard_mod.Wizard, "dbkey_status", lambda self: {"present": True})
+
+    def grab(**_kw):
+        raise wx_image_key.ImageKeyCancelled("已取消取钥")
+
+    monkeypatch.setattr(wx_image_key, "grab_key", grab)
+    accepted.start_imagekey()
+    accepted._img_thread.join(2)
+    step = accepted.status()["steps"][wizard_mod.STEP_IMAGEKEY]
+    assert step["state"] == "cancelled", step
+    assert "已取消" in step["message"], step

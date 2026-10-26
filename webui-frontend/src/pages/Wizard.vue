@@ -59,7 +59,7 @@ const steps = computed(() => [
   { name: '校验完成', detail: '验证数据库访问', state: verify.value.state },
 ])
 const chipClass = (state) => ['step-status', state]
-const chipText = (state) => ({ idle: '待开始', running: '进行中', ok: '已完成', failed: '未通过' }[state] || state)
+const chipText = (state) => ({ idle: '待开始', running: '进行中', ok: '已完成', failed: '未通过', cancelled: '已取消' }[state] || state)
 function shortWxid(id) { return !id ? '未知' : id.length > 12 ? `${id.slice(0, 8)}…${id.slice(-3)}` : id }
 async function loadStatus() {
   const res = await get('/api/wizard/status', true)

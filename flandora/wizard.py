@@ -538,6 +538,8 @@ class Wizard:
                 on_status=self._imagekey_log,
                 on_round=lambda n: self._imagekey_progress(n),
             )
+        except wx_image_key.ImageKeyCancelled as exc:
+            self._finish_imagekey("cancelled", str(exc))
         except wx_image_key.ImageKeyError as exc:
             self._finish_imagekey("failed", str(exc))
         except Exception as exc:  # noqa: BLE001 兜住线程里的意外

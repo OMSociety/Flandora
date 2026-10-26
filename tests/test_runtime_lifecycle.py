@@ -171,6 +171,10 @@ def test_online_flags_are_one_definition():
     assert RUNTIME.online_flags() == {"online": False, "good": False}
 
     RUNTIME.bridge = object()
+    # 桥接在跑但收件源还没接上：仍不算在线——微信没登录时 online 不能报 True
+    assert RUNTIME.online_flags() == {"online": False, "good": False}
+
+    RUNTIME.store = object()
     assert RUNTIME.online_flags() == {"online": True, "good": False}
 
     RUNTIME.sender = object()

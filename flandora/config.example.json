@@ -25,7 +25,7 @@
     "webui_tls_key_file": "",
     "_comment_webui_tls_key_file": "私钥 PEM 路径，留空 = 数据目录下的 webui_key.pem（写入时权限收到 0600）。",
     "client_attachments": "",
-    "_comment_client_attachments": "发送方向的附件目录：客户端发来的图片、文件只给了文件名时到这里找（也找它的 wechat_images 子目录）。留空 = 只接受绝对路径或 base64。",
+    "_comment_client_attachments": "发送方向的附件目录：图片段与文件段只给文件名时到这里找（也找它的 wechat_images 子目录）。留空 = 图片段只认 base64://，文件段只认本机路径、file:// 或 base64://。",
     "wechat_hwnd": 0,
     "_comment_wechat_hwnd": "多开微信时指定机器人所在窗口的句柄，0 = 自动取第一个微信窗口。微信重启后句柄会变，需要在 WebUI 里重新绑定。",
     "wechat_files_root": "",

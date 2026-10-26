@@ -85,12 +85,13 @@ def test_no_heartbeat_when_interval_is_zero(monkeypatch):
 
 
 def test_heartbeat_status_reflects_runtime():
-    """在线 = 已起且未暂停；sender 就绪才算 good。"""
+    """在线 = 已起、未暂停且收件源已接上；sender 就绪才算 good。"""
     from flandora.runtime import LIFECYCLE, RUNTIME
 
     LIFECYCLE.begin_start()
     LIFECYCLE.mark_running()
     RUNTIME.bridge = object()
+    RUNTIME.store = object()
     RUNTIME.sender = object()
     assert ob_network.NetworkManager._heartbeat_status() == {"online": True, "good": True}
 

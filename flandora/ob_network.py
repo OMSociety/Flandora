@@ -50,7 +50,10 @@ KINDS = (KIND_WS_SERVER, KIND_HTTP_SERVER, KIND_WS_CLIENT, KIND_HTTP_CLIENT)
 
 # 保存配置后要立刻套到运行态的键：入口表本身，以及 ob_networks 为空时用来造
 # 兜底入口的那三项。改了它们只写文件不重建连接，面板就会显示一条「没生效」的入口。
-_NETWORK_KEYS = frozenset({"ob_networks", "ob_server_host", "ob_server_port", "ob_server_token"})
+# 心跳间隔同属热生效：0 改非 0 要起步心跳任务，改回 0 要停掉它。
+_NETWORK_KEYS = frozenset(
+    {"ob_networks", "ob_server_host", "ob_server_port", "ob_server_token", "ob_heartbeat_seconds"}
+)
 
 ROLE_API = "api"
 ROLE_EVENT = "event"

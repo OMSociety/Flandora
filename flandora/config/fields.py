@@ -451,8 +451,9 @@ FIELDS: tuple[Field, ...] = (
         key="client_attachments",
         attr="CLIENT_ATTACHMENTS",
         kinds=_HOT,
-        desc="发送方向的附件目录：客户端发来的图片、文件只给了文件名时到这里找（也找它的 "
-        "wechat_images 子目录）。留空 = 只接受绝对路径或 base64。",
+        desc="发送方向的附件目录：图片段与文件段只给文件名时到这里找（也找它的 "
+        "wechat_images 子目录）。留空 = 图片段只认 base64://，文件段只认本机路径、"
+        "file:// 或 base64://。",
     ),
     Field(
         key="wechat_hwnd",

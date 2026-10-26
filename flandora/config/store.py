@@ -20,6 +20,7 @@ from dataclasses import dataclass, field, replace
 from typing import Any
 
 from . import fields, paths
+from .fields import ConfigError
 
 log = logging.getLogger("flandora.config")
 
@@ -194,12 +195,18 @@ class ConfigStore:
         """只返回 ``fields`` 声明过的键；文件不存在按空配置。
 
         示例模板里的 ``_comment*`` 与手工加进来的未知键都不参与配置，也不回给面板。
+        文件存在但不是合法 JSON 时抛 :class:`ConfigError`（带路径与行列）：静默按空
+        配置跑起来会让桥接以默认口令、默认监听启动，比启动失败更难发现。
         """
         try:
             with open(self._path, encoding="utf-8-sig") as handle:
                 data = json.load(handle)
         except FileNotFoundError:
             return {}
+        except json.JSONDecodeError as exc:
+            raise ConfigError(
+                f"配置文件不是合法 JSON：{self._path}（第 {exc.lineno} 行第 {exc.colno} 列：{exc.msg}）"
+            ) from exc
         if not isinstance(data, dict):
             return {}
         return {key: value for key, value in data.items() if key in fields.KEYS}

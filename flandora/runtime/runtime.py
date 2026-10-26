@@ -105,7 +105,8 @@ class AppRuntime:
         with self._lock:
             bridge_ready = self._bridge is not None
             sender_ready = self._sender is not None
-        online = snap.is_online and bridge_ready
+            store_ready = self._store is not None
+        online = snap.is_online and bridge_ready and store_ready
         return {"online": online, "good": online and sender_ready}
 
 

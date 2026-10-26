@@ -115,3 +115,36 @@ def test_saving_config_applies_entries_live(tmp_path):
                 await mgr.stop()
 
     asyncio.run(main())
+
+
+def test_saving_heartbeat_interval_starts_the_heartbeat_task(tmp_path):
+    """心跳从 0 改成非 0 要当场起步：面板承诺这一项热生效。"""
+
+    async def main():
+        with config.temporary(tmp_path / "config.json") as store:
+            port = _free_port()
+            store.update({"ob_heartbeat_seconds": 0})
+            mgr = ob_network.NetworkManager()
+            mgr.configure([_node(port)])
+            mgr.start(asyncio.get_running_loop())
+            try:
+                await _wait_listening(mgr, ["default"])
+                assert mgr._heartbeat_task is None, "0 秒时不该有心跳任务"
+
+                store.update({"ob_heartbeat_seconds": 5})
+                for _ in range(150):
+                    if mgr._heartbeat_task is not None:
+                        break
+                    await asyncio.sleep(0.02)
+                assert mgr._heartbeat_task is not None, "改了心跳间隔，任务没起步"
+
+                store.update({"ob_heartbeat_seconds": 0})
+                for _ in range(150):
+                    if mgr._heartbeat_task is None:
+                        break
+                    await asyncio.sleep(0.02)
+                assert mgr._heartbeat_task is None, "改回 0 之后任务没停"
+            finally:
+                await mgr.stop()
+
+    asyncio.run(main())

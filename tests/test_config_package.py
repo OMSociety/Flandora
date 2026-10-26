@@ -232,6 +232,20 @@ def test_first_run_generates_config_from_example(tmp_path):
     assert not temp_path.exists()
 
 
+def test_broken_json_is_refused_with_the_file_name(tmp_path):
+    """手改坏的 config.json 拒启并指出文件与行列：不能静默按默认配置跑起来。"""
+    path = tmp_path / "config.json"
+    path.write_text('{"ob_server_port": 7999,}', encoding="utf-8")
+
+    store = config.ConfigStore(str(path))
+    with pytest.raises(fields.ConfigError) as info:
+        store.read_raw()
+    text = str(info.value)
+    assert str(path) in text
+    assert "不是合法 JSON" in text
+    assert "第 1 行" in text
+
+
 def test_bootstrap_reports_fallbacks(tmp_path, caplog):
     """bootstrap() 把文件加载期的回退原因打进日志。"""
     path = tmp_path / "config.json"

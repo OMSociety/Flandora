@@ -37,7 +37,7 @@ def api_windows():
     try:
         wins = win32_windows.enum_wechat_windows()
     except Exception as e:
-        log.error(f"[WebUI] 枚举微信窗口失败: {e}")
+        log.error(f"[面板] 枚举微信窗口失败: {e}")
         return JSONResponse({"ok": False, "error": "枚举微信窗口失败，详细原因见运行日志"}, 500)
 
     cur_hwnd = 0
@@ -71,9 +71,9 @@ def api_select_window(payload: dict):
     try:
         deps.config_store().update({"wechat_hwnd": hwnd})
     except Exception as e:
-        log.error(f"[WebUI] 保存窗口绑定失败: {e}")
+        log.error(f"[面板] 保存窗口绑定失败: {e}")
 
-    log.info(f"[WebUI] 微信窗口已绑定 hwnd={hwnd or '自动'}")
+    log.info(f"[面板] 微信窗口已绑定 hwnd={hwnd or '自动'}")
     events.notify_status()
     return {"ok": True, "hwnd": hwnd}
 

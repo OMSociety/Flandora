@@ -417,7 +417,7 @@ FIELDS: tuple[Field, ...] = (
         key="webui_password",
         attr="WEBUI_PASSWORD",
         kinds=_HOT_SECRET,
-        desc="面板登录密码的 PBKDF2 哈希，由 WebUI 保存时写入；留空 = 不校验（本机任何进程"
+        desc="面板登录密码的 PBKDF2 哈希，由面板保存时写入；留空 = 不校验（本机任何进程"
         "都能打开面板）。不要手填明文，面板认不出明文会当成没设密码。",
     ),
     Field(
@@ -426,7 +426,7 @@ FIELDS: tuple[Field, ...] = (
         kinds=_RESTART,
         default=False,
         clean=_clean_flag,
-        desc="面板是否走 HTTPS。开启前要先把证书与私钥装好（在 WebUI 的「安全与服务」里"
+        desc="面板是否走 HTTPS。开启前要先把证书与私钥装好（在 面板 的「安全与服务」里"
         "粘贴 PEM），或在这里填 webui_tls_cert_file / webui_tls_key_file 指定已有的 PEM "
         "文件。开启后证书加载不了时面板不会启动，也不会退回 HTTP。改这里需要重启桥接。",
     ),
@@ -462,7 +462,7 @@ FIELDS: tuple[Field, ...] = (
         default=0,
         clean=_clean_plain_int,
         desc="多开微信时指定机器人所在窗口的句柄，0 = 自动取第一个微信窗口。微信重启后句柄"
-        "会变，需要在 WebUI 里重新绑定。",
+        "会变，需要在 面板 里重新绑定。",
     ),
     Field(
         key="wechat_files_root",
@@ -546,7 +546,7 @@ FIELDS: tuple[Field, ...] = (
         kinds=_RESTART,
         desc="微信图片密钥文件，留空 = 配置文件同目录下的 wx_image_key.json。缺它时图片消息"
         "退回占位符（文字消息不受影响）。密钥只在微信解码图片的那几秒驻留内存，所以要在 "
-        "WebUI 的取钥向导里按提示让微信打开一张没看过的图片时抓（源码开发者也可以直接跑 "
+        "面板 的取钥向导里按提示让微信打开一张没看过的图片时抓（源码开发者也可以直接跑 "
         "tools/imagekey.py）。",
     ),
     Field(
@@ -569,7 +569,7 @@ FIELDS: tuple[Field, ...] = (
         desc="让微信跑在一张独立的 Windows 桌面上，这样向它投递输入时切换的前台是那张桌面"
         "的，用户自己的桌面完全不受打扰，发送通道因此可以长期开着。这是默认值。前提是"
         "微信必须由本程序启动（Windows 上微信单实例互斥，用户自己先开了微信时隔离实例"
-        "只会停在登录页）；隔离桌面用户看不见，首次登录要在 WebUI 里看实况截图、用手机"
+        "只会停在登录页）；隔离桌面用户看不见，首次登录要在 面板 里看实况截图、用手机"
         "扫码或确认完成；发送期间微信不显示在用户屏幕上（这正是目的）。设为 false 则"
         "微信由用户自己启动，发送时它会短暂到前台、发完归还。",
     ),
@@ -595,7 +595,7 @@ FIELDS: tuple[Field, ...] = (
         default=8,
         clean=_clean_log_max,
         desc="单份日志的上限（1–1024 MB）。写满就轮转成 flandora.log.1，旧的依次后退。"
-        "留空或删掉按 8 MB 处理，在 WebUI 的「存储」里改即时生效，不必重启。",
+        "留空或删掉按 8 MB 处理，在 面板 的「存储」里改即时生效，不必重启。",
     ),
     Field(
         key="log_backup_count",
@@ -604,7 +604,7 @@ FIELDS: tuple[Field, ...] = (
         default=5,
         clean=_clean_log_backups,
         desc="轮转后保留几份历史日志（1–20）。总占用上限约为「单份上限 ×（保留份数 + 1）」。"
-        "在 WebUI 的「存储」里改即时生效。",
+        "在 面板 的「存储」里改即时生效。",
     ),
 )
 

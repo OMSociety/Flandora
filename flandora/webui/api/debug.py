@@ -61,7 +61,7 @@ async def api_debug_invoke(payload: dict):
             {"action": action, "params": params, "echo": "webui"}
         )
     except Exception as e:  # noqa: BLE001
-        log.error(f"[WebUI] 调试调用异常 {action}: {e}")
+        log.error(f"[面板] 调试调用异常 {action}: {e}")
         return JSONResponse({"ok": False, "error": "调试调用失败，详细原因见运行日志"}, 500)
 
     return {
@@ -79,6 +79,6 @@ def api_debug_events(limit: int = 30):
     try:
         events = ob_store.message_store().recent(max(1, min(int(limit or 30), 200)))
     except Exception as e:  # noqa: BLE001
-        log.error(f"[WebUI] 读取事件存档失败: {e}")
+        log.error(f"[面板] 读取事件存档失败: {e}")
         return JSONResponse({"ok": False, "error": "读取事件存档失败，详细原因见运行日志"}, 500)
     return {"events": events}

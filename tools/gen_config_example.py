@@ -28,7 +28,7 @@ TARGET = os.path.join(ROOT, "flandora", "config.example.json")
 HEADER = (
     "Flandora 配置模板。键与说明由 flandora/config/fields.py 生成，"
     "改字段或说明后跑 python tools/gen_config_example.py 重新生成，不要手改这份文件。"
-    "实际配置写在 data/config.json，也可以直接在 WebUI 里改。"
+    "实际配置写在 data/config.json，也可以直接在面板「系统设置」里改。"
 )
 
 

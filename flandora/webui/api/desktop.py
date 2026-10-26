@@ -34,7 +34,7 @@ DEFER_REASONS: dict[str, str] = {
 
 def _module_missing(exc: ImportError) -> JSONResponse:
     """隔离桌面模块导入失败：异常原文只进日志，响应只给原因。"""
-    log.error(f"[WebUI] 隔离桌面模块不可用: {exc}")
+    log.error(f"[面板] 隔离桌面模块不可用: {exc}")
     return JSONResponse(
         {"ok": False, "error": "隔离桌面模块不可用（缺依赖或导入失败），详细原因见运行日志"},
         500,
@@ -51,7 +51,7 @@ def api_desktop_status():
     try:
         return {"ok": True, **wx_desktop.manager().status()}
     except Exception as e:
-        log.error(f"[WebUI] 读取隔离桌面状态失败: {e}")
+        log.error(f"[面板] 读取隔离桌面状态失败: {e}")
         return JSONResponse({"ok": False, "error": "读取隔离桌面状态失败，详细原因见运行日志"}, 500)
 
 

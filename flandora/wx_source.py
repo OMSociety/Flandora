@@ -62,7 +62,7 @@ def load_passphrase(path: str = None) -> bytes:
     """
     path = path or config.WX_KEY_FILE or default_key_file()
     if not os.path.isfile(path):
-        raise WxSourceError(f"找不到微信口令文件 {path}。请在 WebUI 的「取钥向导」里走一遍取钥。")
+        raise WxSourceError(f"找不到微信口令文件 {path}。请在面板的「取钥向导」里走一遍取钥。")
 
     store = KeyStore(path)
     try:
@@ -78,7 +78,7 @@ def load_passphrase(path: str = None) -> bytes:
     if current is not None and stored.wxid and current.wxid != stored.wxid:
         raise WxSourceError(
             f"口令属于账号 {stored.wxid}，当前登录的是 {current.wxid}。"
-            f"请在 WebUI 的「取钥向导」里为新账号重新取一次钥。"
+            f"请在面板的「取钥向导」里为新账号重新取一次钥。"
         )
     return stored.passphrase
 

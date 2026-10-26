@@ -52,7 +52,7 @@ def api_login(payload: dict, response: Response, request: Request):
         samesite="lax",
         path="/",
     )
-    log.info("[WebUI] 面板登录成功")
+    log.info("[面板] 面板登录成功")
     return {"ok": True, "enabled": True}
 
 

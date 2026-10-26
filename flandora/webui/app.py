@@ -35,7 +35,7 @@ async def lifespan(_app):
     """启动时把事件循环交给核心侧总线，并挂上日志中继；退出时摘掉循环。"""
     events.EVENTS.set_loop(asyncio.get_running_loop())
     events.attach_log_relay()
-    log.info(f"[WebUI] FastAPI 面板已就绪 (v{VERSION})")
+    log.info(f"[面板] FastAPI 面板已就绪 (v{VERSION})")
     yield
     events.EVENTS.set_loop(None)
 

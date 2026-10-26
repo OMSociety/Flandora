@@ -184,7 +184,7 @@ def _newest_frontend_mtime() -> float:
 def ensure_webui_dist(skip_web: bool = False) -> None:
     """确保 ``flandora/webui/dist`` 是最新构建（按 mtime 判断，不是「有文件就跳过」）。
 
-    dist 不在仓库里，必须由 vite 现场构建；缺了它 exe 能跑但 WebUI 只返回
+    dist 不在仓库里，必须由 vite 现场构建；缺了它 exe 能跑但面板只返回
     503「前端尚未构建」。发布包不该缺这一块，所以默认直接构建，失败就中止。
 
     判据是 ``dist/index.html`` 的 mtime 与前端源码最新 mtime 的比较：产物比源码旧
@@ -228,11 +228,11 @@ def ensure_webui_dist(skip_web: bool = False) -> None:
             f"  dist/index.html       {_stamp(index.stat().st_mtime)}\n"
             f"  最新前端源码          {_stamp(newest_src)}"
         )
-    step("构建 WebUI 前端")
+    step("构建面板前端")
     npm = shutil.which("npm")
     if npm is None:
         raise SystemExit(
-            "找不到 npm，无法构建 WebUI 前端。\n"
+            "找不到 npm，无法构建面板前端。\n"
             f"请自行执行：cd {WEBUI_FRONTEND} && npm install && npm run build"
         )
     try:
@@ -241,7 +241,7 @@ def ensure_webui_dist(skip_web: bool = False) -> None:
         run([npm, "run", "build"], cwd=WEBUI_FRONTEND)
     except subprocess.CalledProcessError as exc:
         raise SystemExit(
-            f"WebUI 前端构建失败（退出码 {exc.returncode}）。\n"
+            f"面板前端构建失败（退出码 {exc.returncode}）。\n"
             f"请自行排查：cd {WEBUI_FRONTEND} && npm install && npm run build"
         ) from exc
     if not index.is_file():

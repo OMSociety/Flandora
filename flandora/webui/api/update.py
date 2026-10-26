@@ -119,7 +119,7 @@ async def api_update_install():
         close_fds=True,
     )
     threading.Timer(1.5, lambda: os._exit(0)).start()
-    log.info("[WebUI] 已拉起更新脚本，准备退出：%s", script)
+    log.info("[面板] 已拉起更新脚本，准备退出：%s", script)
     return {"ok": True, "script": script, "message": "正在退出并替换，完成后会自动重启"}
 
 

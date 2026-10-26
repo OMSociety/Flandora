@@ -60,12 +60,12 @@ def api_contacts():
             for group in store.groups():
                 add(group.get("username"), group.get("name"), "group")
         except Exception as e:  # noqa: BLE001 - 名册读不到不影响配置里的条目
-            log.warning(f"[WebUI] 读取群名册失败: {e}")
+            log.warning(f"[面板] 读取群名册失败: {e}")
         try:
             for person in store.contacts():
                 add(person.get("username"), person.get("name"), "private")
         except Exception as e:  # noqa: BLE001
-            log.warning(f"[WebUI] 读取好友名册失败: {e}")
+            log.warning(f"[面板] 读取好友名册失败: {e}")
     add("filehelper", "文件传输助手", "private")
 
     for oid, name in ob_ids.name_snapshot().items():
@@ -89,7 +89,7 @@ async def api_send(payload: dict):
     if not LIFECYCLE.snapshot().is_active or sender is None:
         return JSONResponse({"ok": False, "error": "桥接未运行，请先启动"}, 400)
 
-    log.info(f"[WebUI] 测试发送 -> {contact}: {text[:50]}")
+    log.info(f"[面板] 测试发送 -> {contact}: {text[:50]}")
     # 与 OneBot 的 send_msg 走同一个执行入口：规划、逐段发送、失败记账只有一份
     actions = send_plan.plan_message([Text(text=text)])
     try:
@@ -97,12 +97,12 @@ async def api_send(payload: dict):
             domain_send.execute, actions, sender, _refuse_mention, contact
         )
     except Exception as e:
-        log.error(f"[WebUI] 测试发送异常: {e}")
+        log.error(f"[面板] 测试发送异常: {e}")
         return JSONResponse({"ok": False, "error": "测试发送失败，详细原因见运行日志"}, 500)
 
     if outcomes and outcomes[0].status is SendStatus.SENT:
         events.record_outbound(contact, "manual", text)
-        log.info(f"[WebUI] 测试发送成功 -> {contact}")
+        log.info(f"[面板] 测试发送成功 -> {contact}")
         return {"ok": True}
-    log.warning(f"[WebUI] 测试发送失败 -> {contact}")
+    log.warning(f"[面板] 测试发送失败 -> {contact}")
     return {"ok": False, "error": sender.last_error() or "发送失败，详见运行日志"}

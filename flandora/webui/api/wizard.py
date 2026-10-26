@@ -39,9 +39,9 @@ def _fail(label: str, exc: Exception):
     from ...wizard import WizardError
 
     if isinstance(exc, WizardError):
-        log.info(f"[WebUI] {label}被拒绝: {exc}")
+        log.info(f"[面板] {label}被拒绝: {exc}")
         return JSONResponse({"ok": False, "error": str(exc)}, 400)
-    log.error(f"[WebUI] {label}失败: {exc}")
+    log.error(f"[面板] {label}失败: {exc}")
     return JSONResponse({"ok": False, "error": f"{label}失败，详细原因见运行日志"}, 400)
 
 
@@ -50,7 +50,7 @@ def _wizard_or_error():
     try:
         from ... import wizard as wizard_mod
     except ImportError as e:
-        log.error(f"[WebUI] 取钥向导模块不可用: {e}")
+        log.error(f"[面板] 取钥向导模块不可用: {e}")
         return None, JSONResponse(
             {"ok": False, "error": "取钥向导模块不可用（缺依赖或导入失败），详细原因见运行日志"},
             500,
@@ -67,7 +67,7 @@ def api_wizard_status():
     try:
         return {"ok": True, **wiz.status()}
     except Exception as e:
-        log.error(f"[WebUI] 读取取钥向导状态失败: {e}")
+        log.error(f"[面板] 读取取钥向导状态失败: {e}")
         return JSONResponse({"ok": False, "error": "读取取钥向导状态失败，详细原因见运行日志"}, 500)
 
 

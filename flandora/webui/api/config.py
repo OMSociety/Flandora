@@ -103,7 +103,7 @@ def _install_tls_pem(payload: dict) -> str:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(temps[0], temps[1])
     except Exception as e:  # noqa: BLE001
-        log.error(f"[WebUI] 证书或私钥没法解析: {e}")
+        log.error(f"[面板] 证书或私钥没法解析: {e}")
         return "证书或私钥没法解析，详细原因见运行日志"
     finally:
         for path in temps:
@@ -116,7 +116,7 @@ def _install_tls_pem(payload: dict) -> str:
     _write_text(config.WEBUI_TLS_CERT_FILE, cert_text, 0o644)
     if new_key:
         _write_text(config.WEBUI_TLS_KEY_FILE, key_text, 0o600)
-    log.info(f"[WebUI] 已安装面板证书：{config.WEBUI_TLS_CERT_FILE}")
+    log.info(f"[面板] 已安装面板证书：{config.WEBUI_TLS_CERT_FILE}")
     return ""
 
 
@@ -125,7 +125,7 @@ def api_get_config():
     try:
         cfg = dict(deps.config_store().read_raw())
     except Exception as e:
-        log.error(f"[WebUI] 读配置失败: {e}")
+        log.error(f"[面板] 读配置失败: {e}")
         return JSONResponse({"ok": False, "error": "读不到配置文件，详细原因见运行日志"}, 500)
     # 哈希本身不算凭据，但也没必要发给浏览器；面板只需要知道「设没设」
     cfg["webui_password_set"] = bool(str(cfg.pop("webui_password", "") or ""))
@@ -228,7 +228,7 @@ def api_put_config(payload: dict, response: Response):
         return JSONResponse({"ok": False, "error": str(e)}, 400)
     try:
         result = deps.config_store().update(payload)
-        log.info(f"[WebUI] 配置已保存 (字段: {', '.join(payload.keys())})")
+        log.info(f"[面板] 配置已保存 (字段: {', '.join(payload.keys())})")
         if "webui_password" in payload:
             # 落盘成功才作废旧会话：保存被拒时用户留在原会话里，不会被莫名登出。
             auth.sessions.clear()
@@ -252,7 +252,7 @@ def api_put_config(payload: dict, response: Response):
         # 回 400 并原样给出原因，不能混进「保存失败，见日志」的 500 里。
         return JSONResponse({"ok": False, "error": str(e)}, 400)
     except Exception as e:
-        log.error(f"[WebUI] 保存配置异常: {e}")
+        log.error(f"[面板] 保存配置异常: {e}")
         return JSONResponse({"ok": False, "error": "保存失败，详细原因见运行日志"}, 500)
 
 
@@ -262,7 +262,7 @@ def api_config_backup(include_sensitive: int = 0):
     try:
         cfg = dict(deps.config_store().read_raw())
     except Exception as e:
-        log.error(f"[WebUI] 导出配置失败: {e}")
+        log.error(f"[面板] 导出配置失败: {e}")
         return JSONResponse({"ok": False, "error": "导出配置失败，详细原因见运行日志"}, 500)
     excluded = []
     if not include_sensitive:
@@ -308,10 +308,10 @@ def api_config_restore(payload: dict):
         store.replace(incoming)
     except config.ConfigError as e:
         # 备份里的值过不了校验：当成请求数据的问题，别写进文件
-        log.error(f"[WebUI] 恢复配置被拒绝: {e}")
+        log.error(f"[面板] 恢复配置被拒绝: {e}")
         return JSONResponse({"ok": False, "error": str(e)}, 400)
     except Exception as e:
-        log.error(f"[WebUI] 恢复配置失败: {e}")
+        log.error(f"[面板] 恢复配置失败: {e}")
         return JSONResponse({"ok": False, "error": "恢复配置失败，详细原因见运行日志"}, 500)
     # 替换成功之后才落备份：被拒的恢复不该在数据目录里留下含密码哈希的副本
     backup_name = ""
@@ -319,13 +319,13 @@ def api_config_restore(payload: dict):
         backup_name = f"config.json.bak-{time.strftime('%Y%m%d-%H%M%S')}"
         config.write_json(os.path.join(store.data_dir(), backup_name), previous)
     except OSError as e:
-        log.error(f"[WebUI] 恢复配置后写备份失败: {e}")
+        log.error(f"[面板] 恢复配置后写备份失败: {e}")
     # 能即时生效的（HOT）已经由订阅者套上；密码哈希换了要连会话一起作废
     password_restored = "webui_password" in incoming
     if password_restored:
         auth.sessions.clear()
     log.info(
-        f"[WebUI] 已从备份恢复配置 (字段: {', '.join(sorted(incoming))})，"
+        f"[面板] 已从备份恢复配置 (字段: {', '.join(sorted(incoming))})，"
         f"恢复前的文件存为 {backup_name or '（写备份失败，见错误日志）'}"
     )
     events.notify_status()

@@ -112,4 +112,4 @@ def on_config_changed(settings, changed: frozenset) -> None:
     try:
         sender_view.rebind_window(hwnd)
     except Exception as exc:  # 窗口没了不该让保存失败，绑没绑上看下次发送
-        log.error(f"[WebUI] 重绑微信窗口失败: {exc}")
+        log.error(f"[面板] 重绑微信窗口失败: {exc}")

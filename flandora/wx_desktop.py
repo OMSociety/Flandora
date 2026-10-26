@@ -13,7 +13,7 @@ Desktop 上，它升到前台只影响那个桌面，用户所在的 Default 桌
 
 1. 微信必须由本程序启动，不能是用户双击打开的那个——Windows 上微信单实例互斥，
    Default 桌面上已有实例时，隔离实例只会停在登录窗。
-2. 隔离桌面用户看不见，所以登录得靠**截图**：本模块提供 `capture()`，WebUI 把
+2. 隔离桌面用户看不见，所以登录得靠**截图**：本模块提供 `capture()`，面板把
    登录页画面显示出来，用户扫码或用手机确认。实测该界面文案为「需在手机上完成登录」。
 3. 隔离桌面上 UIA 的 `Invoke` 不生效（Qt 在窗口未激活时不响应），点击要走
    `PostMessage` 投鼠标消息。
@@ -161,7 +161,7 @@ def default_desktop_has_wechat() -> bool:
 def quit_default_desktop_wechat() -> int:
     """结束默认桌面上的微信，返回结束掉的进程数。
 
-    只由用户在 WebUI 上显式点击触发。用户自己开的微信不参与启动/退出流程，
+    只由用户在面板上显式点击触发。用户自己开的微信不参与启动/退出流程，
     不会被静默杀掉——要腾出隔离实例的位置，必须由人来按这个按钮。
     """
     try:
@@ -392,7 +392,7 @@ class IsolatedDesktop:
             _user32.ReleaseDC(hwnd, hdc)
 
     def capture_png(self, hwnd: int, width: int, height: int) -> bytes | None:
-        """截图为 PNG 字节，供 WebUI 直接返回。"""
+        """截图为 PNG 字节，供面板直接返回。"""
         raw = self.capture(hwnd, width, height)
         if raw is None:
             return None
@@ -517,7 +517,7 @@ _EXE_CACHE: dict[str, str] = {}
 
 
 def cached_weixin_exe(configured: str = "") -> str:
-    """带缓存的 `find_weixin_exe`，供 WebUI 频繁查询「本机到底有没有微信」。
+    """带缓存的 `find_weixin_exe`，供面板频繁查询「本机到底有没有微信」。
 
     搜索要扫注册表与各盘 Program Files，单次要几百毫秒到数秒；状态查询每 2 秒
     一次，不能每次重扫。按配置值分键缓存——`wechat_exe` 改了立刻重新找。
@@ -529,14 +529,14 @@ def cached_weixin_exe(configured: str = "") -> str:
 
 
 # ====================================================================
-# 进程级管理器（供 bridge 主流程与 WebUI 共用）
+# 进程级管理器（供 bridge 主流程与面板共用）
 # ====================================================================
 
 
 class DesktopManager:
     """隔离桌面的进程级唯一入口。
 
-    主流程用它启动/接管微信，WebUI 用它取登录截图与转发点击。两者拿到的必须是
+    主流程用它启动/接管微信，面板用它取登录截图与转发点击。两者拿到的必须是
     同一个 `IsolatedDesktop`——桌面句柄与 pid 都挂在实例上，各建一个会互相抢。
     """
 
@@ -600,7 +600,7 @@ class DesktopManager:
                     self._desk = desk
                     self._error = ""
                     log.info("隔离桌面已就绪（%s，pid=%d）", self.desktop_name(), desk.pid)
-        # 在锁外等窗口：start() 可能要等几十秒，持锁会把 WebUI 的状态查询卡住
+        # 在锁外等窗口：start() 可能要等几十秒，持锁会把面板的状态查询卡住
         if desk.main_window(timeout=60.0) is None:
             log.warning("隔离桌面上 60 秒内没等到微信窗口，微信可能启动失败")
         return True
@@ -733,7 +733,7 @@ class DesktopManager:
         return desk.capture_png(win["hwnd"], win["width"], win["height"])
 
     def click(self, client_x: int, client_y: int) -> bool:
-        """把 WebUI 上的点击转发到隔离桌面上的微信窗口。"""
+        """把面板上的点击转发到隔离桌面上的微信窗口。"""
         win = self.window()
         if not win:
             return False

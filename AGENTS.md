@@ -70,7 +70,7 @@ lint 与格式化统一用 ruff，配置在仓库根的 `pyproject.toml`（line-
 run_bridge.py -> flandora.main
    收件：wx_source -> wx_store -> wx_crypto/zstandard -> bridge_core -> ob_protocol -> ob_network -> OneBot 客户端
    更新：webui/api/update.py -> updater（下载/暂存/生成替换脚本）+ 退出后执行的 PowerShell 脚本
-   发件：WebUI /api/send 或 OneBot 调用 -> senders.create_sender() -> uia_sender -> wx_desktop（隔离桌面）
+   发件：面板 /api/send 或 OneBot 调用 -> senders.create_sender() -> uia_sender -> wx_desktop（隔离桌面）
    面板：flandora/webui/api/*.py 的 12 个路由器（每个模块导出 `ROUTES`，有 defer 档的再导出 `DEFER_REASONS`），webui/app.py 是组合根
    管理器：manager/（paths 收路径与端口、bridge 管桥接进程、tray 出托盘图标与菜单、main 取单实例锁；桥接侧由 flandora/stop_request.py 接停止信号）
    进程级状态：flandora/runtime/（LIFECYCLE 管阶段/暂停/桥接线程，RUNTIME 管 sender、bridge、OneBot 入口占用与版本提示）

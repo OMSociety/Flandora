@@ -41,7 +41,7 @@ def api_autostart_set(payload: dict):
         return JSONResponse({"ok": False, "error": autostart.status()["reason"]}, 400)
     ok, message = autostart.enable() if enabled else autostart.disable()
     if not ok:
-        log.error(f"[WebUI] 设置开机自启失败: {message}")
+        log.error(f"[面板] 设置开机自启失败: {message}")
         return JSONResponse({"ok": False, "error": message}, 400)
-    log.info(f"[WebUI] {message}")
+    log.info(f"[面板] {message}")
     return {"ok": True, **autostart.status()}

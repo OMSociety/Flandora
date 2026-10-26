@@ -51,9 +51,9 @@ async def api_control(payload: dict):
         await asyncio.sleep(1.5)
         await asyncio.to_thread(bridge_main.start_bridge)
     elif action == "pause":
-        log.info("[WebUI] 已暂停" if LIFECYCLE.pause() else "[WebUI] 桥接未运行，暂停未生效")
+        log.info("[面板] 已暂停" if LIFECYCLE.pause() else "[面板] 桥接未运行，暂停未生效")
     elif action == "resume":
-        log.info("[WebUI] 已恢复" if LIFECYCLE.resume() else "[WebUI] 桥接未运行，恢复未生效")
+        log.info("[面板] 已恢复" if LIFECYCLE.resume() else "[面板] 桥接未运行，恢复未生效")
     else:
         return JSONResponse({"ok": False, "error": f"未知操作: {action}"}, 400)
 

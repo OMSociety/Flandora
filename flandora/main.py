@@ -158,17 +158,17 @@ def start_web():
 
     if config.WEB_BIND_HOST == "0.0.0.0" and not auth.enabled():
         # 手里有 config.json 就能改回来，所以这里宁可不起也不能裸奔。
-        log.error("[WebUI] 面板绑在所有网卡上却没设登录密码，拒绝启动（局域网里等于把面板公开）")
-        log.error("[WebUI] 先在面板里设密码，或把 config.json 的 web_bind_host 改回 127.0.0.1")
+        log.error("[面板] 面板绑在所有网卡上却没设登录密码，拒绝启动（局域网里等于把面板公开）")
+        log.error("[面板] 先在面板里设密码，或把 config.json 的 web_bind_host 改回 127.0.0.1")
         return False
     problem = config.webui_tls_problem()
     if problem:
         # 不静默降级成 HTTP：那样界面写着 HTTPS，实际明文。
-        log.error(f"[WebUI] 已启用 HTTPS 但证书不可用：{problem}")
-        log.error("[WebUI] 修正证书路径，或把 config.json 的 webui_tls 改成 false 后重启")
+        log.error(f"[面板] 已启用 HTTPS 但证书不可用：{problem}")
+        log.error("[面板] 修正证书路径，或把 config.json 的 webui_tls 改成 false 后重启")
         return False
     if config.WEB_BIND_HOST_ERROR:
-        log.warning(f"[WebUI] {config.WEB_BIND_HOST_ERROR}")
+        log.warning(f"[面板] {config.WEB_BIND_HOST_ERROR}")
     scheme = "https" if config.WEBUI_TLS else "http"
     scope = "监听所有网卡" if config.WEB_BIND_HOST == "0.0.0.0" else "仅本机"
     log.info(f"WebUI: {scheme}://{config.WEB_BIND_HOST}:{config.WEB_PORT}（{scope}）")
@@ -286,15 +286,15 @@ def main() -> int:
         # 必须显式接住。
         code = getattr(e, "code", None)
         if code is not None:
-            log.error(f"[WebUI] 启动失败: uvicorn 中止进程（exit code {code}）")
+            log.error(f"[面板] 启动失败: uvicorn 中止进程（exit code {code}）")
         else:
-            log.error(f"[WebUI] 启动失败: {type(e).__name__}: {e}")
+            log.error(f"[面板] 启动失败: {type(e).__name__}: {e}")
         log.error(
-            f"[WebUI] WebUI 不可用，但 OneBot 入口（{ob_endpoints_summary()}）仍在运行，"
+            f"[面板] WebUI 不可用，但 OneBot 入口（{ob_endpoints_summary()}）仍在运行，"
             "已连接的客户端不受影响"
         )
         log.error(
-            f"[WebUI] 请检查端口 {config.WEB_PORT} 是否被占用；"
+            f"[面板] 请检查端口 {config.WEB_PORT} 是否被占用；"
             f"若报缺少 webui 模块，说明发布包不完整，请用 build.py 从源码重新打包"
         )
         shutdown.wait()

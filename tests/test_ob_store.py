@@ -137,6 +137,35 @@ def test_get_msg_requires_integer_id(isolated_store):
     assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
 
 
+def test_echo_is_returned_even_when_it_is_falsy(isolated_store):
+    """echo 是客户端自带的回执号：0 与 False 也是有效值，原样带回，不能当没填。"""
+    ob_store.message_store().save_event(_event(43, group=100, text="原文"))
+    resp = _call({"action": "get_msg", "params": {"message_id": 43}, "echo": 0})
+    assert resp["status"] == "ok"
+    assert resp["echo"] == 0
+    failed = _call({"action": "get_msg", "params": {"message_id": 999999}, "echo": False})
+    assert failed["status"] == "failed"
+    assert failed["echo"] is False
+
+
+def test_history_for_an_unknown_target_is_not_found(isolated_ids):
+    """没分配过的群号不是参数写错，是查不到：回 1406，让客户端区分两种情况。"""
+    resp = _call({"action": "get_group_msg_history", "params": {"group_id": 424242}})
+    assert resp["status"] == "failed"
+    assert resp["retcode"] == action_catalog.RETCODE_NOT_FOUND
+
+
+def test_search_treats_wildcards_as_literal(tmp_path):
+    """% 与 _ 按字面量搜：不然搜「100%」会把整库都捞出来。"""
+    store = _store(tmp_path)
+    store.save_event(_event(1, text="进度 100% 完成"))
+    store.save_event(_event(2, text="明天见"))
+    assert [e["message_id"] for e in store.search("100%")] == [1]
+    assert [e["message_id"] for e in store.search("%")] == [1]
+    assert store.search("_") == []
+    store.close()
+
+
 def test_push_event_archives(isolated_store, monkeypatch):
     from flandora import ob_protocol
 

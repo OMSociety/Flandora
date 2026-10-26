@@ -54,7 +54,7 @@ def _failure(message: str, retcode: int, echo=None) -> dict:
     回 ``{"status": "ok"}`` 搪塞会让客户端把没发生的事记进上下文。
     """
     resp = {"status": "failed", "retcode": retcode, "data": {}, "message": message}
-    if echo not in (None, ""):
+    if echo is not None:
         resp["echo"] = echo
     return resp
 
@@ -142,7 +142,7 @@ async def _handle_ob_api(data: dict):
     """
     action = data.get("action", "")
     params = data.get("params", {}) or {}
-    echo = data.get("echo", "")
+    echo = data.get("echo")
     log.info(f"[OB11] API: {action} echo={echo}")
 
     # 动作面统一入口：目录里没有的动作、登记了但没接入的、参数不合契约的，
@@ -498,7 +498,7 @@ async def _handle_ob_api(data: dict):
         if not handle:
             return _failure(
                 f"未知的 {key}：{target}（这个 ID 不是 Flandora 分配过的会话）",
-                action_catalog.RETCODE_BAD_PARAM,
+                action_catalog.RETCODE_NOT_FOUND,
                 echo,
             )
         try:
@@ -516,7 +516,7 @@ async def _handle_ob_api(data: dict):
             f"动作 {action} 尚未接线（实现缺口）", action_catalog.RETCODE_INTERNAL, echo
         )
 
-    if echo:
+    if echo is not None:
         resp_data["echo"] = echo
     return resp_data
 
@@ -607,6 +607,10 @@ def render_message_event(message: Message, message_format: str) -> dict:
     event["user_id"] = user_id
     event["message"] = rendered if message_format == "array" else raw_cq
     event["raw_message"] = raw_cq
+    # v11 的 message 事件固定带这几个字段：客户端按 sub_type 区分群/私聊来源，
+    # font 是微信侧的字体编号，这里没有对应值就填 0（规范允许的默认值）。
+    event["sub_type"] = "normal" if message.chat.is_group else "friend"
+    event["font"] = 0
     event["sender"] = {
         "user_id": user_id,
         "nickname": message.sender.nickname or str(user_id),
@@ -655,6 +659,8 @@ def make_sent_event(
     fmt = message_format or config.OB_MESSAGE_FORMAT
     event["message"] = rendered if fmt == "array" else raw_cq
     event["raw_message"] = raw_cq
+    event["sub_type"] = "normal" if is_group else "friend"
+    event["font"] = 0
     event["sender"] = {
         "user_id": self_id,
         "nickname": ob_ids.SELF.nickname() or str(self_id),

@@ -181,16 +181,21 @@ class MessageStore:
         return out
 
     def search(self, keyword: str, limit: int = 50) -> list[dict]:
-        """在 raw_message 里按子串搜，新的在前。"""
+        """在 raw_message 里按子串搜，新的在前。
+
+        ``%`` 与 ``_`` 在 LIKE 里是通配符，这里按字面量匹配——不转义的话搜「100%」
+        会把整库都捞出来。
+        """
         keyword = (keyword or "").strip()
         if not keyword:
             return []
         limit = max(1, min(int(limit or 50), 1000))
+        literal = keyword.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         with self._lock:
             rows = self._con.execute(
-                "SELECT event_json FROM messages WHERE raw_message LIKE ?"
+                "SELECT event_json FROM messages WHERE raw_message LIKE ? ESCAPE '\\'"
                 " ORDER BY message_id DESC LIMIT ?",
-                (f"%{keyword}%", limit),
+                (f"%{literal}%", limit),
             ).fetchall()
         out = []
         for row in rows:

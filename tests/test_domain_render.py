@@ -104,6 +104,19 @@ def test_private_event_has_no_group_fields(isolated_ids, monkeypatch):
     assert event["sender"]["wxid"] == "wxid_lisi"
 
 
+def test_message_events_carry_sub_type_and_font(isolated_ids, monkeypatch):
+    """v11 的 message 事件固定带 sub_type 与 font：客户端按它们区分来源与字体。"""
+    pushed = _capture(monkeypatch)
+    bridge = bridge_core.Flandora(sender=None)
+    bridge.emit_message(dict(GROUP_MSG))
+    bridge.emit_message(dict(PRIVATE_MSG))
+
+    assert pushed[0]["sub_type"] == "normal"
+    assert pushed[0]["font"] == 0
+    assert pushed[1]["sub_type"] == "friend"
+    assert pushed[1]["font"] == 0
+
+
 def test_sender_nickname_falls_back_to_the_integer_id(isolated_ids):
     """没有昵称时给整数 ID 的字符串形式，客户端总有一个能显示的名字。"""
     message = Message(

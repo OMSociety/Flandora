@@ -10,7 +10,7 @@ import sys
 import threading
 import time
 
-from . import __version__, config, ob_ids, ob_network, update_check, wechat_account
+from . import __version__, config, ob_ids, ob_network, stop_request, update_check, wechat_account
 from .bridge_core import Flandora
 from .ob_server import ONEBOT_SERVER
 from .runtime import LIFECYCLE, RUNTIME, events
@@ -69,6 +69,43 @@ def stop_bridge():
     log.info("[Web] 已停止")
 
 
+def watch_stop_signal(shutdown: threading.Event, pid_file: str | None = None):
+    """等管理器的停止请求，收到就收尾退出（收件、OneBot、隔离桌面、面板）。
+
+    ``shutdown`` 由 main() 持有：面板起不来时主线程正等它，收尾完了才放行。
+    收尾全部做完后直接收进程：UIA/COM 在冻结形态下留着不走解释器清理的线程，
+    交给正常退出会让管理器多等满 10 秒再强杀——收尾都完成了，强杀没有意义。
+    """
+    if not stop_request.wait():
+        return
+    log.info("[停止] 收到管理器的停止请求，开始收尾")
+    try:
+        stop_bridge()
+    except Exception as exc:  # noqa: BLE001
+        log.error(f"[停止] 停止桥接时出错：{exc}")
+    try:
+        from . import wx_desktop
+
+        wx_desktop.manager().stop()
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"[停止] 关闭隔离桌面时出错：{exc}")
+    try:
+        from .webui.app import request_shutdown
+
+        request_shutdown()
+    except Exception as exc:  # noqa: BLE001
+        log.warning(f"[停止] 关闭面板时出错：{exc}")
+    log.info("[停止] 已收尾，进程退出")
+    shutdown.set()
+    if pid_file:
+        try:
+            os.remove(pid_file)
+        except OSError:
+            pass
+    logging.shutdown()
+    os._exit(0)
+
+
 def _bridge_loop():
     import ctypes
 
@@ -124,19 +161,6 @@ def start_web():
     log.info(f"WebUI: {scheme}://{config.WEB_BIND_HOST}:{config.WEB_PORT}（{scope}）")
     run_webui(config.WEB_BIND_HOST, config.WEB_PORT)
     return True
-
-
-def _auto_open_webui():
-    """启动后自动打开 WebUI（延迟 2 秒等 uvicorn 就绪）。"""
-    time.sleep(2)
-    try:
-        import webbrowser
-
-        scheme = "https" if config.WEBUI_TLS else "http"
-        webbrowser.open(f"{scheme}://127.0.0.1:{config.WEB_PORT}")
-        log.info("[WebUI] 已自动打开浏览器")
-    except Exception as e:
-        log.warning(f"[WebUI] 自动打开浏览器失败: {e}")
 
 
 # ============ 账号切换兜底 ============
@@ -206,6 +230,12 @@ def main() -> int:
         log.error("已有一个 bridge 在运行")
         sys.exit(1)
 
+    # 上一个桥接留下的停止请求不能带到这一条命里，否则一起来就自己退出
+    stop_request.clear()
+
+    # 管理器要停桥接时置位这个事件，后台线程等到它就收尾退出
+    shutdown = threading.Event()
+
     # pid 文件只作人工排查用（谁在跑、pid 是多少）
     with open(PID_FILE, "w") as f:
         f.write(str(os.getpid()))
@@ -227,11 +257,15 @@ def main() -> int:
         update_check.check_async()
         start_account_watch()
         start_bridge()
-        if getattr(config, "WEBUI_AUTO_OPEN", True):
-            threading.Thread(target=_auto_open_webui, daemon=True).start()
+        threading.Thread(
+            target=watch_stop_signal,
+            args=(shutdown, PID_FILE),
+            daemon=True,
+            name="stop-watch",
+        ).start()
         if start_web() is False:
             # 面板被安全闸拦下来了：原因已写进日志，但 OneBot 服务得继续跑。
-            threading.Event().wait()
+            shutdown.wait()
     except (Exception, SystemExit) as e:
         # 主线程靠 uvicorn 常驻。WebUI 起不来（端口被占、发布包缺少 webui 模块等）时
         # 不能让进程退出：OneBot 服务端跑在后台线程里，主线程一退，桥梁就断了。
@@ -250,7 +284,7 @@ def main() -> int:
             f"[WebUI] 请检查端口 {config.WEB_PORT} 是否被占用；"
             f"若报缺少 webui 模块，说明发布包不完整，请用 build.py 从源码重新打包"
         )
-        threading.Event().wait()
+        shutdown.wait()
     finally:
         try:
             os.remove(PID_FILE)

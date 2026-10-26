@@ -20,8 +20,8 @@ async function loadStatus() {
   const res = await get('/api/status', true)
   if (res.ok && res.data && res.data.webui) webui.value = res.data.webui
 }
-onMounted(loadStatus)
-watch(() => props.active, (on) => { if (on) loadStatus() })
+onMounted(() => { loadStatus(); loadAutostart() })
+watch(() => props.active, (on) => { if (on) { loadStatus(); loadAutostart() } })
 
 const restartDialog = ref(false)
 const restarting = ref(false)
@@ -121,6 +121,38 @@ async function saveTls() {
     if (Object.keys(payload).some((key) => key !== 'webui_tls')) restartFrom.value = 'tls'
     await loadStatus()
   }
+}
+
+// ---------- 开机启动 ----------
+
+const autostart = ref({ enabled: false, command: '', reason: '' })
+const autostartBusy = ref(false)
+const autostartError = ref('')
+
+async function loadAutostart() {
+  const res = await get('/api/autostart', true)
+  if (res.ok && res.data) {
+    autostart.value = {
+      enabled: !!res.data.enabled,
+      command: res.data.command || '',
+      reason: res.data.reason || '',
+    }
+  }
+}
+
+async function toggleAutostart(event) {
+  const want = event.target.checked
+  autostartError.value = ''
+  autostartBusy.value = true
+  const res = await post('/api/autostart', { enabled: want })
+  autostartBusy.value = false
+  if (!res.ok || !res.data || res.data.ok === false) {
+    event.target.checked = !want
+    autostartError.value = '设置失败：' + (res.data?.error || `HTTP ${res.status}`)
+    return
+  }
+  await loadAutostart()
+  toast(want ? '已设置开机自启' : '已取消开机自启', 'success')
 }
 
 // ---------- 备份与恢复 ----------
@@ -280,6 +312,24 @@ async function applyRestore() {
       <SectionFoot :saving="tlsSaving" :saved="tlsSaved" :disabled="!certDirty" label="保存证书" hint="替换证书后重启生效" @save="saveTls" />
     </section>
 
+    <section class="card settings-section" aria-labelledby="access-autostart-heading">
+      <div class="section-head">
+        <div>
+          <h3 id="access-autostart-heading" class="card-title">开机启动</h3>
+          <p class="card-description">登录 Windows 后自动在托盘里启动管理器，桥接跟着起来。</p>
+        </div>
+        <AppIcon name="Zap" :size="19" />
+      </div>
+      <label class="check-label">
+        <input type="checkbox" :checked="autostart.enabled" :disabled="autostartBusy || !autostart.command" @change="toggleAutostart" />
+        登录后自动启动 Flandora
+      </label>
+      <p v-if="autostart.command" class="autostart-command mono">开机执行：{{ autostart.command }}</p>
+      <p v-if="!autostart.command && autostart.reason" class="hint">{{ autostart.reason }}</p>
+      <p v-if="autostartError" class="autostart-error">{{ autostartError }}</p>
+      <p v-else class="hint">写在当前用户的 Run 项里，不需要管理员权限；勾选或取消立刻生效。</p>
+    </section>
+
     <section class="card settings-section" aria-labelledby="access-backup-heading">
       <div class="section-head">
         <div>
@@ -351,6 +401,8 @@ async function applyRestore() {
 .cert-state > .app-icon { color:var(--primary-strong); }
 .cert-state.missing > .app-icon { color:var(--warning); }
 .mono { font-family:var(--mono, ui-monospace, monospace); font-size:11px; resize:vertical; }
+.autostart-command { margin-top:12px; font-size:11px; color:var(--muted); line-height:1.7; word-break:break-all; }
+.autostart-error { margin-top:9px; font-size:11px; color:var(--danger); line-height:1.7; word-break:break-all; }
 .backup-block { padding:12px 14px; border:1px solid var(--border); border-radius:10px; background:var(--inset); }
 .backup-block + .backup-block { margin-top:12px; }
 .backup-block .btn { margin-top:10px; }

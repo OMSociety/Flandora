@@ -17,6 +17,7 @@
 - Vue 3.5 + Vite 6（`webui-frontend/`），图标 `@lucide/vue`
 - pytest（后端）、Playwright（前端），PyInstaller + Inno Setup（打包）
 - 专有依赖：`uiautomation`（窗口自动化）、`frida`（只打进取钥器）、`zstandard`、`Pillow`
+- 托盘管理器（`manager/`）：`pystray` 托盘图标与菜单 + `Pillow` 画图标；`Flandora.exe` 是用户入口
 
 文档索引：
 
@@ -52,6 +53,7 @@
 | 同步版本号 | `python tools/sync_version.py`（改 `flandora/__init__.py` 的 `__version__` 后必跑；`--check` 在 CI 里挡漏改） |
 | 依赖漏洞扫描 | `$env:PYTHONUTF8=1; python -m pip_audit -r flandora/requirements.txt`（清单带中文注释，Windows 代码页下不设 UTF-8 会解码失败） |
 | 起桥接（源码） | `python run_bridge.py` |
+| 起管理器（源码，托盘） | `python manager/main.py` |
 | 装前端依赖 | `cd webui-frontend; npm install` |
 | 跑前端测试 | `cd webui-frontend; npm test`（Playwright 自动在 4175 起 vite，无需手工起服务） |
 | 构建前端 | `cd webui-frontend; npm run build`（产物写入 `flandora/webui/dist`） |
@@ -68,7 +70,8 @@ run_bridge.py -> flandora.main
    收件：wx_source -> wx_store -> wx_crypto/zstandard -> bridge_core -> ob_protocol -> ob_network -> OneBot 客户端
    更新：webui/api/update.py -> updater（下载/暂存/生成替换脚本）+ 退出后执行的 PowerShell 脚本
    发件：WebUI /api/send 或 OneBot 调用 -> senders.create_sender() -> uia_sender -> wx_desktop（隔离桌面）
-   面板：flandora/webui/api/*.py 的 11 个路由器（各自导出 ROUTES 与 DEFER_REASONS），webui/app.py 是组合根
+   面板：flandora/webui/api/*.py 的 12 个路由器（各自导出 ROUTES 与 DEFER_REASONS），webui/app.py 是组合根
+   管理器：manager/（paths 收路径与端口、bridge 管桥接进程、tray 出托盘图标与菜单、main 取单实例锁；桥接侧由 flandora/stop_request.py 接停止信号）
    进程级状态：flandora/runtime/（LIFECYCLE 管阶段/暂停/桥接线程，RUNTIME 管 sender、bridge、OneBot 入口占用与版本提示）
    身份与名字索引：flandora/ob_ids.py（SELF、remember_name/lookup_name，账号级，换账号一起复位）
    OneBot 入口线程：flandora/ob_server.py（OneBotServer 起停专用事件循环与网络管理器）
@@ -109,6 +112,9 @@ run_bridge.py -> flandora.main
 | 改收件（读库、字段解析） | `flandora/bridge_core.py`，数据层在 `flandora/wx_store.py` |
 | 改发送（投递、清空输入框） | `flandora/uia_sender.py` |
 | 改桌面隔离与接管 | `flandora/wx_desktop.py` |
+| 改托盘图标、悬停提示或右键菜单 | `manager/tray.py` |
+| 改桥接的起停、状态探测与停止握手 | `manager/bridge.py`、`manager/paths.py`、`flandora/stop_request.py` |
+| 改开机自启 | `flandora/autostart.py`（Run 项的值名是 `Flandora`）；安装器 `[Registry]` 写同一条值，两边由 `tests/test_autostart.py` 对表 |
 | 加后端测试 | `tests/test_<模块>.py`，Windows 专属用例直接调用桌面 API |
 | 加前端测试 | `webui-frontend/tests/console.spec.js`，夹具在 `tests/fixtures.js` |
 | 改「微信画面」页与隔离桌面控件 | `webui-frontend/src/pages/Desktop.vue`，端点见 `flandora/webui/api/desktop.py` 的 `/api/desktop/*` |
@@ -126,6 +132,10 @@ run_bridge.py -> flandora.main
 `LIFECYCLE.begin_stop()` 让收件循环退出（最多等 5 秒）再 `OneBotServer.stop()` 释放端口，最后
 `LIFECYCLE.mark_stopped()`。暂停（`LIFECYCLE.pause()`）只把心跳与状态回报切成「已暂停/离线」，
 收件与推送照常。
+
+管理器停桥接走两步：`manager/bridge.py` 先把 `Global\Flandora_Stop` 事件置位，桥接侧
+`flandora/stop_request.py` 的守候线程接住后依次 `stop_bridge()`、关隔离桌面上的微信、
+`webui.app.request_shutdown()`，让 uvicorn 自己收尾退出；等满 10 秒还没退，管理器才强杀进程。
 
 ## 修改契约
 

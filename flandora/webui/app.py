@@ -85,7 +85,7 @@ config.subscribe(deps.on_config_changed)
 
 
 def run(host: str, port: int):
-    """由 main.py 调用，在主线程阻塞运行 uvicorn。"""
+    """由 main.py 调用，在主线程阻塞运行 uvicorn，直到 :func:`request_shutdown`。"""
     import uvicorn
 
     tls: dict = {}
@@ -95,4 +95,31 @@ def run(host: str, port: int):
             "ssl_certfile": config.WEBUI_TLS_CERT_FILE,
             "ssl_keyfile": config.WEBUI_TLS_KEY_FILE,
         }
-    uvicorn.run(app, host=host, port=port, log_level="warning", access_log=False, **tls)
+    server = uvicorn.Server(
+        uvicorn.Config(
+            app,
+            host=host,
+            port=port,
+            log_level="warning",
+            access_log=False,
+            # 管理器用 pythonw 拉起桥接时没有标准输出，uvicorn 默认的彩色格式化器
+            # 会在 sys.stdout 为 None 时抛异常；日志已经由 flandora 自己的 handler 写文件。
+            log_config=None,
+            **tls,
+        )
+    )
+    # 停止请求线程拿不到 run() 的局部变量，server 挂在应用上让它够得着
+    app.state.uvicorn_server = server
+    try:
+        server.run()
+    finally:
+        app.state.uvicorn_server = None
+
+
+def request_shutdown() -> bool:
+    """请 uvicorn 走正常退出流程（收尾线程调用）。返回是否找到了运行中的 server。"""
+    server = getattr(app.state, "uvicorn_server", None)
+    if server is None:
+        return False
+    server.should_exit = True
+    return True

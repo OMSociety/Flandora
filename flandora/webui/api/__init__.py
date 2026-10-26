@@ -13,6 +13,7 @@ from fastapi import APIRouter
 
 from . import (
     auth,
+    autostart,
     config,
     contacts,
     control,
@@ -28,6 +29,7 @@ from . import (
 # 组合根按这个顺序 include；也是守卫测试核对「有没有漏聚合」的依据。
 ROUTER_MODULES = (
     auth,
+    autostart,
     config,
     contacts,
     control,

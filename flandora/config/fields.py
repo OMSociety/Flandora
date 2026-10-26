@@ -414,14 +414,6 @@ FIELDS: tuple[Field, ...] = (
         "也能打开，此时必须先设面板密码，否则谁都能改这份配置。改这里需要重启桥接。",
     ),
     Field(
-        key="webui_auto_open",
-        attr="WEBUI_AUTO_OPEN",
-        kinds=_RESTART,
-        default=True,
-        clean=_clean_flag,
-        desc="启动桥接时自动用默认浏览器打开面板。",
-    ),
-    Field(
         key="webui_password",
         attr="WEBUI_PASSWORD",
         kinds=_HOT_SECRET,

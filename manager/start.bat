@@ -1,12 +1,19 @@
 @echo off
-REM 双击运行：启动 Bridge 管理器（无黑色 cmd 窗口）
+chcp 65001 >nul
+REM 双击运行：启动 Flandora 管理器（常驻托盘，无黑色 cmd 窗口）
 setlocal
 set "HERE=%~dp0"
-REM 优先用 py 启动器，其次用 python；自动探测，无需硬编码路径
-where py >nul 2>nul
-if %errorlevel%==0 (
-    start "" py -3 "%HERE%bridge_manager.py"
+REM 优先用仓库虚拟环境（管理器要 pystray / Pillow 两个包），没有才退回 pyw / pythonw
+if exist "%HERE%..\.venv\Scripts\pythonw.exe" (
+    start "" "%HERE%..\.venv\Scripts\pythonw.exe" "%HERE%main.py"
+) else if exist "%HERE%..\.venv\Scripts\python.exe" (
+    start "" "%HERE%..\.venv\Scripts\python.exe" "%HERE%main.py"
 ) else (
-    start "" python "%HERE%bridge_manager.py"
+    where pyw >nul 2>nul
+    if %errorlevel%==0 (
+        start "" pyw -3 "%HERE%main.py"
+    ) else (
+        start "" pythonw "%HERE%main.py"
+    )
 )
 endlocal

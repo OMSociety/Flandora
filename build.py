@@ -1,14 +1,13 @@
 # -*- coding: utf-8 -*-
 """Flandora 一键打包脚本
 
-打包四个组件：
-  - Flandora.exe            来自 run_bridge.py（flandora 包的入口）
-  - Flandora-Manager.exe    来自 manager/bridge_manager.py
-  - Flandora-LogTail.exe    来自 manager/log_tail.py
-  - Flandora-KeyTool.exe    来自 tools/keytool.py（唯一带 frida 的 exe）
+打包三个组件：
+  - Flandora-Bridge.exe     来自 run_bridge.py（flandora 包的入口）
+  - Flandora.exe            来自 manager/main.py（托盘管理器，用户双击的那一个）
+  - tools/Flandora-KeyTool.exe  来自 tools/keytool.py（唯一带 frida 的 exe）
 
-前三个是运行必需；取钥器只在首次取钥与换号时用，单独成一个 exe 是为了不让
-frida 的几十 MB 拖进主程序。
+前两个是运行必需；取钥器只在首次取钥与换号时用，收进 tools/ 子目录，既不
+抢根目录的入口，也不让 frida 的几十 MB 拖进主程序。
 
 产物：
   dist/Flandora-v<版本>.zip              portable 包
@@ -77,10 +76,8 @@ BRIDGE_DATA: tuple[tuple[Path, str], ...] = (
 # 随 exe 分发，往载荷里再放一份没有消费方，只会让 zip 变大。
 REQUIRED_PAYLOAD = (
     "Flandora.exe",
-    "Flandora-Manager.exe",
-    "Flandora-LogTail.exe",
-    "Flandora-KeyTool.exe",
-    "启动.bat",
+    "Flandora-Bridge.exe",
+    "tools/Flandora-KeyTool.exe",
     "README.md",
     "LICENSE",
     "docs",
@@ -89,9 +86,8 @@ REQUIRED_PAYLOAD = (
 # pip 走清华源，国内直连 PyPI 常常超时
 PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
 
-EXE_BRIDGE = "Flandora"
-EXE_MANAGER = "Flandora-Manager"
-EXE_LOGTAIL = "Flandora-LogTail"
+EXE_BRIDGE = "Flandora-Bridge"
+EXE_MANAGER = "Flandora"
 EXE_KEYTOOL = "Flandora-KeyTool"
 
 EXE_SUFFIX = ".exe" if sys.platform == "win32" else ""
@@ -315,23 +311,21 @@ def build_keytool() -> None:
     )
 
 
-def build_log_tail() -> None:
-    step(f"打包 {EXE_LOGTAIL}{EXE_SUFFIX}")
-    pyi(MANAGER_SRC / "log_tail.py", EXE_LOGTAIL, MANAGER_SRC, onefile=True, windowed=False)
-
-
 def build_manager() -> None:
     step(f"打包 {EXE_MANAGER}{EXE_SUFFIX}")
     extras = [
+        # 管理器复用 flandora.single_instance 与 flandora.stop_request 两个轻模块；
+        # 不把仓库根加进搜索路径，PyInstaller 会把它们当成不存在的模块，打出
+        # 一个启动即报 ModuleNotFoundError 的 exe。
+        "--paths",
+        str(ROOT),
         "--hidden-import",
-        "pystray",
+        "flandora.single_instance",
         "--hidden-import",
-        "PIL._tkinter_finder",
-        "--hidden-import",
-        "tkinter",
+        "flandora.stop_request",
     ]
     pyi(
-        MANAGER_SRC / "bridge_manager.py",
+        MANAGER_SRC / "main.py",
         EXE_MANAGER,
         MANAGER_SRC,
         onefile=True,
@@ -356,15 +350,38 @@ def payload_dir() -> Path:
 
 
 _ISS_SOURCE_RE = re.compile(r'^\s*Source:\s*"\{#PayloadDir\}(?P<rel>[^"]*)"', re.MULTILINE)
+_ISS_DEFINE_RE = re.compile(r'^\s*#define\s+(?P<name>\w+)\s+"(?P<value>[^"]*)"', re.MULTILINE)
+_ISS_SYMBOL_RE = re.compile(r"\{#(?P<name>\w+)\}")
+
+
+def installer_defines() -> dict[str, str]:
+    """安装脚本里的 ``#define`` 常量（exe 文件名等）。"""
+    if not ISS.is_file():
+        raise SystemExit(f"缺少安装脚本 {ISS}")
+    return {
+        m.group("name"): m.group("value")
+        for m in _ISS_DEFINE_RE.finditer(ISS.read_text(encoding="utf-8"))
+    }
 
 
 def installer_sources() -> list[str]:
-    """安装脚本从载荷里取的文件（相对载荷根；结尾的 ``*`` 表示整个目录）。"""
+    """安装脚本从载荷里取的文件（相对载荷根；结尾的 ``*`` 表示整个目录）。
+
+    脚本里用 ``{#BridgeExe}`` 这类预处理常量拼路径，这里按 ``#define`` 展开成实际文件名，
+    否则自检会把常量本身当成文件去找，报出一串并不存在的缺项。
+    """
     if not ISS.is_file():
         raise SystemExit(f"缺少安装脚本 {ISS}")
+    defines = installer_defines()
     rels = []
     for match in _ISS_SOURCE_RE.finditer(ISS.read_text(encoding="utf-8")):
-        rels.append(match.group("rel").replace("\\", "/").lstrip("/"))
+        rel = _ISS_SYMBOL_RE.sub(
+            lambda m: defines.get(m.group("name"), m.group(0)), match.group("rel")
+        )
+        unknown = _ISS_SYMBOL_RE.search(rel)
+        if unknown is not None:
+            raise SystemExit(f"安装脚本里的常量 {unknown.group(0)} 没有 #define，无法核对载荷")
+        rels.append(rel.replace("\\", "/").lstrip("/"))
     return rels
 
 
@@ -399,40 +416,37 @@ def assemble_zip() -> Path:
         shutil.rmtree(rel)
     (rel / "data").mkdir(parents=True)
 
-    # 1) exe
-    for name in (EXE_BRIDGE, EXE_MANAGER, EXE_LOGTAIL, EXE_KEYTOOL):
+    # 1) exe：管理器与桥接在根目录，取钥器收进 tools/
+    (rel / "tools").mkdir(parents=True, exist_ok=True)
+    layout = {
+        EXE_BRIDGE: rel,
+        EXE_MANAGER: rel,
+        EXE_KEYTOOL: rel / "tools",
+    }
+    for name, target_dir in layout.items():
         fname = f"{name}{EXE_SUFFIX}"
         src = DIST / fname
         if not src.exists():
             raise SystemExit(f"缺少打包产物 {src}")
-        shutil.copy2(src, rel / fname)
+        shutil.copy2(src, target_dir / fname)
 
     # 2) 可写数据目录：首次启动时程序会在这里生成 config.json
     (rel / "data").mkdir(parents=True, exist_ok=True)
 
-    # 3) 启动脚本（双击启动管理器）
-    (rel / "启动.bat").write_text(
-        f"""@echo off
-chcp 65001 >nul
-start "" {EXE_MANAGER}{EXE_SUFFIX}
-""",
-        encoding="utf-8",
-    )
-
-    # 4) README
+    # 3) README
     readme = ROOT / "README.md"
     if readme.is_file():
         shutil.copy2(readme, rel / "README.md")
 
-    # 5) LICENSE
+    # 4) LICENSE
     if (ROOT / "LICENSE").is_file():
         shutil.copy2(ROOT / "LICENSE", rel / "LICENSE")
 
-    # 6) docs（已知限制与验证记录、第三方许可）
+    # 5) docs（已知限制与验证记录、第三方许可）
     if DOCS_SRC.is_dir():
         shutil.copytree(DOCS_SRC, rel / "docs")
 
-    # 7) 自检：缺项就在这里中止，不生成残缺 zip
+    # 6) 自检：缺项就在这里中止，不生成残缺 zip
     problems = verify_payload(rel)
     if problems:
         raise SystemExit("载荷自检不通过，不生成 zip：\n  " + "\n  ".join(problems))
@@ -440,7 +454,7 @@ start "" {EXE_MANAGER}{EXE_SUFFIX}
         f"载荷自检通过：{len(REQUIRED_PAYLOAD)} 个必需条目 + {len(installer_sources())} 条安装脚本引用"
     )
 
-    # 8) 打包 zip
+    # 7) 打包 zip
     zip_path = DIST / f"{PKG_NAME}.zip"
     if zip_path.exists():
         zip_path.unlink()
@@ -604,7 +618,6 @@ def main(argv: list[str] | None = None) -> int:
     install_pyinstaller()
     build_bridge()
     build_keytool()
-    build_log_tail()
     build_manager()
     zip_path = assemble_zip()
     setup_path = build_installer()

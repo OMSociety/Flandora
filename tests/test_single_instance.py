@@ -63,9 +63,7 @@ def test_bridge_and_manager_hold_different_names():
 
 def test_manager_does_not_hardcode_a_mutex_name():
     """管理器必须经由 single_instance 取锁；自己写字面量迟早与 bridge 撞名。"""
-    tree = ast.parse(
-        (Path(REPO_ROOT) / "manager" / "bridge_manager.py").read_text(encoding="utf-8")
-    )
+    tree = ast.parse((Path(REPO_ROOT) / "manager" / "main.py").read_text(encoding="utf-8"))
     literals = [
         node.value
         for node in ast.walk(tree)

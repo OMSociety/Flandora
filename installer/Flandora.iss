@@ -4,9 +4,10 @@
 ; portable zip 同一份内容）。装到 %LOCALAPPDATA%，全程不需要管理员。
 ;
 ; 两处与运行期约定的耦合，改动时要一起改：
-;   1. 开机自启在 Startup 目录建 Flandora-Manager.lnk；管理器认这个名字
-;      （manager/bridge_manager.py 的 _is_autostart_enabled 同时看 .lnk 与 .bat），
-;      「开机自启动」勾选状态才认得出安装器建的这一份。
+;   1. 开机自启是当前用户 Run 项下的一条值：HKCU\Software\Microsoft\Windows\
+;      CurrentVersion\Run 里名为 Flandora 的字符串，指向 {app}\Flandora.exe。
+;      网页面板「安全与服务 → 开机启动」读写的就是同一条值（flandora/autostart.py），
+;      两边的勾选状态因此永远一致。卸载时由 uninsdeletevalue 清掉。
 ;   2. data\ 下的文件一律 uninsneveruninstall，卸载时是否删除由
 ;      InitializeUninstall() 里的对话框决定（默认删除）。
 
@@ -16,7 +17,10 @@
 
 #define AppName "Flandora"
 #define AppPublisher "OMSociety"
-#define ManagerExe "Flandora-Manager.exe"
+#define ManagerExe "Flandora.exe"
+#define BridgeExe "Flandora-Bridge.exe"
+#define KeyToolExe "Flandora-KeyTool.exe"
+#define AutostartValue "Flandora"
 
 [Setup]
 AppId={{80f185a4-624d-40dc-bb9f-59a793ff3859}
@@ -49,54 +53,36 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; Flags: unchecked
 
 [Files]
 ; 程序与文档：每次安装都覆盖，写死的路径与随包资源必须跟着版本走
-Source: "{#PayloadDir}\Flandora.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\Flandora-Manager.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\Flandora-LogTail.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\Flandora-KeyTool.exe"; DestDir: "{app}"; Flags: ignoreversion
-Source: "{#PayloadDir}\启动.bat"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\{#BridgeExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\{#ManagerExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\tools\{#KeyToolExe}"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#PayloadDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; data\ 是可写数据目录（config.json、数据库口令、图片密钥、日志），
 ; 由程序首次启动时自己生成，升级安装不能碰它
 
+[Registry]
+; 与网页面板「开机启动」共用这一条：值名、路径、命令行三者必须一致
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#AutostartValue}"; ValueData: """{app}\{#ManagerExe}"""; Tasks: autostart; Flags: uninsdeletevalue
+
 [Icons]
-Name: "{group}\{#AppName} 管理器"; Filename: "{app}\{#ManagerExe}"
+Name: "{group}\{#AppName}"; Filename: "{app}\{#ManagerExe}"
 Name: "{group}\使用说明"; Filename: "{app}\README.md"
 Name: "{group}\卸载 {#AppName}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#AppName} 管理器"; Filename: "{app}\{#ManagerExe}"; Tasks: desktopicon
-; 开机自启用快捷方式而不是脚本：Inno 自己的 Icons 机制创建，
-; 管理器认这个 .lnk（bridge_manager._is_autostart_enabled 同时看 .lnk 和 .bat）
-Name: "{userstartup}\Flandora-Manager"; Filename: "{app}\{#ManagerExe}"; Tasks: autostart
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#ManagerExe}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#ManagerExe}"; Description: "立即运行 {#AppName} 管理器"; Flags: postinstall nowait skipifsilent
+Filename: "{app}\{#ManagerExe}"; Description: "立即运行 {#AppName}"; Flags: postinstall nowait skipifsilent
 
 [UninstallDelete]
 Type: dirifempty; Name: "{app}\data"
 Type: dirifempty; Name: "{app}\docs\third-party-licenses"
 Type: dirifempty; Name: "{app}\docs"
+Type: dirifempty; Name: "{app}\tools"
 Type: dirifempty; Name: "{app}"
 
 [Code]
-const
-  AutostartName = 'Flandora-Manager';
-
-function StartupBatPath: String;
-begin
-  Result := ExpandConstant('{userappdata}\Microsoft\Windows\Start Menu\Programs\Startup\')
-            + AutostartName + '.bat';
-end;
-
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-begin
-  if CurUninstallStep = usUninstall then
-  begin
-    { 自启快捷方式由 Inno 自己收拾；这里清管理器在用户点选时写下的那份 .bat }
-    DeleteFile(StartupBatPath);
-  end;
-end;
-
 function InitializeUninstall(): Boolean;
 var
   DataDir: String;

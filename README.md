@@ -36,9 +36,9 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
    | 包 | 说明 |
    | --- | --- |
    | `Flandora-v1.0.0-setup.exe` | 安装到 `%LOCALAPPDATA%\Programs\Flandora`，可勾选开机自启与桌面快捷方式；卸载时单独询问是否删除配置与已存口令 |
-   | `Flandora-v1.0.0.zip` | 便携包，解压到任意目录，双击 `启动.bat` |
+   | `Flandora-v1.0.0.zip` | 便携包，解压到任意目录，双击 `Flandora.exe` |
 
-2. 退出自己的微信，运行 `Flandora-Manager.exe`，浏览器打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)。
+2. 退出自己的微信，双击 `Flandora.exe`。它在任务栏托盘里常驻并拉起桥接，需要时从菜单打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)，或等它第一次运行时自己弹出面板。
 3. 进入「取钥向导」，四步走完：勾选免责声明 → 开始取钥 → 在向导右侧的实况画面里完成登录 → 想让机器人看图就继续抓图片密钥 → 校验。
 
 之后让客户端连上来即可：
@@ -59,6 +59,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 | --- | --- |
 | 微信标识与 OneBot 整数怎么对应、支持哪些动作、消息段与事件面的实际形态、返回码含义 | [docs/protocol.md](docs/protocol.md) |
 | 控制台八个页面各做什么，`data/` 下每个文件是干什么的 | [docs/console.md](docs/console.md) |
+| 托盘图标的菜单、开机自启与再双击的行为 | [manager/README.md](manager/README.md) |
 | 每个配置项的类型、默认值与说明，以及版本更新的工作机制 | [docs/config.md](docs/config.md) |
 | 用 Python 自己写客户端，或把动作面挂给支持 MCP 的 AI 客户端 | [docs/sdk.md](docs/sdk.md) |
 | 开发环境、命令、CI 与该跑哪些闸门 | [docs/development.md](docs/development.md) |

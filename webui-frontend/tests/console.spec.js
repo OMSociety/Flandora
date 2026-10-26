@@ -117,6 +117,26 @@ test('config page opens on the first section and validates raw JSON', async ({ p
   expect(errors).toEqual([])
 })
 
+test('access section turns autostart on with one click', async ({ page }) => {
+  const requests = await mockApi(page)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  page.on('console', (message) => { if (message.type() === 'error') errors.push(message.text()) })
+  await page.goto('/#/config')
+  await expect(page.getByRole('heading', { name: '开机启动' })).toBeVisible()
+  await expect(page.locator('.autostart-command')).toContainText('Flandora.exe')
+
+  const toggle = page.getByRole('checkbox', { name: '登录后自动启动 Flandora' })
+  await expect(toggle).not.toBeChecked()
+  await toggle.check()
+  await expect(page.locator('.toast-item.success')).toContainText('已设置开机自启')
+  await expect(toggle).toBeChecked()
+
+  const posted = requests.filter((item) => item.path === '/api/autostart' && item.method === 'POST')
+  expect(posted[0]?.body).toEqual({ enabled: true })
+  expect(errors).toEqual([])
+})
+
 test('advanced config page pairs the editor with per-key notes', async ({ page }) => {
   const errors = await openPage(page, 'config')
   await page.getByRole('button', { name: '高级', exact: false }).click()

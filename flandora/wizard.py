@@ -288,15 +288,17 @@ class Wizard:
         return info
 
     def keytool_command(self) -> list:
-        """取钥器的命令行：打包后是同目录的 KeyTool exe，源码里是 tools/keytool.py。"""
+        """取钥器的命令行：打包后在安装目录的 tools\\ 里，源码里是 tools/keytool.py。"""
         if getattr(sys, "frozen", False):
             here = os.path.dirname(os.path.abspath(sys.executable))
-            for name in ("Flandora-KeyTool.exe", "Flandora-KeyTool"):
-                path = os.path.join(here, name)
-                if os.path.isfile(path):
-                    return [path]
+            for folder in ("tools", ""):
+                base = os.path.join(here, folder) if folder else here
+                for name in ("Flandora-KeyTool.exe", "Flandora-KeyTool"):
+                    path = os.path.join(base, name)
+                    if os.path.isfile(path):
+                        return [path]
             raise WizardError(
-                "同目录下找不到 Flandora-KeyTool.exe。请确认发布包已完整解压，"
+                "安装目录的 tools\\ 下找不到 Flandora-KeyTool.exe。请确认发布包已完整解压，"
                 "或改用下面的「手动填入口令」。"
             )
 

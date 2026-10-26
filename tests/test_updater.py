@@ -160,15 +160,15 @@ def test_safe_members_rejects_escaping_paths(tmp_path):
 
 
 def test_extract_finds_payload_root_and_rejects_junk(tmp_path):
-    good = _make_zip(tmp_path / "good.zip", {"Flandora.exe": _FAKE_EXE})
+    good = _make_zip(tmp_path / "good.zip", {"Flandora-Bridge.exe": _FAKE_EXE})
     root = updater.extract(good, str(tmp_path / "out"))
-    assert os.path.isfile(os.path.join(root, "Flandora.exe"))
+    assert os.path.isfile(os.path.join(root, "Flandora-Bridge.exe"))
 
     junk = _make_zip(tmp_path / "junk.zip", {"readme.txt": b"hello"})
-    with pytest.raises(updater.UpdateError, match="没有找到 Flandora.exe"):
+    with pytest.raises(updater.UpdateError, match="没有找到 Flandora-Bridge.exe"):
         updater.extract(junk, str(tmp_path / "junk-out"))
 
-    tiny = _make_zip(tmp_path / "tiny.zip", {"Flandora.exe": b"MZ"})
+    tiny = _make_zip(tmp_path / "tiny.zip", {"Flandora-Bridge.exe": b"MZ"})
     with pytest.raises(updater.UpdateError, match="不完整"):
         updater.extract(tiny, str(tmp_path / "tiny-out"))
 
@@ -180,7 +180,7 @@ def test_extract_finds_payload_root_and_rejects_junk(tmp_path):
 
 def test_stage_pending_and_clear(monkeypatch, tmp_path):
     monkeypatch.setattr(updater.config, "data_dir", lambda: str(tmp_path))
-    archive = _make_zip(tmp_path / "pkg.zip", {"Flandora.exe": _FAKE_EXE})
+    archive = _make_zip(tmp_path / "pkg.zip", {"Flandora-Bridge.exe": _FAKE_EXE})
     info = updater.stage(archive, "1.4.0")
     assert os.path.isdir(info["staging"])
     loaded = updater.pending()

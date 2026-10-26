@@ -34,6 +34,8 @@ TIMEOUT = 20.0
 STARTUP_GRACE_SECONDS = 20
 # 没提供哈希时的兜底校验：PyInstaller 打出来的主程序不可能只有几百 KB
 MIN_EXE_BYTES = 1024 * 1024
+# 发布包里的桥接主程序：既有「这份包是不是 Flandora」的标记作用，也是替换后要重启的那个
+MAIN_EXE = "Flandora-Bridge.exe"
 
 _opener = urllib.request.urlopen
 
@@ -102,8 +104,8 @@ def asset_sha256(asset_url: str, timeout: float = TIMEOUT) -> str | None:
     """取发布页为安装包附带的 sha256；没有或不合法时返回 None。
 
     约定是资源旁边放一个同名加 ``.sha256`` 的文本文件（``shasum -a 256`` 的输出格式
-    即可）。没有它不算错误：调用方退到「zip 内 Flandora.exe 存在且大小合理」，并把
-    「未校验哈希」写进日志。这里只做完整性提示，不是可信签名。
+    即可）。没有它不算错误：调用方退到「zip 内 Flandora-Bridge.exe 存在且大小合理」，
+    并把「未校验哈希」写进日志。这里只做完整性提示，不是可信签名。
     """
     url = asset_url + ".sha256"
     try:
@@ -231,27 +233,27 @@ def extract(archive_path: str, target_dir: str) -> str:
         raise UpdateError("下载到的文件不是有效的 zip（可能没下完），详细原因见运行日志") from e
 
     for root, _dirs, files in os.walk(target_dir):
-        if "Flandora.exe" in files:
-            _check_exe_size(os.path.join(root, "Flandora.exe"))
+        if MAIN_EXE in files:
+            _check_exe_size(os.path.join(root, MAIN_EXE))
             return root
         if "Flandora.pyz" in files or "run_bridge.py" in files:
             return root
-    raise UpdateError("安装包里没有找到 Flandora.exe，可能下载到了错误的资源")
+    raise UpdateError(f"安装包里没有找到 {MAIN_EXE}，可能下载到了错误的资源")
 
 
 def _check_exe_size(exe_path: str) -> None:
     """没有哈希可校时，用主程序体积挡掉损坏或占位包。
 
-    PyInstaller 打出来的 Flandora.exe 通常在 10 MB 量级；不到 1 MiB 只可能是占位
+    PyInstaller 打出来的主程序通常在 10 MB 量级；不到 1 MiB 只可能是占位
     文件、被截断的包或错误资源，装上就会把能用的程序目录换成跑不起来的东西。
     """
     try:
         size = os.path.getsize(exe_path)
     except OSError as e:
-        log.warning(f"[更新] 读不到安装包里的 Flandora.exe: {e}")
-        raise UpdateError("读不到安装包里的 Flandora.exe（解压失败），详细原因见运行日志") from e
+        log.warning(f"[更新] 读不到安装包里的 {MAIN_EXE}: {e}")
+        raise UpdateError(f"读不到安装包里的 {MAIN_EXE}（解压失败），详细原因见运行日志") from e
     if size < MIN_EXE_BYTES:
-        raise UpdateError(f"安装包里的 Flandora.exe 只有 {size} 字节，明显不完整，拒绝安装")
+        raise UpdateError(f"安装包里的 {MAIN_EXE} 只有 {size} 字节，明显不完整，拒绝安装")
 
 
 def stage(archive_path: str, version: str) -> dict:
@@ -330,7 +332,7 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
     staging = info["staging"]
     version = info.get("version", "")
     backup = backup_dir or os.path.join(updates_dir(), f"backup-{version or 'old'}")
-    exe = os.path.join(target, "Flandora.exe")
+    exe = os.path.join(target, MAIN_EXE)
     lines = [
         '$ErrorActionPreference = "Stop"',
         f"# 旧进程 {os.getpid()} 退出后再动程序目录，最多等 60 秒",

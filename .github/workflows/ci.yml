@@ -113,10 +113,8 @@ jobs:
           if ($null -eq $payload) { Write-Error '没有生成 dist/Flandora-v* 载荷目录'; exit 1 }
           $required = @(
             'Flandora.exe',
-            'Flandora-Manager.exe',
-            'Flandora-LogTail.exe',
-            'Flandora-KeyTool.exe',
-            '启动.bat',
+            'Flandora-Bridge.exe',
+            'tools/Flandora-KeyTool.exe',
             'README.md',
             'LICENSE',
             'docs'

@@ -129,7 +129,7 @@ def test_update_cancel_clears_staging(monkeypatch, tmp_path):
     _isolate(monkeypatch, tmp_path)
     staging = tmp_path / "staging"
     staging.mkdir()
-    (staging / "Flandora.exe").write_bytes(b"MZ")
+    (staging / "Flandora-Bridge.exe").write_bytes(b"MZ")
     with open(updater.pending_file(), "w", encoding="utf-8") as fh:
         json.dump({"version": "9.9.9", "staging": str(staging)}, fh)
     assert update_api.api_update_cancel()["ok"] is True

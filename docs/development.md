@@ -27,6 +27,9 @@ python -m pip install -e mcp\python
 
 # 从源码起桥接
 python run_bridge.py
+
+# 从源码起托盘管理器（会顺带拉起桥接）
+python manager/main.py
 ```
 
 这些命令与 CI（[`.github/workflows/ci.yml`](../.github/workflows/ci.yml)）同源，提交前本地跑绿即可。CI 另外会重新生成一次 `sdk/python/flandora_sdk/_catalog.json` 并核对无差异（动作目录改了没同步快照会红）；`package` job 会真的跑一遍 `build.py` 并断言载荷清单，发行链接不必等到发版当天才发现打包断了。
@@ -46,7 +49,7 @@ npm run build   # 产物写入 flandora\webui\dist
 python build.py
 ```
 
-产物在 `dist\`：`Flandora-v<版本>.zip` 与 `Flandora-v<版本>-setup.exe`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
+产物在 `dist\`：`Flandora-v<版本>.zip` 与 `Flandora-v<版本>-setup.exe`，载荷目录里根目录是 `Flandora.exe`（托盘管理器，用户双击的入口）与 `Flandora-Bridge.exe`（桥接本体），取钥器在 `tools\Flandora-KeyTool.exe`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
 
 > **提示**：打包前会按 mtime 判断 `flandora/webui/dist/index.html` 是否比前端源码旧：旧了才调用 npm 重建。想直接复用现有产物就加 `--skip-web`，它会打印两边的时间；产物缺失时该参数会直接报错，不会打出没有界面的包。
 

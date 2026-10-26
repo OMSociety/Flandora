@@ -7,6 +7,8 @@
     runtime          进程级状态（LIFECYCLE / RUNTIME 是唯一允许新建的进程级对象）
     ob_ids           OneBot 整数 ID ↔ 微信标识，机器人身份与名字索引
     single_instance  单实例判重（命名互斥量）
+    stop_request     停止事件（管理器请桥接自己收尾）
+    autostart        开机自启（当前用户 Run 项）
     update_check     启动时查一次新版本
     webui/           本地配置界面（FastAPI + 前端产物 dist/）
     wxkey/           数据库口令的取钥与还原

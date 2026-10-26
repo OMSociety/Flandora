@@ -130,6 +130,7 @@ export async function mockApi(page, options = {}) {
   }
   // options.auth = { password } 时模拟「面板设了密码」：登录前所有接口都回 401。
   let authed = !options.auth
+  let autostartOn = !!options.autostart
   await page.route('**/api/**', async (route) => {
     const request = route.request()
     const url = new URL(request.url())
@@ -172,6 +173,16 @@ export async function mockApi(page, options = {}) {
       })
     }
     if (url.pathname === '/api/storage') return json(storageFixture)
+    if (url.pathname === '/api/autostart') {
+      const command = '"C:\\Users\\me\\AppData\\Local\\Programs\\Flandora\\Flandora.exe"'
+      if (request.method() === 'GET') return json({ enabled: autostartOn, command, reason: '' })
+      if (request.method() === 'POST') {
+        const body = request.postDataJSON() || {}
+        autostartOn = !!body.enabled
+        return json({ ok: true, enabled: autostartOn, command, reason: '' })
+      }
+      return json({ ok: false, error: '不支持的方法' })
+    }
     if (url.pathname === '/api/storage/clean') {
       const target = (request.postDataJSON() || {}).target
       const results = {

@@ -2,8 +2,6 @@
 #
 # 与 bridge 共用同一个解释器（Python 3.13）。
 # 安装：python -m pip install -r manager/requirements.txt（若自建虚拟环境，先激活）
-#
-# tkinter 是标准库（对话框与文件选择器），Windows 官方安装包自带，无需在此声明。
 
 # 系统托盘图标与右键菜单
 pystray>=0.19.5

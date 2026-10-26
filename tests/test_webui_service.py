@@ -8,6 +8,9 @@ import json
 import os
 import ssl
 import stat
+import sys
+import threading
+import types
 
 import pytest
 from fastapi.responses import JSONResponse, Response
@@ -347,3 +350,82 @@ def test_start_web_passes_the_configured_bind(monkeypatch):
 
     assert bridge_main.start_web() is True
     assert started == [("127.0.0.1", 4950)]
+
+
+def test_run_keeps_uvicorn_from_reconfiguring_logging(monkeypatch):
+    """管理器用 pythonw 拉起桥接时没有标准输出。
+
+    uvicorn 默认的彩色格式化器会去读 ``sys.stdout`` 判定是否上色，没有控制台时
+    抛 ``ValueError: Unable to configure formatter 'default'``，整个面板起不来。
+    日志本来就由 flandora 自己的 handler 写文件，这里必须让 uvicorn 别碰日志配置。
+    """
+    captured: dict = {}
+
+    class FakeConfig:
+        def __init__(self, app, **kwargs):
+            captured["app"] = app
+            captured.update(kwargs)
+
+    class FakeServer:
+        def __init__(self, cfg):
+            captured["config"] = cfg
+
+        def run(self):
+            captured["ran"] = True
+
+    monkeypatch.setitem(
+        sys.modules, "uvicorn", types.SimpleNamespace(Config=FakeConfig, Server=FakeServer)
+    )
+    monkeypatch.setattr(config, "WEBUI_TLS", False)
+
+    webui_app.run("127.0.0.1", 4950)
+
+    assert captured["ran"] is True
+    assert captured["log_config"] is None
+    assert captured["port"] == 4950
+
+
+def test_request_shutdown_flags_the_running_server():
+    class FakeServer:
+        should_exit = False
+
+    server = FakeServer()
+    webui_app.app.state.uvicorn_server = server
+    try:
+        assert webui_app.request_shutdown() is True
+        assert server.should_exit is True
+    finally:
+        webui_app.app.state.uvicorn_server = None
+
+
+def test_request_shutdown_without_a_server_is_a_no_op():
+    webui_app.app.state.uvicorn_server = None
+    assert webui_app.request_shutdown() is False
+
+
+def test_stop_signal_finishes_the_cleanup_then_ends_the_process(monkeypatch, tmp_path):
+    """收到停止请求后：收件 → 隔离桌面 → 面板 → 删 pid → 收进程。"""
+    pid_file = tmp_path / "flandora.pid"
+    pid_file.write_text("4321", encoding="utf-8")
+    shutdown = threading.Event()
+    steps = []
+
+    monkeypatch.setattr(bridge_main.stop_request, "wait", lambda timeout_ms=None: True)
+    monkeypatch.setattr(bridge_main, "stop_bridge", lambda: steps.append("bridge"))
+
+    from flandora import wx_desktop
+
+    monkeypatch.setattr(
+        wx_desktop,
+        "manager",
+        lambda: types.SimpleNamespace(stop=lambda: steps.append("desktop")),
+    )
+    monkeypatch.setattr(webui_app, "request_shutdown", lambda: steps.append("webui") or True)
+    monkeypatch.setattr(bridge_main.logging, "shutdown", lambda: steps.append("flush"))
+    monkeypatch.setattr(bridge_main.os, "_exit", lambda code: steps.append(("exit", code)))
+
+    bridge_main.watch_stop_signal(shutdown, str(pid_file))
+
+    assert steps == ["bridge", "desktop", "webui", "flush", ("exit", 0)]
+    assert shutdown.is_set()
+    assert not pid_file.exists()

@@ -9,7 +9,8 @@
 | 层 | 包 | 负责 | 不负责 |
 |---|---|---|---|
 | 入口 | `run_bridge.py`、`flandora/main.py` | 装日志、取机器人身份、抢单实例互斥量、起面板与桥接线程、账号切换兜底 | 业务判断 |
-| 面板 | `flandora/webui/`（`app.py` 组合根、`deps.py` 取用层、`auth.py` 会话、`api/*` 11 组路由器、`monitor.py` 的 `/ws`） | HTTP、会话、静态前端、给界面推状态 | 读本地库、动微信 |
+| 面板 | `flandora/webui/`（`app.py` 组合根、`deps.py` 取用层、`auth.py` 会话、`api/*` 12 组路由器、`monitor.py` 的 `/ws`） | HTTP、会话、静态前端、给界面推状态 | 读本地库、动微信 |
+| 管理器 | `manager/`（`main.py` 入口、`paths.py` 路径与端口、`bridge.py` 桥接起停、`tray.py` 托盘图标与菜单） | 单实例锁、托盘菜单、按状态起停桥接、开机自启的读写入口 | 收发消息、业务判断 |
 | 运行时 | `flandora/runtime/`（`lifecycle.py`、`runtime.py`、`events.py`） | 起停阶段与暂停、发送器/桥接/本地库/入口占用的持有、事件总线与日志中继 | 任何协议或平台细节 |
 | 领域 | `flandora/domain/`（`message.py`、`content.py`、`send.py`、`store.py`、`window.py`） | 「一条消息是什么」的类型与约束、出站动作、收件库与发送器的访问协议 | 配置、日志、OneBot 字段名 |
 | 收件 | `wx_source.py`、`wx_store.py`、`wx_crypto.py`、`wx_image.py`、`wx_image_key.py`、`wechat_account.py`、`ob_inbound.py` | 轮询微信本地库、解密、把正文解成消息段 | 决定要不要回、拼上下文 |
@@ -95,9 +96,22 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
 `LIFECYCLE.pause()` 只把心跳与状态回报切成「已暂停/离线」，收件与推送照常；`resume()` 复原。
 在线判定只有一处：`RUNTIME.online_flags()`，心跳与 `get_status` 都读它。
 
+## 管理器
+
+`manager/main.py` 拿 `Global\Flandora_Manager` 单实例锁后起托盘；桥接留在安装根目录，由
+`manager/bridge.py` 按端口与进程状态判断在不在跑，菜单项随状态禁用。`manager/paths.py` 的
+`install_dir()` 在冻结形态取 exe 所在目录、源码形态取仓库根，路径与端口只在这里定义。
+
+停桥接分两步：管理器把 `Global\Flandora_Stop` 事件置位；桥接侧 `flandora/stop_request.py`
+的守候线程接住后依次 `stop_bridge()`、关隔离桌面上的微信、`webui.app.request_shutdown()`，
+让 uvicorn 自己收尾退出，然后置 `shutdown` 结束 `main()`。管理器最多等 10 秒，超时才强杀进程。
+
+开机自启由 `flandora/autostart.py` 读写当前用户 `Run` 项下的 `Flandora` 值，面板的
+「开机启动」与安装器的 `[Registry]` 写的是同一条值。管理器本身不判断自启状态。
+
 ## 面板
 
-`webui/app.py` 的 `create_app()` 按固定顺序装：鉴权中间件 → 11 组业务路由器 → `/ws` →
+`webui/app.py` 的 `create_app()` 按固定顺序装：鉴权中间件 → 12 组业务路由器 → `/ws` →
 静态前端（`flandora/webui/dist`，缺失时返回 503 并给构建命令）。
 
 每个 `webui/api/<组>.py` 导出：
@@ -155,7 +169,11 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
 | `tests/architecture_allowlist.py` | 模块级可变全局棘轮（新增即红） |
 | `tests/test_domain_send_entries.py` | 面板与 OneBot 两条入口都汇到 `execute` |
 | `tests/test_ob_server_lifecycle.py` | 入口起停真的监听与真的释放端口 |
-| `webui-frontend/tests/console.spec.js` | 页面登记表、图标白名单、脏值确认框与轮询行为 |
+| `tests/test_manager_ports.py` | 端口字面量只出现在 `manager/paths.py` |
+| `tests/test_manager_bridge.py` | 桥接探测按进程与端口判定；停止先请求、超时才强杀 |
+| `tests/test_manager_tray.py` | 菜单按状态禁用、左键默认项是打开面板、退出先停桥接 |
+| `tests/test_autostart.py` | Run 项只写一条带引号的命令行；管理器入口缺失时拒绝写 |
+| `webui-frontend/tests/console.spec.js` | 页面登记表、图标白名单、脏值确认框、轮询行为与开机启动勾选 |
 
 ## 扩展点
 
@@ -167,3 +185,5 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
 | 加一个发送能力 | `domain/send.py` 的动作 → `send_plan` → `uia_sender` 的投递 | 面板与 OneBot 都自动复用 |
 | 加一个配置项 | `config/fields.py` 加字段与 `desc` → 跑 `python tools/gen_config_example.py` → `docs/config.md` | 前端 `Config.vue` 的 `DEFAULTS`、`tests/fixtures.js` |
 | 加一个面板页面 | `webui-frontend/src/pages/index.js` 的 `PAGES` | 图标名要在 `ICON_NAMES` 里 |
+| 加一个托盘菜单项 | `manager/tray.py` 的 `_menu()` 与对应处理函数 | 状态相关的项按 `_running` 传 `enabled`，菜单随状态重建 |
+| 改开机自启 | `flandora/autostart.py` | 安装器 `[Registry]` 写同一条值；`tests/test_autostart.py` 对表 |

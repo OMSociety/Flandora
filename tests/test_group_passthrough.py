@@ -4,6 +4,7 @@
 @ 的判定必须准确。下面几个用例守住这条边界。
 """
 
+import logging
 import os
 import sys
 
@@ -11,7 +12,7 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 
-from flandora import bridge_core  # noqa: E402
+from flandora import bridge_core, ob_ids  # noqa: E402
 from flandora.runtime import RUNTIME  # noqa: E402
 
 GROUP_MSG = {
@@ -100,6 +101,24 @@ def test_group_message_without_mention_is_reported(isolated_ids, monkeypatch):
     assert event["sender"]["nickname"] == "张三"
     assert _text_of(event) == GROUP_MSG["content"]
     assert event["is_mentioned"] is False
+
+
+def test_group_name_learning_logs_only_on_first_sight_and_rename(isolated_ids, monkeypatch, caplog):
+    """同一个群继续来消息不重复记名字：只在首次见到或群改名时留下 [群名学习]。"""
+    bridge = _make_bridge()
+    _capture(monkeypatch)
+    group_id = ob_ids.contact_id(GROUP_MSG["sessionId"])
+
+    with caplog.at_level(logging.INFO, logger="flandora"):
+        bridge.emit_message(dict(GROUP_MSG))
+        bridge.emit_message(dict(GROUP_MSG))
+        assert caplog.text.count("[群名学习]") == 1, caplog.text
+
+        caplog.clear()
+        bridge.emit_message({**GROUP_MSG, "groupName": "改了名的群"})
+
+    assert caplog.text.count("[群名学习]") == 1, caplog.text
+    assert ob_ids.lookup_name(group_id) == "改了名的群"
 
 
 def test_is_mentioned_uses_self_nickname_from_local_db():

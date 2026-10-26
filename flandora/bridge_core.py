@@ -179,10 +179,14 @@ class Flandora:
             return
 
         if message.chat.is_group:
-            # 自动学习群名映射：若推送了真实群名（非 @chatroom 原始 ID），存入映射供发送时用
+            # 自动学习群名映射：若推送了真实群名（非 @chatroom 原始 ID），存入映射供发送时用。
+            # 名字没变（同一个群继续来消息）就不重复记、不重复打日志，否则会把日志刷满；
+            # 群里改名时名字变了，仍会留下 [群名学习] 这一行。
             if group_name_raw and not group_name_raw.endswith("@chatroom"):
-                ob_ids.remember_name(ob_ids.contact_id(message.chat.handle), group_name_raw.strip())
-                log.info(f"[群名学习] {message.chat.handle} -> {group_name_raw}")
+                group_ob_id = ob_ids.contact_id(message.chat.handle)
+                if ob_ids.lookup_name(group_ob_id) != group_name_raw.strip():
+                    ob_ids.remember_name(group_ob_id, group_name_raw.strip())
+                    log.info(f"[群名学习] {message.chat.handle} -> {group_name_raw}")
 
         self._push_entry(message)
 

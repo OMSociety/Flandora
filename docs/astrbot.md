@@ -91,6 +91,16 @@ AstrBot 把消息链转成 OneBot 段名再发下来，它的语音段是 `recor
 
 `file` 段只投递本机上能拿到的字节：`http(s)` URL 不下载（那是替客户端访问网络），会记进 `failed_segments` 并在 `message` 里写明。
 
+### 引用机器人自己发的消息
+
+被引的是机器人自己发出的那条时，Flandora 会在消息段最前面补一个 `at` 自己的段（`qq` 与事件的 `self_id` 相同），后面照旧跟一个 `reply` 段。
+
+补这一段的原因在 AstrBot 的唤醒检查里（`astrbot/core/pipeline/waking_check/stage.py`）：它把「被 @ 了」「被 @全体成员」「引用了机器人的消息」并列成三条唤醒条件，前两条不依赖回查被引消息，第三条要求 `Reply.sender_id` 等于 `self_id`——而 `sender_id` 来自按 `reply` 段 `message_id` 调 `get_msg` 的结果。机器人自己发出的消息不进事件存档，那个号取不回来（`reply` 段的 `id` 是 0），所以用 `at` 段把「这条消息冲着机器人来」说明白。补上之后，「有人引用机器人说过的话」与真 @ 在唤醒这一层等价。
+
+正文不受影响：AstrBot 组装 `message_str` 时跳过开头的 at 段（`aiocqhttp_platform_adapter.py`：第一个 at 的是自己时，不写进 `message_str`）。
+
+> **提示**：这个 `at` 段是 Flandora 为唤醒补的，不是发消息的人真的 @ 了机器人。同一条消息本来就已经 @ 了机器人时不会再补第二个。
+
 ## 5. 做不到的部分
 
 这些动作 AstrBot 会调，微信 PC 端没有入口，一律 `status=failed` + `retcode=1404`，`message` 是具体原因：

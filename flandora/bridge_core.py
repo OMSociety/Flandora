@@ -22,6 +22,7 @@ from .domain.message import (
     ChatRef,
     Image,
     InboundMessage,
+    Mention,
     Message,
     QuoteRef,
     Segment,
@@ -257,15 +258,30 @@ class Flandora:
 
         引用在前（客户端据此拿到被引消息的 message_id），正文里的真 @ 拆成 at 段，
         其余保持文本。还原不出来的一律留在原文里，不改写内容。
+
+        被引的是机器人自己发的消息时，最前面再补一个 at 自己的段：客户端把「被 @」
+        当作唤醒条件（AstrBot 的唤醒检查就在其列），而它认「引用机器人」那条路要先按
+        message_id 取回被引消息——机器人自己发出的消息不进事件存档，那个号取不回来，
+        所以在这里用 at 段把「这条消息冲着机器人来」说明白。正文里已经 @ 机器人时不补。
         """
         segments: list[Segment] = []
         reply = ob_inbound.reply_segment(message.quote, ob_ids.message_ids().message_by_server)
         if reply is not None:
             segments.append(reply)
         names = self.resolve_names(message.chat.handle)
-        segments.extend(
-            ob_inbound.split_mentions(text, lambda name: ob_inbound.resolve_from_names(names, name))
+        mentions = ob_inbound.split_mentions(
+            text, lambda name: ob_inbound.resolve_from_names(names, name)
         )
+        quote = message.quote
+        quoted_self = (
+            quote is not None and bool(quote.sender) and quote.sender == ob_ids.SELF.wxid()
+        )
+        mentioned_self = any(
+            isinstance(seg, Mention) and seg.user_id == ob_ids.SELF.user_id() for seg in mentions
+        )
+        if quoted_self and not mentioned_self:
+            segments.insert(0, Mention(user_id=ob_ids.SELF.user_id(), name=ob_ids.SELF.nickname()))
+        segments.extend(mentions)
         return segments
 
     @staticmethod

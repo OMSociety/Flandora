@@ -121,6 +121,58 @@ def test_group_name_learning_logs_only_on_first_sight_and_rename(isolated_ids, m
     assert ob_ids.lookup_name(group_id) == "改了名的群"
 
 
+QUOTE_OF_ME = {
+    "server_id": "883290421",
+    "sender": "wxid_me",
+    "name": "芙兰朵露Flandre",
+}
+
+
+def test_quote_of_the_bot_itself_comes_with_an_at_self(isolated_ids, monkeypatch):
+    """有人引用机器人刚说过的话：最前面补一个 at 自己的段，客户端据此唤醒。"""
+    bridge = _make_bridge()
+    pushed = _capture(monkeypatch)
+    RUNTIME.store = _StubStore("芙兰朵露Flandre", names={"wxid_me": "芙兰朵露Flandre"})
+    isolated_ids.SELF.set_wxid("wxid_me")
+
+    bridge.emit_message({**GROUP_MSG, "content": "这话我同意", "quote": dict(QUOTE_OF_ME)})
+
+    event = pushed[0]
+    assert [seg["type"] for seg in event["message"]] == ["at", "reply", "text"]
+    # at 的是桥接自己：qq 就是事件的 self_id，客户端的唤醒判定认这一条
+    assert event["message"][0]["data"]["qq"] == event["self_id"]
+    # 被引的是自己发的消息，没进过事件存档，只能给 0
+    assert event["message"][1]["data"]["id"] == 0
+    assert _text_of(event) == "这话我同意"
+
+
+def test_quote_of_someone_else_carries_no_at_self(isolated_ids, monkeypatch):
+    """引用别人说的话不补 at：那不是在叫机器人。"""
+    bridge = _make_bridge()
+    pushed = _capture(monkeypatch)
+    isolated_ids.SELF.set_wxid("wxid_me")
+
+    bridge.emit_message(
+        {**GROUP_MSG, "content": "同意", "quote": {**QUOTE_OF_ME, "sender": "wxid_lisi"}}
+    )
+
+    assert [seg["type"] for seg in pushed[0]["message"]] == ["reply", "text"]
+
+
+def test_quote_of_the_bot_with_a_real_mention_adds_only_one_at(isolated_ids, monkeypatch):
+    """正文里已经 @ 了机器人：不再补第二个 at。"""
+    bridge = _make_bridge()
+    pushed = _capture(monkeypatch)
+    RUNTIME.store = _StubStore("芙兰朵露Flandre", names={"wxid_me": "芙兰朵露Flandre"})
+    isolated_ids.SELF.set_wxid("wxid_me")
+
+    bridge.emit_message(
+        {**GROUP_MSG, "content": "@芙兰朵露Flandre\u2005同意", "quote": dict(QUOTE_OF_ME)}
+    )
+
+    assert [seg["type"] for seg in pushed[0]["message"]] == ["reply", "at", "text"]
+
+
 def test_is_mentioned_uses_self_nickname_from_local_db():
     """@ 识别的昵称取自本地通讯录里自己那行，不来自配置。"""
     bridge = _make_bridge()

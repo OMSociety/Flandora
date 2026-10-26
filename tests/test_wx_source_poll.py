@@ -19,6 +19,11 @@ class _StubStore:
         self._messages = {k: list(v) for k, v in (messages or {}).items()}
         self._names = dict(names or {})
         self.refreshed = 0
+        self.image_key = b""
+        self.image_xor_key = -1
+
+    def image_ready(self):
+        return bool(self.image_key)
 
     # ---- WxLocalSource 用到的那几个方法 ----
     def refresh(self):
@@ -37,9 +42,6 @@ class _StubStore:
 
     def display_names(self):
         return dict(self._names)
-
-    def image_ready(self):
-        return False
 
     # ---- 测试用的写入口 ----
     def add_session(self, username, last_local_id, is_group=False):
@@ -142,6 +144,51 @@ def test_new_session_honours_the_backfill_window():
     store.add_message("wxid_new", 1, now - 120, "窗口内的旧消息")
     store.add_message("wxid_new", 2, now - 1, "刚到的消息")
     assert [m["content"] for m in src.poll()] == ["窗口内的旧消息", "刚到的消息"]
+
+
+def test_existing_session_backfill_reads_the_tail_of_a_big_session():
+    """开了回填的存量大会话：窗口内的消息在末尾，回填要从尾部取，不能从头取。"""
+    now = int(time.time())
+    store = _StubStore()
+    src = WxLocalSource(store, backfill_seconds=600)
+    src.started_at = now
+
+    total = PRIME_LIMIT + 50
+    store.add_session("wxid_big", total)
+    for local_id in range(1, total + 1):
+        store.add_message("wxid_big", local_id, now - 86400, f"旧{local_id}")
+    store._messages["wxid_big"][-2]["create_time"] = now - 4
+    store._messages["wxid_big"][-1]["create_time"] = now - 5
+
+    src.prime()
+    assert [m["content"] for m in src.poll()] == [f"旧{total - 1}", f"旧{total}"]
+
+
+def test_image_key_saved_after_start_is_adopted_without_restart():
+    """桥接先起、向导后写盘：下一轮轮询就该接上新密钥，不必重启桥接。"""
+    store = _StubStore()
+    answers = [(b"", -1), (b"k" * 16, 0x87)]
+    src = WxLocalSource(store, image_key_watch=lambda: answers.pop(0))
+    src.prime()
+
+    src.poll()
+    assert store.image_ready() is False
+
+    src.poll()
+    assert store.image_key == b"k" * 16
+    assert store.image_xor_key == 0x87
+    assert store.image_ready() is True
+
+
+def test_image_key_watch_is_not_consulted_once_ready():
+    """密钥已就绪时不再读文件，避免每轮都碰磁盘。"""
+    store = _StubStore()
+    store.image_key = b"already-ready"
+    seen = []
+    src = WxLocalSource(store, image_key_watch=lambda: seen.append(1) or (b"new", 1))
+    src.prime()
+    src.poll()
+    assert seen == []
 
 
 def test_self_sent_messages_are_reported_not_pushed():

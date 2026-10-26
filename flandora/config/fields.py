@@ -528,8 +528,8 @@ FIELDS: tuple[Field, ...] = (
         kinds=_RESTART,
         default=0,
         clean=_clean_plain_int,
-        desc="首次启动时把多少秒内的历史消息也收进来。0 = 只收启动之后的新消息（不会把旧"
-        "聊天记录灌给机器人）。",
+        desc="启动时把最近多少秒内的历史消息也收进来（按会话逐个从尾部判断）。0 = 不回放，"
+        "不会把旧聊天记录灌给机器人。",
     ),
     Field(
         key="wx_poll_seconds",

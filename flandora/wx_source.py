@@ -92,6 +92,7 @@ class WxLocalSource:
         backfill_seconds: int = 0,
         poll_seconds: float = 1.0,
         on_outgoing=None,
+        image_key_watch=None,
     ):
         self.store = store
         self.backfill_seconds = max(0, int(backfill_seconds or 0))
@@ -104,6 +105,8 @@ class WxLocalSource:
         # 自己发出的消息不推送（防自回环），但要把它的服务端号与发出时刻交给上层
         # 绑号：客户端引用机器人自己的消息时，靠那个号回查得到原文。
         self.on_outgoing = on_outgoing
+        # 取钥向导写盘晚于桥接启动时，靠它把新密钥接进正在跑的库读取，不必重启桥接
+        self.image_key_watch = image_key_watch
 
     # ---------- 启动 ----------
 
@@ -118,11 +121,19 @@ class WxLocalSource:
             latest = int(s["last_local_id"] or 0)
             cursor = latest
             if self.backfill_seconds > 0 and latest:
-                msgs = self.store.messages(username, 0, limit=PRIME_LIMIT)
+                # 从会话尾部取，窗口落在最近多少条之内；从头部取会让大会话的回填静默落空
+                msgs = self.store.recent_messages(username, limit=PRIME_LIMIT)
                 fresh = [m for m in msgs if (m["create_time"] or 0) >= cutoff]
                 if fresh:
-                    cursor = fresh[0]["local_id"] - 1
+                    cursor = min(int(m["local_id"]) for m in fresh) - 1
                     replayed += len(fresh)
+                    if len(fresh) == len(msgs) == PRIME_LIMIT:
+                        log.warning(
+                            "会话 %s 的回填窗口超过 %d 条，只回放最近 %d 条",
+                            username,
+                            PRIME_LIMIT,
+                            PRIME_LIMIT,
+                        )
             self.cursors[username] = cursor
         self._primed = True
         if replayed:
@@ -140,6 +151,7 @@ class WxLocalSource:
         if not self._primed:
             self.prime()
         self.store.refresh()
+        self._adopt_new_image_key()
         out = []
         for s in self.store.sessions():
             username = s["username"]
@@ -292,6 +304,22 @@ class WxLocalSource:
             log.debug("图片还原失败：%s", exc)
             return ""
 
+    def _adopt_new_image_key(self):
+        """取钥向导在桥接启动之后才写盘时，把新密钥接进来（文件没变就跳过）。"""
+        watch = self.image_key_watch
+        if watch is None or self.store.image_ready():
+            return
+        try:
+            aes, xor = watch()
+        except Exception as exc:  # noqa: BLE001 - 缺密钥只影响图片，文字消息照走
+            log.debug("重读图片密钥失败：%s", exc)
+            return
+        if not aes:
+            return
+        self.store.image_key = aes
+        self.store.image_xor_key = xor
+        log.info("图片密钥已生效，后续图片直接解出文件")
+
     def contacts(self):
         """用于日志/界面：当前会话的展示名。"""
         return dict(self.names)
@@ -348,6 +376,33 @@ def load_image_key(current_wxid: str = "") -> tuple[bytes, int]:
     return aes, xor_int
 
 
+def _file_stamp(path: str):
+    """文件的修改标记；读不到返回 None。"""
+    try:
+        return os.stat(path).st_mtime_ns
+    except OSError:
+        return None
+
+
+def _image_key_watcher(current_wxid: str):
+    """返回一个只在密钥文件变化时才真去重读的取值函数。
+
+    桥接先起、向导后写盘是常规顺序：没有这层，那个进程直到重启都按「缺密钥」
+    处理，图片一路以占位符发出去。
+    """
+    path = config.WX_IMAGE_KEY_FILE or default_image_key_file()
+    seen = {"stamp": _file_stamp(path)}
+
+    def watch():
+        stamp = _file_stamp(path)
+        if stamp is None or stamp == seen["stamp"]:
+            return b"", -1
+        seen["stamp"] = stamp
+        return load_image_key(current_wxid)
+
+    return watch
+
+
 def build_source(key_file: str = None, on_outgoing=None) -> WxLocalSource:
     """按配置开一个收件源。
 
@@ -387,6 +442,7 @@ def build_source(key_file: str = None, on_outgoing=None) -> WxLocalSource:
         backfill_seconds=config.WX_BACKFILL_SECONDS,
         poll_seconds=config.WX_POLL_SECONDS,
         on_outgoing=on_outgoing,
+        image_key_watch=_image_key_watcher(account.wxid),
     )
     step = ", ".join(sorted(store._decrypted))
     log.info(

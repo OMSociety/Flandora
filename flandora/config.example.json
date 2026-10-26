@@ -41,7 +41,7 @@
     "wx_work_dir": "",
     "_comment_wx_work_dir": "解密结果与游标的存放目录，留空 = 配置文件同目录下的 wx_cache。这里只放解密后的副本，原始库始终是只读的。",
     "wx_backfill_seconds": 0,
-    "_comment_wx_backfill_seconds": "首次启动时把多少秒内的历史消息也收进来。0 = 只收启动之后的新消息（不会把旧聊天记录灌给机器人）。",
+    "_comment_wx_backfill_seconds": "启动时把最近多少秒内的历史消息也收进来（按会话逐个从尾部判断）。0 = 不回放，不会把旧聊天记录灌给机器人。",
     "wx_poll_seconds": 1.0,
     "_comment_wx_poll_seconds": "轮询本地库的间隔（秒）。默认 1 秒，新消息通常在这个延迟内被发现。",
     "wx_image_key_file": "",

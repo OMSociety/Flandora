@@ -15,7 +15,7 @@ import threading
 import time
 from collections import defaultdict
 
-from . import config, ob_ids, ob_inbound, wx_crypto, wx_source
+from . import config, ob_ids, ob_inbound, ob_store, wx_crypto, wx_source
 from .domain.content import IMAGE_PLACEHOLDER, ContentKind, classify
 from .domain.message import (
     ChatKind,
@@ -25,8 +25,10 @@ from .domain.message import (
     Mention,
     Message,
     QuoteRef,
+    Reply,
     Segment,
     SenderRef,
+    Text,
 )
 from .ob_protocol import (
     make_poke_event,
@@ -266,7 +268,11 @@ class Flandora:
         正文里已经 @ 机器人时不补。
         """
         segments: list[Segment] = []
-        reply = ob_inbound.reply_segment(message.quote, ob_ids.message_ids().message_by_server)
+        reply = ob_inbound.reply_segment(message.quote, ob_ids.message_by_server)
+        if reply is not None and not reply.message_id:
+            claimed = self._claim_quoted(message)
+            if claimed is not None:
+                reply = Reply(message_id=claimed)
         if reply is not None:
             segments.append(reply)
         names = self.resolve_names(message.chat.handle)
@@ -284,6 +290,66 @@ class Flandora:
             segments.insert(0, Mention(user_id=ob_ids.SELF.user_id(), name=ob_ids.SELF.nickname()))
         segments.extend(mentions)
         return segments
+
+    def _claim_quoted(self, message: InboundMessage) -> int | None:
+        """被引的消息没进过存档时，从本地库把它补一份，返回它的 message_id。
+
+        客户端引用一条 Flandora 没推过的消息（装桥接之前的老消息、自己在手机上发的、
+        或启动补报还没轮到的那条）时，`<refermsg><svrid>` 查不到 message_id。按 0 回过去，
+        客户端拿到 `get_msg(0)` 只能报「没有 message_id=0 的消息」。
+
+        这里按服务端号回查同一个会话的本地库，给它分配它本来就会拿到的号（(会话, 行号)
+        幂等，与推送时一致），存一份进存档；引用段于是有了真号，`get_msg` 取得到原文。
+        """
+        quote = message.quote
+        store = RUNTIME.store
+        if quote is None or not quote.server_id or store is None:
+            return None
+        try:
+            row = store.message_by_server(message.chat.handle or "", quote.server_id)
+        except Exception as e:  # noqa: BLE001 - 补档失败不该拦住这条新消息
+            log.warning(f"回查被引消息失败（server_id={quote.server_id}）：{e}")
+            return None
+        if row is None:
+            log.debug(f"本地库里没有 server_id={quote.server_id} 的消息，引用段按 0 回")
+            return None
+
+        try:
+            names = dict(store.display_names())
+        except Exception as e:  # noqa: BLE001 - 昵称只是展示，取不到就用 wxid
+            log.debug(f"读取联系人失败：{e}")
+            names = {}
+        sender_handle = str(row.get("sender") or "")
+        if message.chat.is_group:
+            sender = SenderRef(
+                handle=sender_handle,
+                nickname=names.get(sender_handle) or sender_handle or message.chat.name,
+            )
+        else:
+            # 私聊里被引的只可能是对方或自己，直接用当前会话的发言人身份
+            sender = message.sender
+
+        message_id = self._message_id_for(
+            message.chat.handle or "", row.get("local_id"), quote.server_id
+        )
+        text = str(row.get("text") or "")
+        event = render_message_event(
+            Message(
+                chat=message.chat,
+                sender=sender,
+                segments=(Text(text=text),) if text else (),
+                message_id=message_id,
+                timestamp=int(row.get("create_time") or 0),
+            ),
+            config.OB_MESSAGE_FORMAT,
+        )
+        try:
+            ob_store.message_store().save_event(event)
+        except Exception as e:  # noqa: BLE001 - 存档失败就别给客户端一个取不到的号
+            log.error(f"[OB11] 被引消息未能存档（message_id={message_id}）：{e}")
+            return None
+        log.debug(f"[OB11] 被引消息 {quote.server_id} 补档为 message_id={message_id}")
+        return message_id
 
     @staticmethod
     def _bind_outgoing_server(talker: str, server_id: str, sent_at: float) -> None:

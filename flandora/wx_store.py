@@ -644,6 +644,48 @@ class WxStore:
         finally:
             con.close()
 
+    def message_by_server(self, username: str, server_id: str):
+        """按服务端号取一条消息（引用回查用），取不到返回 ``None``。
+
+        引用消息的 ``<refermsg><svrid>`` 就是被引消息的服务端号；只在同一个会话的表里
+        找——服务端号只在会话内保证唯一，跨会话翻库既慢又可能撞上别的会话的号。
+        客户端引用的若是桥接没推过的旧消息，靠这一次回查把它的原文补回来。
+        """
+        sid = str(server_id or "").strip()
+        if not sid:
+            return None
+        table = self.table_for(username)
+        con = self._con("message_0.db")
+        try:
+            has = con.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            ).fetchone()
+            if not has:
+                return None
+            row = con.execute(
+                f"SELECT local_id, server_id, local_type, real_sender_id, create_time, message_content "
+                f'FROM "{table}" WHERE CAST(server_id AS TEXT) = ? LIMIT 1',
+                (sid,),
+            ).fetchone()
+            if row is None:
+                return None
+            local_id, server, local_type, sender_id, create_time, content = row
+            names = {r[0]: r[1] for r in con.execute("SELECT rowid, user_name FROM Name2Id")}
+            return payload_of(
+                local_id=local_id,
+                server_id=server,
+                local_type=local_type,
+                sender=names.get(sender_id, ""),
+                create_time=create_time,
+                body=_text_of(content),
+                my_wxid=self.my_wxid,
+            )
+        except sqlite3.Error as e:
+            log.debug("按服务端号回查消息失败：%s", e)
+            return None
+        finally:
+            con.close()
+
     def recent_messages(self, username: str, limit: int = 20):
         """取某会话最近的 limit 条消息，按 local_id 升序返回。
 

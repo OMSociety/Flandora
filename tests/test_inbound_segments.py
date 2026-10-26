@@ -97,3 +97,67 @@ def test_private_quote_is_restored_too(isolated_ids, monkeypatch):
         },
     )
     assert event["message"][0] == {"type": "reply", "data": {"id": quoted_id}}
+
+
+# ===== 被引的消息没推过：从本地库补一份存档 =====
+
+QUOTED_ROW = {
+    "local_id": 4200,
+    "server_id": "SN-0",
+    "kind": "text",
+    "text": "更早的一句",
+    "sender": "wxid_lisi",
+    "create_time": 1700000000,
+}
+
+
+class _StubStore:
+    """只提供回查所用到的那两个方法，代替真的本地库快照。"""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    def message_by_server(self, username, server_id):
+        assert username == GROUP
+        return self._rows.get(server_id)
+
+    def display_names(self):
+        return dict(NAMES)
+
+
+def _quote_unpushed(monkeypatch, bridge):
+    monkeypatch.setattr(bridge_core.RUNTIME, "store", _StubStore({"SN-0": QUOTED_ROW}))
+    return _push_once(
+        monkeypatch,
+        bridge,
+        {**GROUP_MSG, "content": "同意", "quote": {"server_id": "SN-0", "name": "李四"}},
+    )
+
+
+def test_quote_of_an_unpushed_message_is_claimed(isolated_ids, isolated_store, monkeypatch):
+    """引用一条 Flandora 没推过的旧消息：回查本地库补档，reply 段给出真号。"""
+    bridge = _make_bridge()
+    event = _quote_unpushed(monkeypatch, bridge)
+
+    claimed_id = event["message"][0]["data"]["id"]
+    assert claimed_id > 0, event["message"]
+    archived = bridge_core.ob_store.message_store().get(claimed_id)
+    assert archived is not None, "补档没写进存档，客户端 get_msg 仍取不到原文"
+    assert archived["raw_message"] == "更早的一句"
+    assert isolated_ids.message_by_server("SN-0") == claimed_id
+
+
+def test_claimed_quote_reuses_the_same_id(isolated_ids, isolated_store, monkeypatch):
+    """同一条被引消息被引用两次，两次给出同一个号：号是按 (会话, 行号) 幂等分配的。"""
+    bridge = _make_bridge()
+    first = _quote_unpushed(monkeypatch, bridge)["message"][0]["data"]["id"]
+    second = _quote_unpushed(monkeypatch, bridge)["message"][0]["data"]["id"]
+    assert first == second, (first, second)
+
+
+def test_unclaimable_quote_still_keeps_zero(isolated_ids, isolated_store, monkeypatch):
+    """本地库也查不到（消息已被清理）时仍是 0：段还在，只是取不到原文。"""
+    bridge = _make_bridge()
+    monkeypatch.setattr(bridge_core.RUNTIME, "store", _StubStore({}))
+    event = _push_once(monkeypatch, bridge, {**GROUP_MSG, "content": "同意"})
+    assert event["message"][0] == {"type": "reply", "data": {"id": 0}}

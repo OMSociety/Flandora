@@ -181,7 +181,7 @@ def test_extracted_image_is_cached(tmp_path):
     _write(_sibling(root, "_h.dat"), _make_dat(JPEG))
     store = _store(root)
     first = store.extract_image(MD5)
-    # 同一份副本换个内容：落盘名字一样，就不再覆盖（同一张图只解一次）
+    # 同一份副本换个内容：落盘名字一样，就不覆盖（同一张图只解一次）
     _write(_sibling(root, "_h.dat"), _make_dat(JPEG[:5] + b"\x09" * 100))
     assert store.extract_image(MD5) == first
     assert _extracted_bytes(first) == JPEG

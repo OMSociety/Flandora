@@ -114,7 +114,7 @@ def test_strict_validation_refuses_the_same_values():
 
 
 def test_field_table_declares_the_strategy():
-    """HOT / SECRET 由字段表说话，面板不再各抄一份。"""
+    """HOT / SECRET 由字段表说话，面板不另抄一份。"""
     assert set(fields.hot_keys()) == HOT_KEYS
     assert set(fields.secret_keys()) == {"webui_password", "ob_server_token"}
     for key in HOT_KEYS:

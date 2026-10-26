@@ -297,7 +297,7 @@ def _state_imports(path: Path) -> list[str]:
 
 
 def test_no_module_imports_state():
-    """进程级状态只从 flandora.runtime 取；包内不再有 state 模块。"""
+    """进程级状态只从 flandora.runtime 取；包里没有 state 模块。"""
     offenders = {}
     for path in _flandora_modules():
         hits = _state_imports(path)

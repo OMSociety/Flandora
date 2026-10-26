@@ -871,7 +871,7 @@ class UiaSender(BaseSender):
     def _may_retry_by_button(self) -> bool:
         """这一轮发送失败后还能不能再点「发送」按钮试。
 
-        配置里固定了发送方式就照办、不再猜；auto 时按键发送落空，说明微信的发送键
+        配置里固定了发送方式就照办、不去猜；auto 时按键发送落空，说明微信的发送键
         不是回车，改点按钮试一次，已经试成过就不必再试。
         """
         return self._configured_send_mode() == "auto" and self._send_key != "button"

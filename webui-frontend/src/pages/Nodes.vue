@@ -275,7 +275,7 @@ onMounted(load)
     <ConfirmDialog
       :open="pendingRemove !== null"
       title="删除这个入口"
-      :message="pendingRemove !== null ? `把「${draft[pendingRemove]?.name}」从入口列表里删掉，保存后桥接不再监听它。` : ''"
+      :message="pendingRemove !== null ? `把「${draft[pendingRemove]?.name}」从入口列表里删掉，保存后桥接停止监听它。` : ''"
       confirm-text="删除"
       danger
       @cancel="pendingRemove = null"

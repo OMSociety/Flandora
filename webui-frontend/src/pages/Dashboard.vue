@@ -53,7 +53,7 @@ const restartDialog = ref(false)
 const stopDialog = ref(false)
 async function sendControl(action) {
   if (action === 'restart') { restartDialog.value = true; return }
-  // 停止比暂停更重：客户端会断开、期间不再推送。重启有确认框，停止也该有。
+  // 停止比暂停更重：客户端会断开、期间不推送。重启有确认框，停止也该有。
   if (action === 'stop') { stopDialog.value = true; return }
   await applyControl(action)
 }
@@ -126,7 +126,7 @@ onMounted(() => { loadStats() })
     <ConfirmDialog
       :open="stopDialog"
       title="停止桥接服务"
-      message="停止后微信新消息不再推送给 OneBot 客户端，已连接的客户端会断开；重新启动时从本地库续读，停止期间的消息不会丢。确定现在停止吗？"
+      message="停止后微信新消息不会推送给 OneBot 客户端，已连接的客户端会断开；重新启动时从本地库续读，停止期间的消息不会丢。确定现在停止吗？"
       confirm-text="停止服务"
       :danger="true"
       @cancel="stopDialog = false"

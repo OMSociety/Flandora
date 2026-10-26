@@ -54,7 +54,7 @@ onMounted(() => inputEl.value?.focus())
 </template>
 
 <style scoped>
-.login-shell { display:grid; place-items:center; min-height:100vh; padding:24px; background:var(--bg); }
+.login-shell { display:grid; place-items:center; min-height:100vh; padding:24px; background:var(--canvas); }
 .login-card { width:100%; max-width:376px; padding:28px; border:1px solid var(--border); border-radius:var(--radius); background:var(--card); box-shadow:var(--shadow); }
 .login-brand { display:flex; align-items:center; gap:9px; margin-bottom:20px; font-size:14px; font-weight:600; color:var(--text-strong); letter-spacing:.2px; }
 .login-card h1 { margin:0 0 8px; font-size:20px; font-weight:600; color:var(--text-strong); }

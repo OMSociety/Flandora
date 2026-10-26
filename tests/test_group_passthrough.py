@@ -174,8 +174,8 @@ def _dropped() -> int:
 def test_a_push_nobody_received_is_counted_as_dropped(isolated_ids, monkeypatch):
     """没有客户端在线时这条消息就没了，计数器必须记下来。
 
-    仪表盘上的「丢弃」以前永远是 0：_push_entry 算出 sent 却没人记账，出了问题
-    只能翻日志猜。
+    仪表盘上的「丢弃」要真的记上：_push_entry 算出的 sent 没人收下时，
+    这一条必须进 dropped，否则出了问题只能翻日志猜。
     """
     bridge = _make_bridge()
     monkeypatch.setattr(bridge_core, "push_event", lambda ev: 0)

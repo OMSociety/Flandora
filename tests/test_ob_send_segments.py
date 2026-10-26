@@ -608,7 +608,7 @@ def test_partial_send_lists_what_did_not_go_out(monkeypatch, isolated_ids):
 def test_image_only_message_reports_the_image_reason(monkeypatch, isolated_ids):
     """只发图片、图片又解不开时，报的必须是图片的原因。
 
-    以前这里回的是「message 里没有可发送的内容」，客户端据此更没法排查。
+    只说「message 里没有可发送的内容」时，客户端没法排查到底哪一段没发出去。
     """
     sender = FakeSender()
     uid = _prepare(monkeypatch, sender)
@@ -642,3 +642,42 @@ def test_missing_client_attachment_is_reported(monkeypatch, isolated_ids):
     assert resp["status"] == "failed"
     assert "文件未找到" in resp["message"]
     assert "查无此图.png" in resp["message"]
+
+
+def test_unknown_face_id_is_reported(monkeypatch, isolated_ids):
+    """表情 id 不在映射表里也要记账。
+
+    只写 debug 日志时，客户端收到的是「没有可发送的内容」，看不出是表情没发出去。
+    """
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [{"type": "face", "data": {"id": "999999"}}],
+            },
+        }
+    )
+    assert resp["status"] == "failed"
+    assert "不在支持列表里" in resp["message"]
+    assert sender.texts == []
+
+
+def test_known_face_id_still_goes_out(monkeypatch, isolated_ids):
+    """映射表里有的表情照常发送，不受上面的记账影响。"""
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    known = next(iter(ob_protocol.QQ_FACE_TO_WECHAT))
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [{"type": "face", "data": {"id": str(known)}}],
+            },
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.texts

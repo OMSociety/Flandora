@@ -50,7 +50,7 @@ def _flatten(routes):
 
     新版 FastAPI 的 ``include_router`` 在 ``app.routes`` 里只留一个
     ``_IncludedRouter`` 引用，真正的 ``APIRoute`` 挂在它引用的路由器上；
-    旧版是直接摊平的。两种形态都要能数清楚。
+    直接摊平的形态里两者在同一层。两种形态都要能数清楚。
     """
     for route in routes:
         included = getattr(route, "original_router", None)

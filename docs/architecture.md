@@ -123,7 +123,7 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
 热生效的字段里，网络入口是最需要「保存即生效」的一块：`ob_network.NetworkManager` 在 `start()`
 时订阅配置，`ob_networks` 或三项兜底设置一变就调 `apply()` 把运行态对齐——新增的入口起、
 删掉的断开、改过的按新配置重建、没动的连接不受影响。`apply()` 任意线程可调，任务操作由它送回
-入口线程执行；面板上那条「待保存」写的就是「文件里有、运行态里没有」，入口不再需要重启桥接。
+入口线程执行；面板上那条「待保存」写的就是「文件里有、运行态里没有」，入口改完不必重启桥接。
 
 字段声明、默认值、校验与逐键说明的唯一来源是 `config/fields.py` 的 `Field.desc`；`flandora/config.example.json`
 由 `python tools/gen_config_example.py` 生成（`--check` 挡漂移），`data/config.json` 只存「键: 值」，

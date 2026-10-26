@@ -85,7 +85,7 @@ def test_numeric_string_is_taken_as_int():
 
 
 def test_non_numeric_string_is_still_refused_as_int():
-    """只有纯数字字符串被收下，别的字符串照旧按类型不对报错。"""
+    """只有纯数字字符串被收下，别的字符串按类型不对报错。"""
     assert action_catalog.validate_params("get_msg", {"message_id": "四零二"}) == [
         "参数 message_id 应为 int，收到 str"
     ]

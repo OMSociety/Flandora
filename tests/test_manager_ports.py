@@ -1,7 +1,7 @@
 """验证：管理器按 data/config.json 里的端口走，不写死 7999/4950。
 
-端口可以在面板里改，管理器却要显示「客户端连接数」、要打开 WebUI——照旧写死就会
-盯错地方（审计 B-09）。这里分两头验：读配置的函数本身的行为，以及源码里不再出现
+端口可以在面板里改，而管理器要显示「客户端连接数」、要打开 WebUI，端口就得跟着
+配置走：写死就会盯错地方。这里分两头验：读配置的函数本身的行为，以及源码里不出现
 写死的端口字面量。
 
 两种跑法等价：
@@ -99,7 +99,7 @@ def test_port_literals_stay_in_the_defaults():
                         named[target.id] = value
     assert named == {"DEFAULT_OB_PORT": 7999, "DEFAULT_WEB_PORT": 4950}, named
 
-    # 审计点名的三处写死位置：前两处直接查字面量，第三处（打开 WebUI）查它按端口拼
+    # 三处需要按端口取值的地方：前两处直接查字面量，第三处（打开 WebUI）查它按端口拼
     for hardcoded in ("_find_listening_pid(7999)", "-LocalPort 7999"):
         assert hardcoded not in src, hardcoded
     assert "http://127.0.0.1:{self.controller.web_port}" in src

@@ -152,7 +152,7 @@ def sample_block(attach: str) -> tuple[bytes, str]:
 
 
 def _recent_image_files(attach: str, keep: int = 600) -> list[str]:
-    """按月份目录名倒序列出最近的图片文件，不再遍历整棵树。"""
+    """按月份目录名倒序列出最近的图片文件，不必遍历整棵树。"""
     months: list[str] = []
     try:
         for acct in os.scandir(attach):

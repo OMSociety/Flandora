@@ -334,7 +334,7 @@ class NetworkManager:
         self._sync_heartbeat(nodes)
         # 配置保存后由 `_on_settings_changed` 把运行态对齐到新入口表。订阅挂在
         # 启动时，配置门面会把它带给之后换上的 store；`stop()` 之后 `apply` 只
-        # 更新配置镜像，不再动任务。
+        # 只更新配置镜像，不动任务。
         config.subscribe(self._on_settings_changed)
 
     async def stop(self):
@@ -959,7 +959,7 @@ def _post_json(url: str, body: dict, headers: dict, timeout_ms: int) -> int:
 
 
 def _notify_status():
-    """入口连接/断开都要让面板刷新状态；事件总线在核心侧，不再回调表现层。"""
+    """入口连接/断开都要让面板刷新状态；事件总线在核心侧，这里不回调表现层。"""
     events.notify_status()
 
 

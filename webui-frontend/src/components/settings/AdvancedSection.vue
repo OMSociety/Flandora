@@ -26,7 +26,7 @@ const SEND_KEY_OPTIONS = [
 ]
 const sendKey = ref('auto')
 
-// 与旧的「编辑原始 JSON」一致：每次打开面板或配置重载后，都从当前配置重新生成文本。
+// 每次打开面板或配置重载后，都从当前配置重新生成文本。
 // 未保存的编辑（`edited`）不被覆盖：切走再切回来该看到自己写的内容，
 // 而不是被悄悄换回保存过的值。
 const baseline = ref('')

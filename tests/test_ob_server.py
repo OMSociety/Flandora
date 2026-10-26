@@ -8,7 +8,7 @@ http11.Response、datastructures.Headers），换大版本后必须重跑这里�
 
 **两处与 ob_networks 改造对齐的约定**（改这块时别改回去）：
 
-1. 服务端只读 ``config.OB_NETWORKS``，不再看 ``OB_SERVER_PORT``。只改端口号
+1. 服务端只读 ``config.OB_NETWORKS``，不看 ``OB_SERVER_PORT``。只改端口号
    会让它起在 config.json 里的默认端口上，测试连的却是随机空闲端口。
 2. 入口的 ``role`` 取 ``api``：该角色的入口在连接建立时**不推 lifecycle(connect)**
    （见 ``ob_network._announce_connect``），所以第一条收到的就是动作响应。

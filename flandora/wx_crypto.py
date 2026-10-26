@@ -287,7 +287,7 @@ def decrypt_db(
         if wal_size:
             db_size = wal_size
         if pages[1][:16] != MAGIC:
-            raise WrongKey(f"{os.path.basename(db_path)} 合并 WAL 后页 1 不再是 SQLite 头")
+            raise WrongKey(f"{os.path.basename(db_path)} 合并 WAL 后页 1 不是 SQLite 头")
 
     out = bytearray()
     for pgno in range(1, db_size + 1):

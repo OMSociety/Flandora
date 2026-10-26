@@ -7,7 +7,7 @@ import { status } from '../store'
 
 defineProps({ active: { type: String, required: true }, collapsed: { type: Boolean, default: false } })
 const emit = defineEmits(['change', 'about'])
-// 版本号读 store 的唯一状态：侧栏不再自己请求一次状态接口。
+// 版本号读 store 的唯一状态：侧栏不自己请求状态接口。
 const version = computed(() => status.version || '')
 </script>
 

@@ -1,7 +1,7 @@
 """把消息投递进微信窗口的发送器协议。
 
 实现方是 ``senders.create_sender()`` 选出的 ``uia_sender.UiaSender``；面板与
-OneBot 发送路径都只通过这个协议调它，不再靠 ``hasattr`` / ``getattr`` 试探
+OneBot 发送路径都只通过这个协议调它，不靠 ``hasattr`` / ``getattr`` 试探
 能力。窗口句柄走 ``window_handle()``，不直接读 ``_hwnd``——句柄只在发送器
 内部有效，旁路读取会把「绑定中」的中间值当成事实。
 """

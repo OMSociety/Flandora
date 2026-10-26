@@ -123,7 +123,7 @@ def test_accept_disclaimer_persists(wiz, tmp_path):
 
 
 def test_disclaimer_acceptance_is_remembered(wiz):
-    """确认是持久的：新实例不再要求重勾。"""
+    """确认是持久的：新实例不要求重勾。"""
     wiz.accept_disclaimer()
     assert wizard_mod.Wizard().status()["current"] == wizard_mod.STEP_DBKEY
 

@@ -102,7 +102,7 @@ onBeforeUnmount(() => { if (timer) clearInterval(timer) })
 .desktop-name { color:var(--muted); font-size:10px; padding-left:8px; border-left:1px solid var(--border); }
 .viewer-actions .chk { font-size:10px; }
 .viewer-error { display:flex; align-items:center; gap:8px; padding:10px 16px; color:var(--danger); background:var(--danger-soft); font-size:11px; }
-.viewer-quit { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--line); background:var(--surface-2); }
+.viewer-quit { display:flex; align-items:center; gap:10px; padding:10px 16px; border-bottom:1px solid var(--border); background:var(--inset); }
 .viewer-quit span { font-size:11px; color:var(--muted); }
 .shot-wrap { display:flex; align-items:center; justify-content:center; min-height:400px; padding:20px; background:var(--inset); }
 .shot { display:block; max-width:100%; max-height:65dvh; border:1px solid var(--border-strong); border-radius:6px; background:var(--media-bg); cursor:crosshair; box-shadow:0 8px 28px rgb(0 0 0 / .12); }

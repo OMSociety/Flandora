@@ -101,7 +101,7 @@ def test_config_can_pin_the_send_mode(send_mode):
     send_mode("enter")
     pinned._send_key = "button"
     pinned._press_send()
-    assert pinned._posted == [(VK_RETURN, ())], "配置指定回车时不再用记住的按钮"
+    assert pinned._posted == [(VK_RETURN, ())], "配置指定回车时不用记住的按钮"
     assert pinned._clicked == 0
 
 
@@ -122,7 +122,7 @@ def test_auto_may_retry_but_pinned_does_not(send_mode):
 
     pinned = make_sender()
     send_mode("enter")
-    assert pinned._may_retry_by_button() is False, "配置固定了方式就不再猜"
+    assert pinned._may_retry_by_button() is False, "配置固定了方式就不去猜"
 
 
 def test_retry_clicks_the_button_and_remembers_it():

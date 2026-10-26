@@ -841,6 +841,7 @@ def _prepare_message(message: list) -> _OutboundPrep:
             if face_code:
                 prep.segments.append(Face(face_id=face_code))
             else:
+                prep.failures.append(f"face 段的 id {data.get('id')} 不在支持列表里")
                 log.debug(f"[OB11] 跳过未知 face 段: {data}")
         elif seg_type == "record":
             path = _record_file(data, prep)

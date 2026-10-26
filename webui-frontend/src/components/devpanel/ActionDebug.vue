@@ -282,18 +282,18 @@ onMounted(() => {
 .section-head > .app-icon { color:var(--primary-deep); }
 .action-brief { margin-top:14px; padding:12px 14px; border-radius:8px; background:var(--inset); }
 .action-summary { font-size:12.5px; color:var(--text-strong); }
-.action-wip { display:flex; gap:7px; align-items:flex-start; margin-top:8px; font-size:12px; color:var(--warn, #b45309); }
+.action-wip { display:flex; gap:7px; align-items:flex-start; margin-top:8px; font-size:12px; color:var(--warn); }
 .params { margin-top:16px; display:flex; flex-direction:column; gap:14px; }
 .param-type { margin-left:7px; padding:1px 6px; border-radius:4px; background:var(--inset); font-size:10px; color:var(--muted); }
-.param-required { margin-left:6px; font-size:10px; color:var(--danger, #b91c1c); }
+.param-required { margin-left:6px; font-size:10px; color:var(--danger); }
 .check-label { display:flex; align-items:center; gap:8px; font-size:12.5px; }
 .invoke-footer { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-top:18px; padding-top:16px; border-top:1px solid var(--border); }
 .result { margin-top:18px; }
 .result-head { margin-bottom:8px; }
-.code-block { margin:0; padding:12px 14px; max-height:320px; overflow:auto; border-radius:8px; background:var(--inset); font-family:var(--mono, monospace); font-size:11.5px; line-height:1.6; white-space:pre-wrap; word-break:break-all; }
+.code-block { margin:0; padding:12px 14px; max-height:320px; overflow:auto; border-radius:8px; background:var(--inset); font-family:var(--mono); font-size:11.5px; line-height:1.6; white-space:pre-wrap; word-break:break-all; }
 .debug-aside { display:flex; flex-direction:column; gap:20px; }
 .builder-row { display:grid; grid-template-columns:58px minmax(0,1fr) 30px; gap:8px; align-items:center; margin-bottom:8px; }
-.builder-type { font-family:var(--mono, monospace); font-size:11px; color:var(--muted); }
+.builder-type { font-family:var(--mono); font-size:11px; color:var(--muted); }
 .row-del { display:grid; place-items:center; width:30px; height:30px; border:0; border-radius:6px; background:transparent; color:var(--muted); cursor:pointer; }
 .row-del:hover { background:var(--inset); color:var(--text-strong); }
 .builder-actions { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0 14px; }

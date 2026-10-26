@@ -4,7 +4,7 @@
 
 * ``fields.schema()`` 覆盖全部字段、没有重复，``desc`` 是可用的说明；
 * ``write_json()`` 只写声明过的键、按声明顺序落盘（配置里没有 ``_comment*``）；
-* 旧配置文件里的 ``_comment*`` 与未知键照常加载，只是不再回写。
+* 从示例文件复制来的配置里，``_comment*`` 与未知键照常加载，只是不回写。
 
 两种跑法等价：
 
@@ -74,7 +74,7 @@ def test_schema_type_derives_from_the_default():
 def test_write_json_drops_unknown_keys_and_follows_declaration_order(tmp_path):
     path = tmp_path / "config.json"
     payload = {
-        "_comment": "旧模板的头说明",
+        "_comment": "示例文件里的头说明",
         "_comment_web_port": "面板端口",
         "log_max_mb": 4,
         "custom": 1,
@@ -96,14 +96,14 @@ def test_update_never_writes_unknown_keys_back(tmp_path):
     path = tmp_path / "config.json"
     store = ConfigStore(str(path), generate=False)
 
-    store.update({"web_port": 5001, "custom": 1, "_comment": "旧模板"})
+    store.update({"web_port": 5001, "custom": 1, "_comment": "示例文件里的说明"})
 
     assert store.read_raw() == {"web_port": 5001}
     assert json.loads(path.read_text(encoding="utf-8")) == {"web_port": 5001}
 
 
-def test_legacy_file_with_comments_still_loads(tmp_path):
-    """带 ``_comment*`` 的旧配置照常加载：不报错、值一致、未知键被丢弃。"""
+def test_example_style_file_with_comments_loads(tmp_path):
+    """带 ``_comment*`` 的示例式配置照常加载：不报错、值一致、未知键被丢弃。"""
     path = tmp_path / "config.json"
     path.write_text(
         json.dumps(
@@ -112,7 +112,7 @@ def test_legacy_file_with_comments_still_loads(tmp_path):
                 "_comment_web_port": "面板端口",
                 "web_port": 5002,
                 "ob_server_port": 8100,
-                "legacy_key": {"nested": True},
+                "unknown_key": {"nested": True},
             },
             ensure_ascii=False,
         ),
@@ -203,7 +203,7 @@ def test_group_map_rejects_other_types_in_strict_mode():
 
 
 def test_unknown_keys_are_reported_back(tmp_path):
-    """拼错的键名不再静默消失：回包里能拿到，warnings 里也留一句。"""
+    """拼错的键名不静默消失：回包里能拿到，warnings 里也留一句。"""
     store = ConfigStore(str(tmp_path / "config.json"), generate=False)
 
     result = store.update({"web_port": 5001, "web_prt": 5002})

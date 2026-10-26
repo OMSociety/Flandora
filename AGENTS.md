@@ -88,7 +88,7 @@ run_bridge.py -> flandora.main
   别的模块要读就用 `LIFECYCLE.snapshot()`/`RUNTIME.online_flags()`，不许自己存一份
   （`tests/test_runtime_lifecycle.py`、`tests/architecture_allowlist.py`）。
 - **配置只经 `config.store.ConfigStore` 读写**，字段、默认值与校验只在 `config/fields.py`；
-  不许 import 期改配置、不许模块级 `config.X = ...`（`config.__init__` 里有兼容代理，但新代码走 `store.update()`）。
+  不许 import 期改配置、不许模块级 `config.X = ...`（`config.__init__` 的模块级覆盖表支持 `config.X` 读取与测试打补丁；写配置一律走 `store.update()`）。
 - **出站唯一路径 `domain/send.py::execute`**：面板与 OneBot 两条入口都汇到它，不许新增第四条发送路径
   （`tests/test_domain_send_entries.py`）。
 - **模块级可变全局**只允许上面第 4 条的三个对象与全大写常量/类型别名，存量登记在
@@ -147,7 +147,7 @@ run_bridge.py -> flandora.main
   否则前端断言与后端字段脱节，测试仍会绿。
 - 改 OneBot 事件字段或协议行为：改 `flandora/ob_protocol.py`，并跑 `tests/test_ob_server.py`；动通知事件或心跳时另跑 `tests/test_ob_notice.py`、`tests/test_ob_heartbeat.py`、`tests/test_ob_network.py`（后两者起真端口，meta_event 会混进会话，等事件要跳过它）。
   群历史里的发言人名字走 `bridge_core.resolve_names()` 这个公开方法，直接调用即可；改名由导入期报错暴露，
-  不会再退化成静默传给 wxid。
+  不会静默把 wxid 当名字传下去。
 - 改前端：构建工具已经会按 mtime 判断 `flandora/webui/dist` 是否需要重建，正常打包不必先手工 `npm run build`；
   只有明确要复用现有产物时才用 `python build.py --skip-web`（它会打印产物与源码的时间差）。
 - 改窗口或桌面行为：只动 `flandora/wx_desktop.py`，跑 `tests/test_wx_desktop.py`，再重启桥接实测；
@@ -217,7 +217,7 @@ run_bridge.py -> flandora.main
   别人拍一拍会以 `notice/notify + sub_type=poke` 推出去（`tests/test_ob_notice.py` 覆盖）。
 - 引用回复（发送方向的 `reply` 段）：微信 PC 引用的入口同样是右键消息菜单，因此与撤回同一限制。收件方向已通
   （`refermsg` 的 `svrid` 回查 `msg_ids` 得到被引 `message_id`），只有「主动引用某条历史消息」这一半挂着。
-- 语音转文字（ASR）已移除，不属于桥接职责：转写与回复策略归 OneBot v11 客户端。
+- 语音转文字（ASR）不做：转写与回复策略归 OneBot v11 客户端。
 
 ## 已知风险区
 

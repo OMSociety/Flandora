@@ -14,10 +14,10 @@ export async function copyText(text) {
       // 没给权限或没有用户手势：再试一次老办法，仍失败就算失败。
     }
   }
-  return legacyCopy(value)
+  return execCommandCopy(value)
 }
 
-function legacyCopy(value) {
+function execCommandCopy(value) {
   const area = document.createElement('textarea')
   area.value = value
   area.setAttribute('readonly', '')

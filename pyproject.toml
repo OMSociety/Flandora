@@ -8,7 +8,7 @@ extend-exclude = ["webui-frontend", "flandora/webui/dist", "build", "dist", ".ve
 
 [tool.ruff.lint]
 # E/F/W 是 pyflakes 与 pycodestyle 的基础面；I 统一导入顺序。
-# 行宽交给 ruff format 处理，E501 不再重复告警（长字符串无法自动折行）。
+# 行宽交给 ruff format 处理，E501 不重复告警（长字符串无法自动折行）。
 select = ["E", "F", "W", "I"]
 ignore = ["E501"]
 

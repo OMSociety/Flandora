@@ -119,7 +119,7 @@ def _flatten(routes):
     """展开 include 进来的路由器。
 
     新版 FastAPI 的 ``include_router`` 在 ``app.routes`` 里留 ``_IncludedRouter``
-    引用，真正的路由对象挂在它引用的路由器上；旧版直接摊平。
+    引用，真正的路由对象挂在它引用的路由器上；直接摊平的形态里两者在同一层。
     """
     for route in routes:
         included = getattr(route, "original_router", None)

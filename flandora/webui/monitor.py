@@ -1,7 +1,7 @@
 """面板的事件消费端：把核心侧总线转给 WebSocket。
 
 事件本体与历史缓冲在 ``flandora/runtime/events.py``，由核心层（``bridge_core`` /
-``ob_protocol`` / ``ob_network``）直接发布——核心不再 import 表现层。本模块只做
+``ob_protocol`` / ``ob_network``）直接发布——核心不 import 表现层。本模块只做
 一件事：订阅 :data:`flandora.runtime.events.EVENTS`，按浏览器能直接消费的帧格式
 推出去；首帧快照与 30 秒保活 ping 也在这里。
 

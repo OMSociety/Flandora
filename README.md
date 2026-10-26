@@ -18,7 +18,7 @@
   <a href="https://github.com/OMSociety/Flandora/issues">问题反馈</a>
 </p>
 
-Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录的瞬间截获本机数据库口令，只读解密聊天库收取消息，并以账号本人身份在隔离桌面上投递回复。对外按 [OneBot v11](https://github.com/botuniverse/onebot-11) 提供四类入口（正向 WS 服务端、HTTP 服务端、反向 WS、HTTP 上报，默认起 `ws://127.0.0.1:7999/`），本机另有一个浏览器面板。
+Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录的瞬间截获这台电脑上的数据库口令，只读解密聊天库收取消息，并以账号本人身份在隔离桌面上投递回复。对外按 [OneBot v11](https://github.com/botuniverse/onebot-11) 提供四类入口（正向 WS 服务端、HTTP 服务端、反向 WS、HTTP 上报，默认起 `ws://127.0.0.1:7999/`），另带一个浏览器面板（`http://127.0.0.1:4950`）。
 
 > [!CAUTION]
 > Flandora 是独立的第三方项目，与腾讯 / 微信无隶属或授权关系。项目仅供学习与技术研究，请遵守《微信软件许可及服务协议》及适用法律；以自动化方式驱动自己的客户端存在账号被限制或封禁的风险，软件按「现状」提供，使用风险自负。详见[使用边界与许可](#使用边界与许可)。
@@ -31,35 +31,16 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 ## 快速开始
 
-需要 Windows 10/11、Python 3.13 与 Node.js（构建面板产物用）。
+需要 Windows 10/11。
 
-1. 取仓库、建虚拟环境并装依赖：
+1. 从 [Releases](https://github.com/OMSociety/Flandora/releases) 取发布包，二选一：
 
-   ```powershell
-   git clone https://github.com/OMSociety/Flandora.git
-   cd Flandora
-   python -m venv .venv
-   .venv\Scripts\python -m pip install -r requirements-dev.txt
-   ```
+   - `Flandora-v1.0.0-setup.exe`：安装包，装到 `%LOCALAPPDATA%\Programs\Flandora`；安装向导里可以顺手勾上「开机自动启动」与桌面快捷方式。
+   - `Flandora-v1.0.0.zip`：便携包，解压到任意目录即可，`data\` 会生成在 `Flandora.exe` 旁边。
 
-2. 构建面板产物（Vite 输出到 `flandora/webui/dist`）：
+2. 退出自己的微信，双击 `Flandora.exe`。它在通知区域常驻并拉起桥接；左键图标或菜单「打开面板」都能打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)，第一次运行（还没有 `data/config.json`）会自己弹出面板。
 
-   ```powershell
-   cd webui-frontend
-   npm install
-   npm run build
-   cd ..
-   ```
-
-3. 退出自己的微信，运行管理器：
-
-   ```powershell
-   .venv\Scripts\python manager\main.py
-   ```
-
-   它在通知区域常驻并拉起桥接；左键图标或菜单「打开面板」都能打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)，第一次运行（还没有 `data/config.json`）会自己弹出面板。
-
-4. 在面板里走完「取钥向导」四步：勾选免责声明 → 数据库口令（在向导里的实况画面重新登录一次微信）→ 图片密钥（要让机器人看图才需要：在实况画面里点开一张没看过的图）→ 校验完成。
+3. 在面板里走完「取钥向导」四步：勾选免责声明 → 数据库口令（在向导里的实况画面重新登录一次微信）→ 图片密钥（要让机器人看图才需要：在实况画面里点开一张没看过的图）→ 校验完成。
 
    面板打不开、桥接没起来时，从托盘菜单「打开日志」看最后几行；日志文件在 `data/flandora.log`，对应的失败原因多半写在里面。
 
@@ -73,11 +54,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 }
 ```
 
-> **提示**：`ob_server_token` 与客户端 `token` 填同一个值。留空 = 不校验鉴权，默认监听 `127.0.0.1` 时只有本机能连；要把入口开给别的机器，改 `ob_server_host`、在防火墙放行 7999，并填一串随机 token（留空就等于把动作接口开给整个局域网）。需要多条入口（HTTP 服务端、反向 WS、HTTP 上报）时在面板「节点配置」里逐条加，通用设置只在这张表为空时兜底。
-
-## 打包
-
-`python build.py` 会先按需重建前端产物（需要 Node.js 与 npm），再打包三个 exe，在 `dist/` 下产出 `Flandora-v1.0.0.zip`（便携包，解压到任意目录后双击 `Flandora.exe`）。装了 Inno Setup（或设 `ISCC` 指向 `ISCC.exe`）时，同目录还会生成 `Flandora-v1.0.0-setup.exe`；没有它则跳过安装包，只出便携包。
+> **提示**：`ob_server_token` 与客户端 `token` 填同一个值。留空 = 不校验鉴权，默认监听 `127.0.0.1`，只有这台电脑上的客户端能连；要把入口开给别的机器，改 `ob_server_host`、在防火墙放行 7999，并填一串随机 token（留空就等于把动作接口开给整个局域网）。需要多条入口（HTTP 服务端、反向 WS、HTTP 上报）时在面板「节点配置」里逐条加，通用设置只在这张表为空时兜底。
 
 ## 文档
 
@@ -102,7 +79,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 本工具通过自动化方式驱动你自己登录的微信客户端收发消息，这类用法可能与微信的用户协议冲突。请只用自己的号，并自行承担账号被限制或封禁的风险。项目为独立工具，与腾讯公司无任何关联，不承诺可用性与送达率；微信改版导致接口失效属官方行为，不在担保范围内。使用产生的一切后果由使用者自行承担。
 
-发布包内 `docs/third-party-licenses/` 收录了随包分发组件的许可证原文。
+发布包内 [docs/third-party-licenses/](docs/third-party-licenses/README.md) 收录了随包分发组件的许可证原文。
 
 ## 鸣谢与致谢
 

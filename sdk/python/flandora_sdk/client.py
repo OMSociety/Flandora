@@ -40,6 +40,32 @@ def _check(action: str, payload: Any) -> Any:
     return payload.get("data")
 
 
+def _http_error(action: str, response: Any) -> Exception:
+    """HTTP 层的错误也可能是桥接给的正经 OneBot 响应：400 时它照样回 retcode 与原因。
+
+    认得出 OneBot 错误体就抛 :class:`ApiError`（保住 retcode 与 message，调用方按
+    retcode 分流）；认不出才归到传输错误，并带上响应开头，便于判断是不是打到了别的服务。
+    """
+    body: Any = None
+    try:
+        body = response.json()
+    except ValueError:
+        body = None
+    if isinstance(body, dict) and "retcode" in body and "status" in body:
+        try:
+            retcode = int(body.get("retcode") or 0)
+        except (TypeError, ValueError):
+            retcode = 0
+        text = str(body.get("message") or body.get("wording") or body.get("msg") or "")
+        return ApiError(action, retcode, text or f"桥接返回 HTTP {response.status_code}", body)
+    if response.status_code == 401:
+        return TransportError(f"{action}：桥接拒绝了这个请求（HTTP 401，检查 access_token）")
+    text = " ".join((response.text or "").split())[:200]
+    return TransportError(
+        f"{action}：桥接返回 HTTP {response.status_code}（{text or '没有响应体'}）"
+    )
+
+
 def _contact(value: int | str) -> int | str:
     """ID 参数：整数原样传，微信标识去掉首尾空白后传，怎么解析由 Flandora 决定。"""
     if isinstance(value, int) and not isinstance(value, bool):
@@ -107,10 +133,8 @@ class FlandoraHttp(_Actions):
             )
         except requests.RequestException as e:
             raise TransportError(f"{action}：连不上桥接（{e}）") from e
-        if response.status_code == 401:
-            raise TransportError(f"{action}：桥接拒绝了这个请求（HTTP 401，检查 access_token）")
         if response.status_code >= 400:
-            raise TransportError(f"{action}：桥接返回 HTTP {response.status_code}")
+            raise _http_error(action, response)
         try:
             body = response.json()
         except ValueError as e:

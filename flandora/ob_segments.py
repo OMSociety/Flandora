@@ -31,7 +31,10 @@ _ESCAPE = (
     ("]", "&#93;"),
     (",", "&#44;"),
 )
-_UNESCAPE = tuple((esc, raw) for raw, esc in _ESCAPE)
+# 反转义要一次扫完：先替换出来的 ``&`` 不能再和后面的 ``#91;`` 拼成 ``&#91;`` 被二次
+# 解码，否则 ``a&amp;#91;b`` 这类原文在 escape → unescape 往返里会被吃掉一层。
+_UNESCAPE_RE = re.compile(r"&(amp|#91|#93|#44);")
+_UNESCAPE_MAP = {"amp": "&", "#91": "[", "#93": "]", "#44": ","}
 
 
 class SegmentError(ValueError):
@@ -47,11 +50,8 @@ def escape_text(text: str) -> str:
 
 
 def unescape_text(text: str) -> str:
-    """``escape_text`` 的逆操作。"""
-    out = text or ""
-    for esc, raw in _UNESCAPE:
-        out = out.replace(esc, raw)
-    return out
+    """``escape_text`` 的逆操作：单次扫描，替换出来的字符不会再被解一遍。"""
+    return _UNESCAPE_RE.sub(lambda m: _UNESCAPE_MAP[m.group(1)], text or "")
 
 
 def text_segment(text: str) -> Segment:

@@ -192,3 +192,16 @@ def test_mode_validation(monkeypatch):
         assert "docs/read/write" in str(e)
     else:  # pragma: no cover - 配置错必须直接退出
         raise AssertionError("非法模式应当 SystemExit")
+
+
+def test_invoke_action_is_refused_outside_write_mode():
+    """工具表不列 ≠ 调不到：照名字直接调 invoke_action 也要被模式挡下。"""
+    for mode in ("docs", "read"):
+        config = make_config(mode, endpoint="http://127.0.0.1:5700/")
+        response = rpc(
+            config,
+            "tools/call",
+            {"name": "invoke_action", "arguments": {"action": "get_login_info", "params": {}}},
+        )
+        text = json.dumps(response, ensure_ascii=False)
+        assert f"{mode} 模式" in text, text

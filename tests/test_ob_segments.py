@@ -124,3 +124,10 @@ def test_invalid_messages_raise(bad):
 def test_plain_text_ignores_non_text_segments():
     segs = [S.text_segment("a"), {"type": "image", "data": {"file": "x"}}]
     assert S.plain_text(segs) == "a"
+
+
+def test_entity_text_is_not_decoded_twice():
+    """同一处陷阱在协议侧：``&amp;#91;`` 与含实体文本的往返都要原样回来。"""
+    assert S.unescape_text("a&amp;#91;b") == "a&#91;b"
+    raw = "a&#91;b&amp;c&#93;d&#44;e&f"
+    assert S.unescape_text(S.escape_text(raw)) == raw

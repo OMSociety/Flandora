@@ -18,7 +18,10 @@ _ESCAPE = (
     ("]", "&#93;"),
     (",", "&#44;"),
 )
-_UNESCAPE = tuple((to, frm) for frm, to in _ESCAPE)
+# 反转义一次扫完：替换出来的 & 不会再和后面的 #91; 拼成 &#91; 被二次解码，
+# 否则 "&amp;#91;" 这类原文在 escape → unescape 往返里会被吃掉一层。
+_UNESCAPE_RE = re.compile(r"&(amp|#91|#93|#44);")
+_UNESCAPE_MAP = {"amp": "&", "#91": "[", "#93": "]", "#44": ","}
 _TYPE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 
 
@@ -31,9 +34,7 @@ def escape(text: Any) -> str:
 
 def unescape(text: Any) -> str:
     out = "" if text is None else str(text)
-    for frm, to in _UNESCAPE:
-        out = to.join(out.split(frm))
-    return out
+    return _UNESCAPE_RE.sub(lambda m: _UNESCAPE_MAP[m.group(1)], out)
 
 
 def text(content: str) -> Segment:

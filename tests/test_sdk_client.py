@@ -227,15 +227,67 @@ def test_http_api_failure_raises_api_error(http_bridge):
             client.call("fail_me")
 
 
-def test_http_wrong_token_is_transport_error(http_bridge):
+def test_http_wrong_token_keeps_the_retcode(http_bridge):
+    """401 也带着 OneBot 错误体回来：retcode 要留住，调用方才能按 retcode 分流。"""
     base_url, _ = http_bridge
     with FlandoraHttp(base_url, token="wrong", timeout=5) as client:
-        with pytest.raises(TransportError) as err:
+        with pytest.raises(ApiError) as err:
             client.call("get_status")
-    assert "401" in str(err.value)
+    assert err.value.retcode == 1401
 
 
 def test_http_unreachable_is_transport_error():
     with FlandoraHttp("http://127.0.0.1:1/", timeout=0.5) as client:
         with pytest.raises(TransportError):
             client.call("get_status")
+
+
+def _error_server(status, body, content_type="text/plain"):
+    """只回固定错误的 HTTP 服务端，用来验 SDK 对非 OneBot 错误的归类。"""
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self):  # noqa: N802 - http.server 的约定
+            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *_args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, thread
+
+
+def test_http_400_with_onebot_body_keeps_the_message():
+    body = json.dumps(
+        {"status": "failed", "retcode": 1406, "message": "本地库里没有 wxid_x 的资料"}
+    ).encode("utf-8")
+    server, thread = _error_server(400, body, "application/json")
+    try:
+        with FlandoraHttp(f"http://127.0.0.1:{server.server_address[1]}/", timeout=5) as client:
+            with pytest.raises(ApiError) as err:
+                client.call("get_stranger_info", user_id=1)
+        assert err.value.retcode == 1406
+        assert "本地库里没有" in str(err.value)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+
+
+def test_http_error_without_onebot_body_is_a_transport_error():
+    server, thread = _error_server(502, b"<html>bad gateway</html>", "text/html")
+    try:
+        with FlandoraHttp(f"http://127.0.0.1:{server.server_address[1]}/", timeout=5) as client:
+            with pytest.raises(TransportError) as err:
+                client.call("get_status")
+        assert "502" in str(err.value) and "bad gateway" in str(err.value)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)

@@ -72,3 +72,10 @@ def test_message_chain_is_isolated_from_input_segments():
 
 class _BadSegment:
     pass
+
+
+def test_entity_text_is_not_decoded_twice():
+    """反转义一次扫完：``&amp;#91;`` 只能解一层，否则原文会被吃掉一层。"""
+    assert m.unescape("a&amp;#91;b") == "a&#91;b"
+    raw = "a&#91;b&amp;c&#93;d&#44;e&f"
+    assert m.unescape(m.escape(raw)) == raw

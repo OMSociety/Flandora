@@ -194,6 +194,10 @@ def call_tool(config: Config, name: str, arguments: dict[str, Any]) -> dict[str,
         problem = _need_endpoint(config)
         if problem:
             return _fail(problem)
+        if config.mode != "write":
+            # 工具表在非 write 模式下本来就不列它，但客户端可以照名字直接调：
+            # 这里再挡一道，read/docs 模式不能靠猜名字把消息发出去。
+            return _fail(_MODE_HINT[config.mode])
         spec = catalog.get(str(arguments.get("action") or ""))
         if spec is None:
             return _fail(f"没有这个动作：{arguments.get('action')!r}")

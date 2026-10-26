@@ -508,6 +508,8 @@ def verify_payload(payload: Path) -> list[str]:
 def assemble_zip() -> Path:
     step("组装发布 zip")
     rel = DIST / PKG_NAME
+    stash = BUILD / f"{rel.name}-data"
+    stashed = _stash_user_data(rel, stash) if rel.exists() else False
     if rel.exists():
         shutil.rmtree(rel)
     (rel / "data").mkdir(parents=True)
@@ -555,16 +557,59 @@ def assemble_zip() -> Path:
         f"载荷自检通过：{len(REQUIRED_PAYLOAD)} 个必需条目 + {len(installer_sources())} 条安装脚本引用"
     )
 
-    # 7) 打包 zip
+    # 7) 打包 zip：data/ 是用户的运行时目录，不进发布包
     zip_path = DIST / f"{PKG_NAME}.zip"
+    _zip_payload(rel, zip_path)
+    print(f"\n生成：{zip_path} ({zip_path.stat().st_size / 1024 / 1024:.2f} MB)")
+
+    # 8) 把上一次的 data/ 放回载荷：配置、口令与存档都还在
+    if stashed and _restore_user_data(rel, stash):
+        print("  已保留上次的 data/（配置、口令与存档）")
+    return zip_path
+
+
+def _stash_user_data(rel: Path, stash: Path) -> bool:
+    """把上一次载荷里的 data/ 挪到一边，返回是否真挪了。
+
+    重建时 dist 是构建产物，但在这台机器上它同时是正在跑的实例：直接 rmtree 会把
+    配置、微信口令与消息存档一起删掉。挪出去、重建完再挪回来，用户就不必每次重配。
+    """
+    data = rel / "data"
+    if not data.is_dir():
+        return False
+    if stash.exists():
+        shutil.rmtree(stash)
+    stash.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(data), str(stash))
+    return True
+
+
+def _restore_user_data(rel: Path, stash: Path) -> bool:
+    """把挪出去的 data/ 放回载荷，返回是否真放回。"""
+    if not stash.is_dir():
+        return False
+    target = rel / "data"
+    if target.exists():
+        shutil.rmtree(target)
+    shutil.move(str(stash), str(target))
+    return True
+
+
+def _zip_payload(rel: Path, zip_path: Path) -> Path:
+    """把载荷打成 zip。
+
+    `data/` 是用户的运行时目录，里面是配置、口令与存档，不进发布包。
+    """
+    data_dir = rel / "data"
     if zip_path.exists():
         zip_path.unlink()
     with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for path in rel.rglob("*"):
-            if path.is_file():
-                arc = path.relative_to(DIST).as_posix()
-                zf.write(path, arc)
-    print(f"\n生成：{zip_path} ({zip_path.stat().st_size / 1024 / 1024:.2f} MB)")
+        for path in sorted(rel.rglob("*")):
+            if not path.is_file():
+                continue
+            if data_dir in path.parents:
+                continue
+            zf.write(path, path.relative_to(DIST).as_posix())
     return zip_path
 
 

@@ -77,3 +77,41 @@ def test_dirty_tree_is_refused_until_explicitly_allowed():
     assert build.dirty_build_problem("abc", False, False) is None
     assert build.dirty_build_problem("abc", True, False) is not None
     assert build.dirty_build_problem("abc", True, True) is None
+
+
+def test_payload_rebuild_carries_the_user_data_over(tmp_path):
+    rel = tmp_path / "payload"
+    (rel / "data").mkdir(parents=True)
+    (rel / "data" / "wx_key.dat").write_bytes(b"secret-key")
+    (rel / "data" / "messages.db").write_bytes(b"db")
+    (rel / "Flandora.exe").write_bytes(b"MZ")
+    stash = tmp_path / "stash"
+
+    assert build._stash_user_data(rel, stash) is True
+    assert not (rel / "data").exists()
+
+    (rel / "data").mkdir()
+    (rel / "data" / "config.json").write_text("{}", encoding="utf-8")
+
+    assert build._restore_user_data(rel, stash) is True
+    assert (rel / "data" / "wx_key.dat").read_bytes() == b"secret-key"
+    assert (rel / "data" / "messages.db").read_bytes() == b"db"
+    assert not (rel / "data" / "config.json").exists()
+
+
+def test_zip_leaves_the_user_data_out(tmp_path, monkeypatch):
+    rel = tmp_path / "payload"
+    (rel / "data").mkdir(parents=True)
+    (rel / "data" / "wx_key.dat").write_bytes(b"secret-key")
+    (rel / "Flandora.exe").write_bytes(b"MZ")
+    monkeypatch.setattr(build, "DIST", tmp_path)
+    zip_path = tmp_path / "payload.zip"
+
+    build._zip_payload(rel, zip_path)
+
+    import zipfile
+
+    with zipfile.ZipFile(zip_path) as zf:
+        names = zf.namelist()
+    assert "payload/Flandora.exe" in names
+    assert not any(name.startswith("payload/data/") for name in names), names

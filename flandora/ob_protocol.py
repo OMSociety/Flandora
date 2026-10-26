@@ -165,7 +165,35 @@ async def _handle_ob_api(data: dict):
     resp_data = {"status": "ok", "retcode": 0, "data": {}}
 
     if action in ("send_msg", "send_private_msg", "send_group_msg"):
-        is_group = action == "send_group_msg" or params.get("message_type") == "group"
+        # message_type 可以不传：按 OneBot v11 的约定，从动作名或 *_id 参数推出来。
+        # 传了不认识的类型、或与动作名矛盾的值，一律如实报错——发错地方比报错糟得多。
+        msg_type = str(params.get("message_type") or "").strip().lower()
+        if msg_type and msg_type not in ("private", "group"):
+            return _failure(
+                f"message_type 只能是 private 或 group，收到 {params.get('message_type')!r}",
+                action_catalog.RETCODE_BAD_PARAM,
+                echo,
+            )
+        if action == "send_group_msg" and msg_type == "private":
+            return _failure(
+                "send_group_msg 与 message_type='private' 矛盾",
+                action_catalog.RETCODE_BAD_PARAM,
+                echo,
+            )
+        if action == "send_private_msg" and msg_type == "group":
+            return _failure(
+                "send_private_msg 与 message_type='group' 矛盾",
+                action_catalog.RETCODE_BAD_PARAM,
+                echo,
+            )
+        if action == "send_group_msg":
+            is_group = True
+        elif action == "send_private_msg":
+            is_group = False
+        else:
+            is_group = (
+                msg_type == "group" if msg_type else params.get("group_id") not in (None, "", 0)
+            )
         target_key = "group_id" if is_group else "user_id"
         target = params.get(target_key, 0)
         message = params.get("message", [])
@@ -260,7 +288,8 @@ async def _handle_ob_api(data: dict):
                 log.info(f"[OB11] {outcome.label}已发送至 {contact}")
                 _record_out(contact, is_group, outcome.text)
             elif outcome.status is SendStatus.FAILED:
-                failures.append(f"{outcome.label}发送失败")
+                reason = _sender_error()
+                failures.append(f"{outcome.label}发送失败" + (f"（{reason}）" if reason else ""))
                 log.error(f"[OB11] {outcome.label}发送失败（消息未真正发出）: {contact}")
             else:
                 failures.append(outcome.text)
@@ -292,6 +321,7 @@ async def _handle_ob_api(data: dict):
                 log.warning(f"[OB11] message 里没有可发送的内容 [{contact}]")
         elif failures or skipped:
             resp_data["data"]["failed_segments"] = len(failures) + len(skipped)
+            resp_data["data"]["failed_details"] = failures + skipped
             log.warning(
                 f"[OB11] 部分消息段未发出 [{contact}]：失败 {len(failures)} 段、跳过 {len(skipped)} 段"
             )
@@ -604,23 +634,29 @@ class _OutboundPrep:
 def _media_file(file_val: str, label: str, prep: _OutboundPrep) -> str | None:
     """把图片/表情的 file 字段落成本地文件路径。
 
-    接受 ``base64://`` 内联数据与客户端附件目录里的文件名。解不出来只记日志
-    并返回 None：这段没有可发的图，但不把整条消息判失败（客户端从后续事件里
-    能看出对端实际发了什么）。
+    接受 ``base64://`` 内联数据与客户端附件目录里的文件名。解不出来时返回 None
+    并**记进 ``prep.failures``**：这一段没有可发的图，但客户端要能看见原因——只发
+    图片的消息因此如实回报失败，混发时也计进 ``failed_segments``。
     """
     if not file_val:
+        prep.failures.append(f"{label}段缺少 file 字段")
         return None
     if file_val.startswith("base64://"):
         try:
             path = _decode_base64_image(file_val[9:])
         except Exception as e:  # noqa: BLE001
+            prep.failures.append(f"{label}的 base64 数据不合法")
             log.warning(f"[OB11] base64 {label}解码失败: {e}")
             return None
-        if path:
-            prep.temp_files.append(path)
-            log.info(f"[OB11] {label}已解码: {os.path.basename(path)}")
+        if not path:
+            prep.failures.append(f"{label}解码失败")
+            return None
+        prep.temp_files.append(path)
+        log.info(f"[OB11] {label}已解码: {os.path.basename(path)}")
         return path
     if not config.CLIENT_ATTACHMENTS:
+        prep.failures.append(f"{label}文件未找到：{file_val}（client_attachments 未配置）")
+        log.warning(f"[OB11] {label}文件未找到（未配置 client_attachments）: {file_val}")
         return None
     for candidate in (
         os.path.join(config.CLIENT_ATTACHMENTS, file_val),
@@ -628,6 +664,7 @@ def _media_file(file_val: str, label: str, prep: _OutboundPrep) -> str | None:
     ):
         if os.path.exists(candidate):
             return candidate
+    prep.failures.append(f"{label}文件未找到：{file_val}")
     log.warning(f"[OB11] {label}文件未找到: {file_val}")
     return None
 
@@ -958,6 +995,23 @@ def _fetch_history_ob(talker: str, is_group: bool, count: int) -> list:
     except Exception as e:  # noqa: BLE001
         log.warning(f"[OB11] 拉取历史失败 (talker={talker}): {e}")
     return out
+
+
+def _sender_error() -> str:
+    """发送器记下的最后一条失败原因（没有或取不到就返回空串）。
+
+    原因留在发送器里（日志与面板都读它），消息响应把它带上，客户端才知道是
+    「输入框有清不掉的残留」还是「发送通道没起来」，不必去翻运行日志。
+    """
+    getter = getattr(RUNTIME.sender, "last_error", None)
+    if getter is None:
+        return ""
+    try:
+        return str(getter() or "")
+    except Exception as e:  # noqa: BLE001
+        # 取原因本身不该把发送结果搞坏
+        log.debug(f"[OB11] 读取发送失败原因失败: {e}")
+        return ""
 
 
 def _store():

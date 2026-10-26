@@ -148,3 +148,13 @@ def test_get_contact_id_needs_a_handle(isolated_ids):
     resp = _call({"action": "get_contact_id", "params": {"handle": "   "}})
     assert resp["status"] == "failed"
     assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
+
+
+def test_no_declared_parameter_is_left_unread_by_the_dispatcher():
+    """目录里声明的参数都该被派发代码读：没人读的开关会让客户端以为它起作用了。
+
+    ``no_cache`` 曾在五个查询动作上声明，而派发层从来没读过它——客户端以为拿到的是
+    新鲜数据，实际与默认行为完全一样。
+    """
+    for spec in action_catalog.ACTIONS:
+        assert "no_cache" not in [p.name for p in spec.params], spec.name

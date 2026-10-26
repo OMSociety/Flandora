@@ -174,7 +174,7 @@ ACTIONS: tuple[Action, ...] = (
         category=CAT_MESSAGE,
         summary="发送消息，按 message_type 自动选择私聊或群聊",
         params=(
-            P("message_type", "string", required=True, desc="private 或 group"),
+            P("message_type", "string", desc="private 或 group；不传时按 *_id 推断"),
             P("user_id", "id", desc="私聊对象"),
             P("group_id", "id", desc="群聊对象"),
             P("message", "message", required=True, desc="消息段数组或 CQ 码字符串"),
@@ -286,7 +286,7 @@ ACTIONS: tuple[Action, ...] = (
         name="get_stranger_info",
         category=CAT_FRIEND,
         summary="获取任意联系人资料",
-        params=(P("user_id", "id", required=True), P("no_cache", "bool", default=False)),
+        params=(P("user_id", "id", required=True),),
         read_only=True,
     ),
     Action(
@@ -325,21 +325,21 @@ ACTIONS: tuple[Action, ...] = (
         name="get_group_list",
         category=CAT_GROUP_INFO,
         summary="获取群列表（读通讯录里的群会话）",
-        params=(P("no_cache", "bool", default=False),),
+        params=(),
         read_only=True,
     ),
     Action(
         name="get_group_info",
         category=CAT_GROUP_INFO,
         summary="获取群资料（群名与成员数来自本地库）",
-        params=(P("group_id", "id", required=True), P("no_cache", "bool", default=False)),
+        params=(P("group_id", "id", required=True),),
         read_only=True,
     ),
     Action(
         name="get_group_member_list",
         category=CAT_GROUP_INFO,
         summary="获取群成员列表（含群主标记）",
-        params=(P("group_id", "id", required=True), P("no_cache", "bool", default=False)),
+        params=(P("group_id", "id", required=True),),
         read_only=True,
     ),
     Action(
@@ -349,7 +349,6 @@ ACTIONS: tuple[Action, ...] = (
         params=(
             P("group_id", "id", required=True),
             P("user_id", "id", required=True),
-            P("no_cache", "bool", default=False),
         ),
         read_only=True,
     ),

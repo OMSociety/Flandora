@@ -119,9 +119,9 @@
         {
           "name": "message_type",
           "type": "string",
-          "required": true,
+          "required": false,
           "default": null,
-          "desc": "private 或 group"
+          "desc": "private 或 group；不传时按 *_id 推断"
         },
         {
           "name": "user_id",
@@ -421,13 +421,6 @@
           "required": true,
           "default": null,
           "desc": ""
-        },
-        {
-          "name": "no_cache",
-          "type": "bool",
-          "required": false,
-          "default": false,
-          "desc": ""
         }
       ]
     },
@@ -525,15 +518,7 @@
       "readOnly": true,
       "implemented": true,
       "wip": "",
-      "params": [
-        {
-          "name": "no_cache",
-          "type": "bool",
-          "required": false,
-          "default": false,
-          "desc": ""
-        }
-      ]
+      "params": []
     },
     {
       "name": "get_group_info",
@@ -549,13 +534,6 @@
           "type": "id",
           "required": true,
           "default": null,
-          "desc": ""
-        },
-        {
-          "name": "no_cache",
-          "type": "bool",
-          "required": false,
-          "default": false,
           "desc": ""
         }
       ]
@@ -574,13 +552,6 @@
           "type": "id",
           "required": true,
           "default": null,
-          "desc": ""
-        },
-        {
-          "name": "no_cache",
-          "type": "bool",
-          "required": false,
-          "default": false,
           "desc": ""
         }
       ]
@@ -606,13 +577,6 @@
           "type": "id",
           "required": true,
           "default": null,
-          "desc": ""
-        },
-        {
-          "name": "no_cache",
-          "type": "bool",
-          "required": false,
-          "default": false,
           "desc": ""
         }
       ]

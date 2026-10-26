@@ -91,6 +91,15 @@ def needs_paste(text: str) -> bool:
     return has_non_bmp(text) or "\n" in text
 
 
+def _looks_like_pil_repr(text: str) -> bool:
+    """正文里是否夹着 PIL 对象的 repr（`<PIL.Image …>`）。
+
+    只认 repr 残留，不认「PIL.」这个子串：后者会把讨论 Pillow 的正常正文一起
+    拦下，那种消息没有任何理由发不出去。
+    """
+    return "<PIL." in text
+
+
 def mismatch_window(want: str, got: str) -> str:
     """回读不符时的定位信息：第几个字起不同、两边的上下文、各自的长度。
 
@@ -1433,13 +1442,14 @@ class UiaSender(BaseSender):
 
     def _send_text_impl(self, contact: str, text: str) -> bool:
         """发送文本消息。"""
+        # 内容检查放在最前：这类正文根本不该发出去，也不该为它去碰窗口。
+        if _looks_like_pil_repr(text):
+            self._last_error = "正文里出现 PIL 对象的 repr（<PIL.…），已拒绝发送"
+            log.warning(f"跳过 PIL 引用消息: {text[:60]}")
+            return False
+
         with self._lock:
             if not self._ensure_window():
-                return False
-
-            # 安全检查：过滤 PIL 引用
-            if "<PIL." in text or "PIL." in text:
-                log.warning(f"跳过 PIL 引用消息: {text[:60]}")
                 return False
 
             if not self._prepare_target(contact):

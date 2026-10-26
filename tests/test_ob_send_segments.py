@@ -43,6 +43,10 @@ class FakeSender:
             self.mentions.append((contact, names, text))
         return self.ok
 
+    def last_error(self) -> str:
+        """与真实发送器同一接口：派发层会把这条原因写进失败响应。"""
+        return self._last_error
+
 
 def _call(payload: dict) -> dict:
     return asyncio.run(ob_protocol._handle_ob_api(payload))
@@ -483,3 +487,158 @@ def test_group_without_any_name_is_reported(monkeypatch, isolated_ids):
     assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
     assert "本地库里没有这个群" in resp["message"]
     assert sender.texts == []
+
+
+# ---------------------------------------------- message_type 可以省略（按 *_id 推断）
+
+
+def test_send_msg_infers_the_group_from_group_id(monkeypatch, isolated_ids):
+    """不给 message_type 时按 *_id 推断：给了 group_id 就按群聊处理。
+
+    推断错了会发到错误的地方，所以这里必须走群聊那条路（缺什么就报什么），
+    而不是把 group_id 放着不用、回头说「缺少 user_id」。
+    """
+    sender = FakeSender()
+    RUNTIME.sender = sender
+    monkeypatch.setattr(ob_protocol, "_group_name", lambda handle: "")
+    gid = ob_ids.contact_id("70000000000@chatroom")
+    resp = _call(
+        {
+            "action": "send_msg",
+            "params": {"group_id": gid, "message": [{"type": "text", "data": {"text": "hi"}}]},
+        }
+    )
+    assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
+    assert "无法定位群" in resp["message"]
+    assert "缺少" not in resp["message"]
+
+
+def test_send_msg_infers_private_from_user_id(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_msg",
+            "params": {"user_id": uid, "message": [{"type": "text", "data": {"text": "hi"}}]},
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.texts == [("张三", "hi")]
+
+
+def test_unknown_message_type_is_reported(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_msg",
+            "params": {
+                "user_id": uid,
+                "message": [{"type": "text", "data": {"text": "hi"}}],
+                "message_type": "guild",
+            },
+        }
+    )
+    assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
+    assert "message_type" in resp["message"]
+    assert sender.texts == []
+
+
+def test_contradictory_message_type_is_reported(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [{"type": "text", "data": {"text": "hi"}}],
+                "message_type": "group",
+            },
+        }
+    )
+    assert resp["retcode"] == action_catalog.RETCODE_BAD_PARAM
+    assert "矛盾" in resp["message"]
+    assert sender.texts == []
+
+
+# ------------------------------------------------------- 失败原因与部分失败清单
+
+
+def test_failed_send_carries_the_sender_reason(monkeypatch, isolated_ids):
+    """发送失败要带上发送器记下的原因：只回「发送失败」看不出卡在哪一步。"""
+    sender = FakeSender(ok=False)
+    uid = _prepare(monkeypatch, sender)
+    sender._last_error = "输入框有清不掉的残留"
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {"user_id": uid, "message": [{"type": "text", "data": {"text": "hi"}}]},
+        }
+    )
+    assert resp["status"] == "failed"
+    assert "输入框有清不掉的残留" in resp["message"]
+
+
+def test_partial_send_lists_what_did_not_go_out(monkeypatch, isolated_ids):
+    """一段发出去、一段没发出去时，除计数外还要给出原因清单。"""
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [
+                    {"type": "text", "data": {"text": "正文"}},
+                    {"type": "music", "data": {"id": "1"}},
+                ],
+            },
+        }
+    )
+    assert resp["status"] == "ok"
+    assert sender.texts == [("张三", "正文")]
+    assert resp["data"]["failed_segments"] == 1
+    assert "不支持的消息段 music" in resp["data"]["failed_details"][0]
+
+
+# ----------------------------------------------------- 图片解不开时必须说明原因
+
+
+def test_image_only_message_reports_the_image_reason(monkeypatch, isolated_ids):
+    """只发图片、图片又解不开时，报的必须是图片的原因。
+
+    以前这里回的是「message 里没有可发送的内容」，客户端据此更没法排查。
+    """
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [{"type": "image", "data": {"file": "base64://abc"}}],
+            },
+        }
+    )
+    assert resp["status"] == "failed"
+    assert resp["retcode"] == action_catalog.RETCODE_INTERNAL
+    assert "base64 数据不合法" in resp["message"]
+    assert sender.files == []
+
+
+def test_missing_client_attachment_is_reported(monkeypatch, isolated_ids):
+    sender = FakeSender()
+    uid = _prepare(monkeypatch, sender)
+    resp = _call(
+        {
+            "action": "send_private_msg",
+            "params": {
+                "user_id": uid,
+                "message": [{"type": "image", "data": {"file": "查无此图.png"}}],
+            },
+        }
+    )
+    assert resp["status"] == "failed"
+    assert "文件未找到" in resp["message"]
+    assert "查无此图.png" in resp["message"]

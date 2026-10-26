@@ -9,6 +9,7 @@ import ctypes
 import logging
 import os
 import sys
+import threading
 from types import SimpleNamespace
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -430,3 +431,31 @@ def test_search_typing_reuses_the_same_posting(monkeypatch):
     sender._leave_search = lambda: None
     assert sender._search_and_select("群聊测试") is False  # 没打开成功，但字符已投递
     assert state["text"] == "群聊测试"
+
+
+# ------------------------------------------------------ 内容检查（PIL 对象 repr）
+
+
+def test_pil_repr_is_rejected_before_touching_the_window(monkeypatch):
+    """正文里夹着 PIL 对象的 repr 时直接拒发：这种内容不该发，也没必要去碰窗口。"""
+    sender = _sender()
+    touched = []
+    monkeypatch.setattr(sender, "_ensure_window", lambda: touched.append(1) or True)
+    assert sender._send_text_impl("张三", "<PIL.Image.Image image mode=RGB size=8x8>") is False
+    assert "PIL" in sender._last_error
+    assert touched == []
+
+
+def test_pillow_discussion_is_not_rejected(monkeypatch):
+    """讨论 Pillow 的正常正文不算 repr 残留，不能因为「含 PIL.」就发不出去。"""
+    sender = _sender()
+    sender._lock = threading.Lock()
+    monkeypatch.setattr(sender, "_ensure_window", lambda: False)
+    assert sender._send_text_impl("张三", "PIL.Image.open 很好用") is False
+    assert sender._last_error == ""  # 没发出去是窗口不可用，与正文内容无关
+
+
+def test_looks_like_pil_repr_only_matches_the_repr():
+    assert uia_sender._looks_like_pil_repr("<PIL.Image.Image image mode=RGB size=8x8>")
+    assert not uia_sender._looks_like_pil_repr("PIL.Image.open 很好用")
+    assert not uia_sender._looks_like_pil_repr("用 PIL 打开图片")

@@ -162,3 +162,36 @@ def test_pushed_event_carries_integer_ids(isolated_ids, monkeypatch):
     assert row["talker"] == "50071592949@chatroom"
     assert row["local_id"] == 4242
     assert bridge._message_id_for("50071592949@chatroom", 4242) == event["message_id"]
+
+
+# ------------------------------------------------------------- 消息没送出去要记账
+
+
+def _dropped() -> int:
+    return bridge_core.events.EVENTS.counters_copy()["dropped"]
+
+
+def test_a_push_nobody_received_is_counted_as_dropped(isolated_ids, monkeypatch):
+    """没有客户端在线时这条消息就没了，计数器必须记下来。
+
+    仪表盘上的「丢弃」以前永远是 0：_push_entry 算出 sent 却没人记账，出了问题
+    只能翻日志猜。
+    """
+    bridge = _make_bridge()
+    monkeypatch.setattr(bridge_core, "push_event", lambda ev: 0)
+    before = _dropped()
+    bridge.emit_message(dict(GROUP_MSG))
+    assert _dropped() == before + 1
+
+
+def test_a_failed_push_is_counted_as_dropped(isolated_ids, monkeypatch):
+    """推送抛异常同样等于这条消息没了：不能只是打条日志、计数器不动。"""
+
+    def _boom(event):
+        raise RuntimeError("通道断了")
+
+    bridge = _make_bridge()
+    monkeypatch.setattr(bridge_core, "push_event", _boom)
+    before = _dropped()
+    bridge.emit_message(dict(GROUP_MSG))
+    assert _dropped() == before + 1

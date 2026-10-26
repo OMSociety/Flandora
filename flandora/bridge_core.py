@@ -374,10 +374,13 @@ class Flandora:
                 log.info(f"已推送至 {sent} 个 OneBot 客户端 [{contact}]")
                 events.bump("pushed")
             else:
-                log.warning(f"无 OneBot 客户端在线 [{contact}]")
+                # 没有客户端在线等于这条消息没有出口，如实记进丢弃计数（不重试）
+                log.warning(f"无 OneBot 客户端在线 [{contact}]，本条未推送")
+                events.bump("dropped")
 
         except Exception as e:
-            log.error(f"推送消息异常 [{contact}]: {e}")
+            log.error(f"推送消息异常 [{contact}]，本条已丢弃（不会重试）: {e}")
+            events.bump("dropped")
 
     def _ingest(self, data):
         """一条消息进入桥接链路的唯一入口。

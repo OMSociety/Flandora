@@ -235,6 +235,24 @@ async function applyRestore() {
 
 <template>
   <div class="access-section">
+    <section class="card settings-section" aria-labelledby="access-autostart-heading">
+      <div class="section-head">
+        <div>
+          <h3 id="access-autostart-heading" class="card-title">开机启动</h3>
+          <p class="card-description">登录 Windows 后自动在托盘里启动管理器，桥接跟着起来。</p>
+        </div>
+        <AppIcon name="Zap" :size="19" />
+      </div>
+      <label class="check-label">
+        <input type="checkbox" :checked="autostart.enabled" :disabled="autostartBusy || !autostart.command" @change="toggleAutostart" />
+        登录后自动启动 Flandora
+      </label>
+      <p v-if="autostart.command" class="autostart-command mono">开机执行：{{ autostart.command }}</p>
+      <p v-if="!autostart.command && autostart.reason" class="hint">{{ autostart.reason }}</p>
+      <p v-if="autostartError" class="autostart-error">{{ autostartError }}</p>
+      <p v-else class="hint">写在当前用户的 Run 项里，不需要管理员权限；勾选或取消立刻生效。</p>
+    </section>
+
     <section class="card settings-section" aria-labelledby="access-password-heading">
       <div class="section-head">
         <div>
@@ -310,24 +328,6 @@ async function applyRestore() {
         <button type="button" class="btn btn-outline btn-sm" :disabled="restarting" @click="restartDialog = true"><AppIcon name="RotateCcw" :size="14" />重启桥接服务</button>
       </div>
       <SectionFoot :saving="tlsSaving" :saved="tlsSaved" :disabled="!certDirty" label="保存证书" hint="替换证书后重启生效" @save="saveTls" />
-    </section>
-
-    <section class="card settings-section" aria-labelledby="access-autostart-heading">
-      <div class="section-head">
-        <div>
-          <h3 id="access-autostart-heading" class="card-title">开机启动</h3>
-          <p class="card-description">登录 Windows 后自动在托盘里启动管理器，桥接跟着起来。</p>
-        </div>
-        <AppIcon name="Zap" :size="19" />
-      </div>
-      <label class="check-label">
-        <input type="checkbox" :checked="autostart.enabled" :disabled="autostartBusy || !autostart.command" @change="toggleAutostart" />
-        登录后自动启动 Flandora
-      </label>
-      <p v-if="autostart.command" class="autostart-command mono">开机执行：{{ autostart.command }}</p>
-      <p v-if="!autostart.command && autostart.reason" class="hint">{{ autostart.reason }}</p>
-      <p v-if="autostartError" class="autostart-error">{{ autostartError }}</p>
-      <p v-else class="hint">写在当前用户的 Run 项里，不需要管理员权限；勾选或取消立刻生效。</p>
     </section>
 
     <section class="card settings-section" aria-labelledby="access-backup-heading">

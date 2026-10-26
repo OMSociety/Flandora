@@ -15,7 +15,7 @@ import os
 import re
 import time
 
-from . import config, wechat_account, wx_crypto, wx_store
+from . import config, wechat_account, wx_crypto, wx_emoticon, wx_store
 from .domain.content import IMAGE_PLACEHOLDER
 from .wx_image_key import aes_key_from_payload
 from .wx_store import WxStoreError
@@ -290,15 +290,24 @@ class WxLocalSource:
 
         `talker` 是这条消息所在的会话：资源库里的消息序号是会话内的，缺了它就会
         把别的会话的同号图片当成这条消息的图。
+
+        表情（贴纸）不进资源库，走表情缓存那条路：md5 → 本地 Emoticon 缓存 →
+        账号 seed 派生密钥解密 → wxgf/HEVC 或 GIF/PNG 本体。
         """
-        if not self.store.image_ready():
-            return ""
         body = msg.get("text") or ""
         m = re.search(r'md5="([0-9a-fA-F]{32})"', body)
         if not m:
             return ""
+        md5 = m.group(1).lower()
+        if msg.get("kind") == "emoji":
+            try:
+                return wx_emoticon.image_for(md5)
+            except wx_emoticon.EmoticonError as exc:
+                log.debug("表情还原失败：%s", exc)
+                return ""
+        if not self.store.image_ready():
+            return ""
         try:
-            md5 = m.group(1).lower()
             return self.store.extract_image(md5, int(msg.get("local_id") or 0), talker=talker) or ""
         except Exception as exc:  # noqa: BLE001 - 单张图失败不该影响整条消息
             log.debug("图片还原失败：%s", exc)

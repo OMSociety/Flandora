@@ -286,6 +286,9 @@ def bridge_extras() -> list[str]:
             "uvicorn.protocols.websockets.websockets_impl",
             "--hidden-import",
             "uvicorn.lifespan.on",
+            # 表情缓存里的 wxgf 是 HEVC：PyAV 自带解码器，钩子会把它的 FFmpeg 动态库收进来
+            "--hidden-import",
+            "av",
         ]
     )
     return extras

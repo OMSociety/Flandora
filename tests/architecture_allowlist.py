@@ -38,6 +38,7 @@ MODULE_STATE: dict[str, frozenset[str]] = {
     "flandora/update_check.py": frozenset({"log"}),
     "flandora/updater.py": frozenset({"log"}),
     "flandora/wechat_account.py": frozenset({"log"}),
+    "flandora/wx_emoticon.py": frozenset({"log"}),
     "flandora/webui/api/auth.py": frozenset({"log", "router"}),
     "flandora/webui/api/autostart.py": frozenset({"log", "router"}),
     "flandora/webui/api/config.py": frozenset({"log", "router"}),

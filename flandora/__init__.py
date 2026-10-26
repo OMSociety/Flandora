@@ -15,6 +15,7 @@
     wx_crypto        SQLCipher 4 页解密
     wx_store         读本地库
     wx_image         图片 .dat 还原
+    wx_emoticon      表情缓存解密（seed 派生密钥 → wxgf/HEVC → GIF/PNG）
     wx_desktop       隔离桌面
 """
 

@@ -18,7 +18,7 @@
   <a href="https://github.com/OMSociety/Flandora/issues">问题反馈</a>
 </p>
 
-Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录的瞬间截获这台电脑上的数据库口令，只读解密聊天库收取消息，并以账号本人身份在隔离桌面上投递回复。对外按 [OneBot v11](https://github.com/botuniverse/onebot-11) 提供四类入口（正向 WS 服务端、HTTP 服务端、反向 WS、HTTP 上报，默认起 `ws://127.0.0.1:7999/`），另带一个浏览器面板（`http://127.0.0.1:4950`）。
+Flandora 是面向微信 PC 客户端的 Windows 桥接程序：只读解密聊天库收取消息，并以在隔离桌面上投递回复。对外按 [OneBot v11](https://github.com/botuniverse/onebot-11) 提供四类入口（正向 WS 服务端、HTTP 服务端、反向 WS、HTTP 上报），通过 WebUI （默认端口：4950）进行配置。
 
 > [!CAUTION]
 > Flandora 是独立的第三方项目，与腾讯 / 微信无隶属或授权关系。项目仅供学习与技术研究，请遵守《微信软件许可及服务协议》及适用法律；以自动化方式驱动自己的客户端存在账号被限制或封禁的风险，软件按「现状」提供，使用风险自负。详见[使用边界与许可](#使用边界与许可)。
@@ -35,16 +35,16 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：在微信登录�
 
 1. 从 [Releases](https://github.com/OMSociety/Flandora/releases) 取发布包，二选一：
 
-   - `Flandora-v1.0.0-setup.exe`：安装包，装到 `%LOCALAPPDATA%\Programs\Flandora`；安装向导里可以顺手勾上「开机自动启动」与桌面快捷方式。
+   - `Flandora-v1.0.0-setup.exe`：安装包，默认装到 `%LOCALAPPDATA%\Programs\Flandora`。
    - `Flandora-v1.0.0.zip`：便携包，解压到任意目录即可，`data\` 会生成在 `Flandora.exe` 旁边。
 
-2. 退出自己的微信，双击 `Flandora.exe`。它在通知区域常驻并拉起桥接；左键图标或菜单「打开面板」都能打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)，第一次运行（还没有 `data/config.json`）会自己弹出面板。
+2. 退出自己的微信，双击 `Flandora.exe`。它在任务栏常驻并拉起桥接；左键图标或菜单「打开面板」都能打开 [`http://127.0.0.1:4950`](http://127.0.0.1:4950)，第一次运行（还没有 `data/config.json`）会自己弹出面板。
 
-3. 在面板里走完「取钥向导」四步：勾选免责声明 → 数据库口令（在向导里的实况画面重新登录一次微信）→ 图片密钥（要让机器人看图才需要：在实况画面里点开一张没看过的图）→ 校验完成。
+3. 在面板里走完「取钥向导」四步：勾选免责声明 → 数据库口令（在向导里的实况画面重新登录一次微信）→ 图片密钥（在实况画面里点开一张没看过的图）→ 校验完成。
 
    面板打不开、桥接没起来时，从托盘菜单「打开日志」看最后几行；日志文件在 `data/flandora.log`，对应的失败原因多半写在里面。
 
-之后让客户端连上来即可。
+完成配置后即可连接客户端。
 
 ## 文档
 

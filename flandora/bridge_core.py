@@ -286,13 +286,16 @@ class Flandora:
         return segments
 
     @staticmethod
-    def _bind_outgoing_server(talker: str, server_id: str) -> None:
+    def _bind_outgoing_server(talker: str, server_id: str, sent_at: float) -> None:
         """把自己发出的一条消息绑到服务端号上。
 
         客户端引用机器人自己的消息时，`<refermsg><svrid>` 指的就是这个号；绑上之后
-        `get_msg` 回得出原文，客户端「引用了机器人」的唤醒也就自然成立。
+        `get_msg` 回得出原文，客户端「引用了机器人」的唤醒也就自然成立。启动补报会把
+        已经绑过的号再报一次，这里按服务端号先查，认领过的不再动。
         """
-        bound = ob_ids.bind_pending_outgoing(str(talker), str(server_id))
+        if ob_ids.message_by_server(str(server_id)) is not None:
+            return
+        bound = ob_ids.bind_pending_outgoing(str(talker), str(server_id), float(sent_at or 0.0))
         if bound is not None:
             log.debug(f"[OB11] 出站消息 {bound} 绑上服务端号 {server_id}")
 

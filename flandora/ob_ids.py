@@ -234,23 +234,33 @@ class MessageIds:
         return int(row["message_id"]) if row is not None else None
 
     def bind_pending_outgoing(
-        self, talker: str, server_id: str, *, within: float = 300.0
+        self,
+        talker: str,
+        server_id: str,
+        sent_at: float,
+        *,
+        tolerance: float = 120.0,
     ) -> int | None:
         """把一条还没绑服务端号的出站消息绑到 ``server_id``。
 
         自己发出的消息在发号时就拿到了 message_id，但服务端号只有回读本地库才看得见
-        （客户端引用机器人自己的消息时，`<refermsg><svrid>` 指着它）。同一会话里发出
-        的顺序与本地库里的行序一致，所以认最早那条空号；发出超过 ``within`` 秒还没
-        回读到就不认了，免得把后来的消息绑到它身上。
+        （客户端引用机器人自己的消息时，`<refermsg><svrid>` 指着它）。认领范围收在
+        ``sent_at`` 前后 ``tolerance`` 秒内，再在里面挑最早那条空号：轮询回读时新消息
+        与空号只差几秒，重启补报时同一次会话里发出的顺序也没变，两种情形都对得上；
+        隔得更远的空号不认领，免得把号绑到别的消息身上。
         """
         if not isinstance(talker, str) or not talker or not server_id:
+            return None
+        when = float(sent_at or 0.0)
+        if when <= 0:
             return None
         with self._lock:
             row = self._conn.execute(
                 "SELECT message_id FROM msg_ids"
-                " WHERE talker = ? AND outgoing = 1 AND server_id = '' AND created >= ?"
+                " WHERE talker = ? AND outgoing = 1 AND server_id = ''"
+                " AND ABS(created - ?) <= ?"
                 " ORDER BY message_id ASC LIMIT 1",
-                (talker, time.time() - max(0.0, float(within))),
+                (talker, when, max(0.0, float(tolerance))),
             ).fetchone()
             if row is None:
                 return None
@@ -357,6 +367,10 @@ def ensure_message_id(talker: str, local_id: int, **kwargs) -> int:
 
 def allocate_message_id(talker: str, **kwargs) -> int:
     return message_ids().allocate(talker, **kwargs)
+
+
+def message_by_server(server_id: str) -> int | None:
+    return message_ids().message_by_server(server_id)
 
 
 def bind_pending_outgoing(talker: str, server_id: str, **kwargs) -> int | None:

@@ -25,6 +25,7 @@ log = logging.getLogger("flandora")
 
 MAX_BATCH = 200  # 单次轮询每个会话最多取多少条
 PRIME_LIMIT = 500  # 计算回填起点时最多往前看多少条
+OUTGOING_BACKFILL = 200  # 启动时每个会话最多回看多少条，用来补报已发消息的服务端号
 
 
 class WxSourceError(Exception):
@@ -100,8 +101,8 @@ class WxLocalSource:
         # 本进程开始收件的时刻：启动之后新出现的会话靠它划分「历史」与「刚到的」
         self.started_at = int(time.time())
         self._primed = False
-        # 自己发出的消息不推送（防自回环），但要把它的服务端号交给上层绑号：
-        # 客户端引用机器人自己的消息时，靠那个号回查得到原文。
+        # 自己发出的消息不推送（防自回环），但要把它的服务端号与发出时刻交给上层
+        # 绑号：客户端引用机器人自己的消息时，靠那个号回查得到原文。
         self.on_outgoing = on_outgoing
 
     # ---------- 启动 ----------
@@ -128,6 +129,9 @@ class WxLocalSource:
             log.info(f"本地库收件：回填窗口 {self.backfill_seconds} 秒，涉及 {replayed} 条历史消息")
         else:
             log.info(f"本地库收件：已就位，{len(self.cursors)} 个会话从当前位置开始")
+        sent = self._backfill_outgoing()
+        if sent:
+            log.info(f"本地库出站号：补报 {sent} 条已发消息，绑号按发出时刻就近认领")
 
     # ---------- 轮询 ----------
 
@@ -167,16 +171,41 @@ class WxLocalSource:
         return out
 
     def _report_outgoing(self, username: str, msg) -> None:
-        """把自己发出的一条消息的服务端号报给上层。绑号失败不影响收件。"""
+        """把自己发出的一条消息的服务端号与发出时刻报给上层。绑号失败不影响收件。"""
         if self.on_outgoing is None:
             return
         server_id = str(msg.get("server_id") or "")
         if not server_id:
             return
         try:
-            self.on_outgoing(username, server_id)
+            self.on_outgoing(username, server_id, float(msg.get("create_time") or 0))
         except Exception as e:  # noqa: BLE001 - 绑号只影响引用回查，不该挡住收件
             log.debug("出站服务端号上报失败（%s）：%s", username, e)
+
+    def _backfill_outgoing(self) -> int:
+        """启动时补报已经发出去的消息。
+
+        轮询只看游标之后的新行，重启前发出的消息永远等不到上报，客户端引用它们时回查
+        不到原文。这里按会话回看尾部若干条，把带服务端号的出站行报一遍——绑号按发出
+        时刻就近认领（见 ``ob_ids.bind_pending_outgoing``），已经绑过的号由上层按服务端
+        号先查一次挡掉。
+        """
+        if self.on_outgoing is None:
+            return 0
+        reported = 0
+        for s in self.store.sessions():
+            username = s["username"]
+            try:
+                msgs = self.store.recent_messages(username, limit=OUTGOING_BACKFILL)
+            except WxStoreError as e:
+                log.debug("读取 %s 的近期消息失败：%s", username, e)
+                continue
+            for m in msgs:
+                if not m["outgoing"] or not str(m.get("server_id") or ""):
+                    continue
+                self._report_outgoing(username, m)
+                reported += 1
+        return reported
 
     def _boundary_cursor(self, username: str, latest: int) -> int:
         """新会话的起读游标：分界之前最后一条的 local_id（没有就是 0）。
@@ -338,8 +367,9 @@ def _parse_aes_key(raw: str) -> bytes:
 def build_source(key_file: str = None, on_outgoing=None) -> WxLocalSource:
     """按配置开一个收件源。
 
-    ``on_outgoing(talker, server_id)`` 是可选回调：轮询到自己发出的消息时，把它的
-    服务端号交给上层绑到 message_id 上（客户端引用机器人自己的消息时要用）。
+    ``on_outgoing(talker, server_id, sent_at)`` 是可选回调：轮询到自己发出的消息时，
+    把它的服务端号与发出时刻交给上层绑到 message_id 上（客户端引用机器人自己的消息时
+    要用）；启动时还会按会话尾部补报一遍，重启之前发出的消息也绑得上。
     """
     root = config.WECHAT_FILES_ROOT or wechat_account.default_root()
     account = wechat_account.current_account(root)

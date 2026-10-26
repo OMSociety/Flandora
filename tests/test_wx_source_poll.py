@@ -31,6 +31,10 @@ class _StubStore:
         rows = [m for m in self._messages.get(username, []) if m["local_id"] > after_local_id]
         return [dict(m) for m in rows[:limit]]
 
+    def recent_messages(self, username, limit=20):
+        rows = self._messages.get(username, [])
+        return [dict(m) for m in rows[-limit:]]
+
     def display_names(self):
         return dict(self._names)
 
@@ -144,21 +148,21 @@ def test_self_sent_messages_are_reported_not_pushed():
     """自己发出的消息不推送（防自回环），但要把服务端号交给上层绑号。"""
     store = _StubStore([{"username": "wxid_a", "is_group": False, "last_local_id": 0}])
     seen = []
-    src = _source(store, on_outgoing=lambda talker, sid: seen.append((talker, sid)))
+    src = _source(store, on_outgoing=lambda talker, sid, when: seen.append((talker, sid, when)))
     src.prime()
 
     now = int(time.time())
     store.add_message("wxid_a", 1, now, "我发的", outgoing=True, server_id="srv-1")
     assert src.poll() == []
-    assert seen == [("wxid_a", "srv-1")]
+    assert seen == [("wxid_a", "srv-1", float(now))]
 
     # 本地库还没回读到服务端号的行：只跳推送，不报空号
     store.add_message("wxid_a", 2, now, "还没回读到", outgoing=True)
     assert src.poll() == []
-    assert seen == [("wxid_a", "srv-1")]
+    assert seen == [("wxid_a", "srv-1", float(now))]
 
     # 绑号抛异常不该挡住收件
-    def boom(talker, sid):
+    def boom(talker, sid, when):
         raise RuntimeError("bind failed")
 
     src.on_outgoing = boom
@@ -166,7 +170,7 @@ def test_self_sent_messages_are_reported_not_pushed():
     assert src.poll() == []
     store.add_message("wxid_a", 4, now, "收到一条", server_id="srv-3")
     assert [m["content"] for m in src.poll()] == ["收到一条"]
-    assert seen == [("wxid_a", "srv-1")]
+    assert seen == [("wxid_a", "srv-1", float(now))]
 
 
 def test_new_session_refreshes_display_names():
@@ -179,3 +183,18 @@ def test_new_session_refreshes_display_names():
     store.add_message("wxid_new", 1, int(time.time()), "在吗")
     store.remember("wxid_new", "新朋友")
     assert [m["sourceName"] for m in src.poll()] == ["新朋友"]
+
+
+def test_startup_reports_already_sent_messages():
+    """重启前发出的消息轮询看不到，启动时按会话尾部补报一次，服务端号才绑得上。"""
+    store = _StubStore([{"username": "wxid_a", "is_group": False, "last_local_id": 2}])
+    now = int(time.time())
+    store.add_message("wxid_a", 1, now - 60, "重启前发的", outgoing=True, server_id="srv-old")
+    store.add_message("wxid_a", 2, now - 30, "重启前收到的", server_id="srv-in")
+    seen = []
+    src = _source(store, on_outgoing=lambda talker, sid, when: seen.append((talker, sid, when)))
+    src.prime()
+
+    assert seen == [("wxid_a", "srv-old", float(now - 60))]
+    # 补报不改变收件：启动前的那条照旧算历史，不重放
+    assert src.poll() == []

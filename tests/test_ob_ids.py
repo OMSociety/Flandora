@@ -3,6 +3,7 @@
 import json
 import os
 import sys
+import time
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -205,32 +206,37 @@ def test_outgoing_ids_bind_to_server_ids_in_order(tmp_path):
     """自己发出的号按发出顺序绑到服务端号：客户端引用机器人消息时靠它回查。"""
     ids = MessageIds(str(tmp_path / "msg.db"))
     try:
+        now = time.time()
         first = ids.allocate("wxid_bob")
         second = ids.allocate("wxid_bob")
-        assert ids.bind_pending_outgoing("wxid_bob", "srv-1") == first
-        assert ids.bind_pending_outgoing("wxid_bob", "srv-2") == second
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-1", now) == first
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-2", now) == second
         assert ids.message_by_server("srv-1") == first
         assert ids.message_by_server("srv-2") == second
         # 两个号都绑完了，没得绑返回 None；别的会话不会捡走这条
-        assert ids.bind_pending_outgoing("wxid_bob", "srv-3") is None
-        assert ids.bind_pending_outgoing("wxid_alice", "srv-1") is None
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-3", now) is None
+        assert ids.bind_pending_outgoing("wxid_alice", "srv-1", now) is None
     finally:
         ids.close()
 
 
 def test_stale_or_foreign_ids_are_not_bound(tmp_path):
-    """太久没回读到的号、收件消息的号、坏参数，都不吃绑定。"""
+    """隔得太远的、收件消息的号、坏参数，都不吃绑定。"""
     ids = MessageIds(str(tmp_path / "msg.db"))
     try:
         stale = ids.allocate("wxid_bob")
-        assert ids.bind_pending_outgoing("wxid_bob", "srv-late", within=0.0) is None
+        # 本地库回读到的这条与发出时刻差了整整一天：不认领，免得绑到别的消息身上
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-late", time.time() - 86400) is None
         assert ids.lookup(stale)["server_id"] == ""
+        # 刚刚发出的那条还在，按它自己的时刻就绑得上
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-now", time.time()) == stale
 
         incoming = ids.ensure("wxid_bob", 9, server_id="srv-in", outgoing=False)
-        assert ids.bind_pending_outgoing("wxid_bob", "srv-x") == stale
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-x", time.time()) is None
         assert ids.lookup(incoming)["server_id"] == "srv-in"
 
-        assert ids.bind_pending_outgoing("", "srv-y") is None
-        assert ids.bind_pending_outgoing("wxid_bob", "") is None
+        assert ids.bind_pending_outgoing("", "srv-y", time.time()) is None
+        assert ids.bind_pending_outgoing("wxid_bob", "", time.time()) is None
+        assert ids.bind_pending_outgoing("wxid_bob", "srv-z", 0.0) is None
     finally:
         ids.close()

@@ -98,7 +98,7 @@ async def api_send(payload: dict):
         )
     except Exception as e:
         log.error(f"[WebUI] 测试发送异常: {e}")
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        return JSONResponse({"ok": False, "error": "测试发送失败，详细原因见运行日志"}, 500)
 
     if outcomes and outcomes[0].status is SendStatus.SENT:
         events.record_outbound(contact, "manual", text)

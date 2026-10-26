@@ -89,7 +89,8 @@ def _asset_for(tag: str) -> str:
     try:
         body = _fetch(page, TIMEOUT).decode("utf-8", "replace")
     except Exception as e:  # noqa: BLE001 - 页面结构会变，失败就退到约定命名
-        raise UpdateError(f"取不到 {tag} 的资源列表：{type(e).__name__}: {e}") from e
+        log.warning(f"[更新] 取不到 {tag} 的资源列表: {e}")
+        raise UpdateError(f"取不到 {tag} 的资源列表：网络或接口异常，详细原因见运行日志") from e
     match = ASSET_RE.search(body)
     if not match:
         # 退路：build.py 的命名约定是 Flandora-v<版本>.zip
@@ -126,7 +127,8 @@ def latest_release(timeout: float = TIMEOUT) -> dict:
     try:
         body = _fetch(feed, timeout)
     except Exception as e:  # noqa: BLE001 - 网络问题统一归一成能展示的错
-        raise UpdateError(f"查不到最新版本：{type(e).__name__}: {e}") from e
+        log.warning(f"[更新] 查不到最新版本: {e}")
+        raise UpdateError("查不到最新版本：网络或接口异常，详细原因见运行日志") from e
     tags = re.findall(r"<title>([^<]+)</title>", body.decode("utf-8", "replace"))
     # 第一个 <title> 是订阅本身的标题（形如「Release notes from Flandora」），版本在之后
     candidates = [
@@ -186,7 +188,8 @@ def download(
         raise
     except Exception as e:  # noqa: BLE001 - 下载失败的各种网络异常统一归一
         _remove_quietly(part)
-        raise UpdateError(f"下载失败：{type(e).__name__}: {e}") from e
+        log.warning(f"[更新] 下载失败: {e}")
+        raise UpdateError("下载失败：网络或接口异常，详细原因见运行日志") from e
     if total == 0:
         _remove_quietly(part)
         raise UpdateError("下载到 0 字节，安装包地址可能已经失效")
@@ -224,7 +227,8 @@ def extract(archive_path: str, target_dir: str) -> str:
             safe_members(archive)
             archive.extractall(target_dir)
     except zipfile.BadZipFile as e:
-        raise UpdateError(f"不是有效的 zip：{e}") from e
+        log.warning(f"[更新] 解压失败: {e}")
+        raise UpdateError("下载到的文件不是有效的 zip（可能没下完），详细原因见运行日志") from e
 
     for root, _dirs, files in os.walk(target_dir):
         if "Flandora.exe" in files:
@@ -244,7 +248,8 @@ def _check_exe_size(exe_path: str) -> None:
     try:
         size = os.path.getsize(exe_path)
     except OSError as e:
-        raise UpdateError(f"读不到安装包里的 Flandora.exe：{e}") from e
+        log.warning(f"[更新] 读不到安装包里的 Flandora.exe: {e}")
+        raise UpdateError("读不到安装包里的 Flandora.exe（解压失败），详细原因见运行日志") from e
     if size < MIN_EXE_BYTES:
         raise UpdateError(f"安装包里的 Flandora.exe 只有 {size} 字节，明显不完整，拒绝安装")
 

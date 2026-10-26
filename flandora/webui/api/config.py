@@ -103,7 +103,8 @@ def _install_tls_pem(payload: dict) -> str:
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(temps[0], temps[1])
     except Exception as e:  # noqa: BLE001
-        return f"证书或私钥没法解析：{e}"
+        log.error(f"[WebUI] 证书或私钥没法解析: {e}")
+        return "证书或私钥没法解析，详细原因见运行日志"
     finally:
         for path in temps:
             try:
@@ -124,7 +125,8 @@ def api_get_config():
     try:
         cfg = dict(deps.config_store().read_raw())
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        log.error(f"[WebUI] 读配置失败: {e}")
+        return JSONResponse({"ok": False, "error": "读不到配置文件，详细原因见运行日志"}, 500)
     # 哈希本身不算凭据，但也没必要发给浏览器；面板只需要知道「设没设」
     cfg["webui_password_set"] = bool(str(cfg.pop("webui_password", "") or ""))
     # 这几个键可能是新加的、还没写进 config.json（按默认值在跑），面板要按生效值显示
@@ -241,7 +243,7 @@ def api_put_config(payload: dict, response: Response):
         }
     except Exception as e:
         log.error(f"[WebUI] 保存配置异常: {e}")
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        return JSONResponse({"ok": False, "error": "保存失败，详细原因见运行日志"}, 500)
 
 
 @router.get("/api/config/backup")
@@ -250,7 +252,8 @@ def api_config_backup(include_sensitive: int = 0):
     try:
         cfg = dict(deps.config_store().read_raw())
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        log.error(f"[WebUI] 导出配置失败: {e}")
+        return JSONResponse({"ok": False, "error": "导出配置失败，详细原因见运行日志"}, 500)
     excluded = []
     if not include_sensitive:
         for key in config_fields.secret_keys():
@@ -295,7 +298,7 @@ def api_config_restore(payload: dict):
         return JSONResponse({"ok": False, "error": str(e)}, 400)
     except Exception as e:
         log.error(f"[WebUI] 恢复配置失败: {e}")
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        return JSONResponse({"ok": False, "error": "恢复配置失败，详细原因见运行日志"}, 500)
     # 能即时生效的（HOT）已经由订阅者套上；密码哈希换了要连会话一起作废
     password_restored = "webui_password" in incoming
     if password_restored:

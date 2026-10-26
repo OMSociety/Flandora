@@ -5,8 +5,12 @@
 import：缺桌面能力的环境（非 Windows）只让这几条端点报错，不影响面板其余部分。
 """
 
+import logging
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse, Response
+
+log = logging.getLogger("flandora")
 
 router = APIRouter()
 
@@ -28,17 +32,27 @@ DEFER_REASONS: dict[str, str] = {
 }
 
 
+def _module_missing(exc: ImportError) -> JSONResponse:
+    """隔离桌面模块导入失败：异常原文只进日志，响应只给原因。"""
+    log.error(f"[WebUI] 隔离桌面模块不可用: {exc}")
+    return JSONResponse(
+        {"ok": False, "error": "隔离桌面模块不可用（缺依赖或导入失败），详细原因见运行日志"},
+        500,
+    )
+
+
 @router.get("/api/desktop/status")
 def api_desktop_status():
     """隔离桌面的运行与登录状态。"""
     try:
         from ... import wx_desktop
     except ImportError as e:
-        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+        return _module_missing(e)
     try:
         return {"ok": True, **wx_desktop.manager().status()}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        log.error(f"[WebUI] 读取隔离桌面状态失败: {e}")
+        return JSONResponse({"ok": False, "error": "读取隔离桌面状态失败，详细原因见运行日志"}, 500)
 
 
 @router.post("/api/desktop/start")
@@ -47,7 +61,7 @@ def api_desktop_start():
     try:
         from ... import wx_desktop
     except ImportError as e:
-        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+        return _module_missing(e)
     mgr = wx_desktop.manager()
     if not mgr.enabled():
         return JSONResponse(
@@ -68,7 +82,7 @@ def api_desktop_stop():
     try:
         from ... import wx_desktop
     except ImportError as e:
-        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+        return _module_missing(e)
     wx_desktop.manager().stop()
     return {"ok": True, **wx_desktop.manager().status()}
 
@@ -83,7 +97,7 @@ def api_desktop_quit_default_wechat():
     try:
         from ... import wx_desktop
     except ImportError as e:
-        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+        return _module_missing(e)
     killed = wx_desktop.quit_default_desktop_wechat()
     if not killed:
         return JSONResponse({"ok": False, "error": "没找到默认桌面上的微信窗口"}, 404)
@@ -100,7 +114,7 @@ def api_desktop_screenshot():
     try:
         from ... import wx_desktop
     except ImportError as e:
-        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+        return _module_missing(e)
     mgr = wx_desktop.manager()
     if not mgr.enabled():
         return JSONResponse({"ok": False, "error": "隔离桌面模式未开启"}, 400)
@@ -120,7 +134,7 @@ def api_desktop_click(payload: dict):
     try:
         from ... import wx_desktop
     except ImportError as e:
-        return JSONResponse({"ok": False, "error": f"隔离桌面模块不可用: {e}"}, 500)
+        return _module_missing(e)
     try:
         x = int((payload or {}).get("x", -1))
         y = int((payload or {}).get("y", -1))

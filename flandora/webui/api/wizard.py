@@ -5,8 +5,12 @@
 原因见 ``DEFER_REASONS``；查询与取消登记为 ``call``。
 """
 
+import logging
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
+
+log = logging.getLogger("flandora")
 
 router = APIRouter()
 
@@ -35,7 +39,11 @@ def _wizard_or_error():
     try:
         from ... import wizard as wizard_mod
     except ImportError as e:
-        return None, JSONResponse({"ok": False, "error": f"取钥向导模块不可用: {e}"}, 500)
+        log.error(f"[WebUI] 取钥向导模块不可用: {e}")
+        return None, JSONResponse(
+            {"ok": False, "error": "取钥向导模块不可用（缺依赖或导入失败），详细原因见运行日志"},
+            500,
+        )
     return wizard_mod.wizard(), None
 
 
@@ -48,7 +56,8 @@ def api_wizard_status():
     try:
         return {"ok": True, **wiz.status()}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        log.error(f"[WebUI] 读取取钥向导状态失败: {e}")
+        return JSONResponse({"ok": False, "error": "读取取钥向导状态失败，详细原因见运行日志"}, 500)
 
 
 @router.post("/api/wizard/disclaimer")
@@ -60,7 +69,8 @@ def api_wizard_disclaimer():
     try:
         return {"ok": True, **wiz.accept_disclaimer()}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 400)
+        log.error(f"[WebUI] 确认免责声明失败: {e}")
+        return JSONResponse({"ok": False, "error": "确认免责声明失败，详细原因见运行日志"}, 400)
 
 
 @router.post("/api/wizard/dbkey/start")
@@ -72,7 +82,8 @@ def api_wizard_dbkey_start():
     try:
         return {"ok": True, **wiz.start_dbkey()}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 400)
+        log.error(f"[WebUI] 启动取数据库口令失败: {e}")
+        return JSONResponse({"ok": False, "error": "启动取数据库口令失败，详细原因见运行日志"}, 400)
 
 
 @router.post("/api/wizard/dbkey/cancel")
@@ -92,7 +103,8 @@ def api_wizard_dbkey_manual(payload: dict):
     try:
         return {"ok": True, **wiz.save_manual_passphrase((payload or {}).get("passphrase", ""))}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 400)
+        log.error(f"[WebUI] 手动填入口令失败: {e}")
+        return JSONResponse({"ok": False, "error": "手动填入口令失败，详细原因见运行日志"}, 400)
 
 
 @router.post("/api/wizard/imagekey/start")
@@ -104,7 +116,8 @@ def api_wizard_imagekey_start():
     try:
         return {"ok": True, **wiz.start_imagekey()}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 400)
+        log.error(f"[WebUI] 启动图片密钥扫描失败: {e}")
+        return JSONResponse({"ok": False, "error": "启动图片密钥扫描失败，详细原因见运行日志"}, 400)
 
 
 @router.post("/api/wizard/imagekey/cancel")
@@ -124,7 +137,8 @@ def api_wizard_verify():
     try:
         return {"ok": True, **wiz.verify()}
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 400)
+        log.error(f"[WebUI] 口令校验失败: {e}")
+        return JSONResponse({"ok": False, "error": "口令校验失败，详细原因见运行日志"}, 400)
 
 
 @router.post("/api/wizard/reset")

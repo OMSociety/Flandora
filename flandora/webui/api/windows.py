@@ -37,7 +37,8 @@ def api_windows():
     try:
         wins = win32_windows.enum_wechat_windows()
     except Exception as e:
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        log.error(f"[WebUI] 枚举微信窗口失败: {e}")
+        return JSONResponse({"ok": False, "error": "枚举微信窗口失败，详细原因见运行日志"}, 500)
 
     cur_hwnd = 0
     sender = deps.sender()

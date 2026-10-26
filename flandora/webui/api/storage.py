@@ -44,7 +44,7 @@ def api_storage():
         return {"ok": True, **storage.overview()}
     except Exception as e:  # noqa: BLE001
         log.error(f"[WebUI] 统计存储占用失败: {e}")
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        return JSONResponse({"ok": False, "error": "统计存储占用失败，详细原因见运行日志"}, 500)
 
 
 @router.post("/api/storage/clean")
@@ -58,7 +58,7 @@ def api_storage_clean(payload: dict):
         result = func()
     except Exception as e:  # noqa: BLE001
         log.error(f"[WebUI] 清理 {target} 失败: {e}")
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        return JSONResponse({"ok": False, "error": f"清理 {target} 失败，详细原因见运行日志"}, 500)
     log.info(f"[WebUI] 存储清理 {target}: {result}")
     return {"ok": True, "target": target, **result}
 
@@ -83,7 +83,9 @@ def api_storage_messages(payload: dict):
             return {"ok": True, "action": action, **storage.messages_vacuum()}
     except Exception as e:  # noqa: BLE001
         log.error(f"[WebUI] 消息存档操作 {action} 失败: {e}")
-        return JSONResponse({"ok": False, "error": str(e)}, 500)
+        return JSONResponse(
+            {"ok": False, "error": f"消息存档操作 {action} 失败，详细原因见运行日志"}, 500
+        )
     return JSONResponse({"ok": False, "error": f"不认识的动作：{action or '(空)'}"}, 400)
 
 

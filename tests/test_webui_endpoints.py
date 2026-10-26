@@ -13,6 +13,7 @@
 """
 
 import asyncio
+import logging
 
 import pytest
 from fastapi.testclient import TestClient
@@ -138,3 +139,25 @@ def test_control_endpoints_reach_the_bridge_module(monkeypatch, client):
 
     unknown = client.post("/api/control", json={"action": "nope"})
     assert unknown.status_code == 400
+
+
+def test_internal_errors_do_not_leak_exception_text(monkeypatch, client, caplog):
+    """B-06：面板的 500 只给能照着做的原因，异常原文只进日志。
+
+    以前的写法是 ``str(e)`` 或 ``f"{type(e).__name__}: {e}"``：内部路径、SQL、
+    连接池的重试栈这些文本会直接发到浏览器，而排障需要它们待在日志里。
+    """
+    detail = "RuntimeError: 打不开 C:\\data\\config.json（SQLITE_BUSY）"
+
+    class Boom:
+        def read_raw(self):
+            raise RuntimeError(detail)
+
+    monkeypatch.setattr(deps, "config_store", lambda: Boom())
+    with caplog.at_level(logging.ERROR, logger="flandora"):
+        resp = client.get("/api/config")
+
+    assert resp.status_code == 500
+    assert detail not in resp.text
+    assert "详细原因见运行日志" in resp.json()["error"]
+    assert detail in caplog.text

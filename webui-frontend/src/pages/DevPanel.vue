@@ -28,11 +28,22 @@ onMounted(() => {
   const tab = new URLSearchParams((window.location.hash.split('?')[1] || '')).get('tab')
   activate(tab || 'debug')
 })
+
+function onTabKey(e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  const tabs = [...e.currentTarget.querySelectorAll('[role="tab"]')]
+  const i = tabs.indexOf(document.activeElement)
+  if (i < 0) return
+  e.preventDefault()
+  const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length]
+  next.focus()
+  next.click()
+}
 </script>
 
 <template>
   <div class="dev-page">
-    <div class="panel-tabs" role="tablist" aria-label="调试面板">
+    <div class="panel-tabs" role="tablist" aria-label="调试面板" @keydown="onTabKey">
       <button
         v-for="tab in TABS" :key="tab.id" :id="`devtab-${tab.id}`" type="button" role="tab"
         :aria-selected="activeTab === tab.id ? 'true' : 'false'"

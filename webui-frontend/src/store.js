@@ -64,7 +64,7 @@ export function stopStatusPolling() {
 }
 
 // ============ messages (newest first) ============
-const MSG_CAP = 500
+export const MSG_CAP = 500
 export const messages = reactive([])
 
 export function setMessages(list) {
@@ -87,7 +87,7 @@ export function addMessage(m) {
   if (messages.length > MSG_CAP) messages.length = MSG_CAP
 }
 
-// 只清空内存里的列表（消息页那个「清空当前列表」）；存档在服务端，删它要走「存档」页。
+// 只清空内存里的列表（消息页那个「清空当前列表」）；存档在服务端，删它要在「系统设置 → 存储」里操作。
 export function clearMessages() {
   messages.splice(0, messages.length)
 }
@@ -101,7 +101,7 @@ export async function loadInitialMessages(limit = 200) {
 }
 
 // ============ logs (oldest first) ============
-const LOG_CAP = 1000
+export const LOG_CAP = 1000
 export const logs = reactive([])
 
 export function setLogs(list) {

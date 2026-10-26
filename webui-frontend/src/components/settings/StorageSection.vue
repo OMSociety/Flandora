@@ -135,6 +135,14 @@ async function saveLogPolicy() {
 const pruneDays = ref(30)
 const archiveMsg = ref('')
 const confirm = ref('')
+function requestPrune() {
+  const days = Number(pruneDays.value)
+  if (!Number.isFinite(days) || days < 1 || days > 3650) {
+    toast('保留天数要在 1 到 3650 之间', 'error')
+    return
+  }
+  confirm.value = 'prune'
+}
 
 async function archiveAction(action) {
   if (busy.value) return
@@ -315,7 +323,7 @@ async function archiveAction(action) {
             <label for="prune-days">只保留最近多少天</label>
             <input id="prune-days" v-model.number="pruneDays" class="input" type="number" min="1" max="3650" />
           </div>
-          <button type="button" class="btn btn-outline btn-sm" :disabled="!stats.messages.rows || busy === 'prune'" @click="confirm = 'prune'">
+          <button type="button" class="btn btn-outline btn-sm" :disabled="!stats.messages.rows || busy === 'prune'" @click="requestPrune">
             <AppIcon name="Trash2" :size="14" />清理旧记录
           </button>
           <button type="button" class="btn btn-outline btn-sm" :disabled="busy === 'vacuum'" @click="archiveAction('vacuum')">

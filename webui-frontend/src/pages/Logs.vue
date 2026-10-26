@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, watch, nextTick, onMounted } from 'vue'
-import { logs, loadInitialLogs, clearLogs } from '../store'
+import { logs, loadInitialLogs, clearLogs, LOG_CAP } from '../store'
+import { wsState } from '../ws'
 import AppIcon from '../components/AppIcon.vue'
 
 const levels = ['INFO', 'WARNING', 'ERROR', 'DEBUG']
@@ -43,7 +44,7 @@ onMounted(() => { loadInitialLogs(300); scrollToBottom() })
   <div class="logs-page">
     <div class="page-tools"><button class="btn btn-outline" :disabled="!filtered.length" @click="download"><AppIcon name="ArrowDownToLine" :size="15" />导出日志</button></div>
     <section class="card log-toolbar" aria-label="日志筛选"><div class="log-search"><AppIcon name="Search" :size="16" /><input v-model="search" type="search" aria-label="搜索日志" placeholder="搜索日志内容" /></div><div class="toolbar-bottom"><div class="level-filters"><label v-for="level in levels" :key="level" class="level-filter" :class="[{ disabled: !enabled[level] }, level.toLowerCase()]"><input v-model="enabled[level]" type="checkbox" /><span>{{ levelLabel[level] }}</span></label></div><span class="spacer"></span><label class="chk auto-scroll"><input v-model="autoScroll" type="checkbox" />跟随最新</label><button class="btn btn-ghost btn-sm" @click="scrollToBottom"><AppIcon name="ArrowDownToLine" :size="14" />到底部</button></div></section>
-    <section class="card log-panel"><div class="log-panel-head"><span><AppIcon name="TerminalSquare" :size="15" />实时输出</span><div><span>{{ filtered.length }} / {{ logs.length }} 行</span><button v-if="logs.length" class="clear-log" :class="{ confirming: confirmingClear }" @click="confirmClear"><AppIcon name="Trash2" :size="13" />{{ confirmingClear ? '确认清空' : '清空' }}</button></div></div><div ref="logBox" class="log-box mono" role="log" aria-label="运行日志" @scroll="onScroll"><div v-if="!logs.length" class="empty"><AppIcon name="TerminalSquare" :size="28" />等待日志输出…</div><div v-else-if="!filtered.length" class="empty">没有匹配当前筛选条件的日志</div><div v-for="(log, i) in filtered" :key="`${log.ts}-${i}`" class="log-line" :class="(log.level || 'INFO').toLowerCase()"><span class="log-level">{{ log.level || 'INFO' }}</span><span class="log-text">{{ log.text }}</span></div></div><div class="log-status"><span class="status-dot"></span>{{ autoScroll ? '正在跟随最新日志' : '已暂停跟随，浏览历史记录' }}<span class="spacer"></span><span class="log-cap">仅保留当前会话日志</span></div></section>
+    <section class="card log-panel"><div class="log-panel-head"><span><AppIcon name="TerminalSquare" :size="15" />实时输出</span><div><span>{{ filtered.length }} / {{ logs.length }} 行</span><button v-if="logs.length" class="clear-log" :class="{ confirming: confirmingClear }" @click="confirmClear"><AppIcon name="Trash2" :size="13" />{{ confirmingClear ? '确认清空' : '清空' }}</button></div></div><div ref="logBox" class="log-box mono" role="log" aria-label="运行日志" @scroll="onScroll"><div v-if="!logs.length" class="empty"><AppIcon name="TerminalSquare" :size="28" />启动桥接后，运行日志会实时出现在这里</div><div v-else-if="!filtered.length" class="empty">没有匹配当前筛选条件的日志，试试放宽级别或清空搜索词</div><div v-for="(log, i) in filtered" :key="`${log.ts}-${i}`" class="log-line" :class="(log.level || 'INFO').toLowerCase()"><span class="log-level">{{ log.level || 'INFO' }}</span><span class="log-text">{{ log.text }}</span></div></div><div class="log-status"><span class="status-dot" :class="wsState.state"></span>{{ wsState.state === 'open' ? (autoScroll ? '正在跟随最新日志' : '已暂停跟随，浏览历史记录') : '连接断开，正在重连；重连后继续输出' }}<span class="spacer"></span><span class="log-cap">仅保留最近 {{ LOG_CAP }} 行</span></div></section>
   </div>
 </template>
 <style scoped>
@@ -78,7 +79,8 @@ onMounted(() => { loadInitialLogs(300); scrollToBottom() })
 .log-line.error .log-level, .log-line.error .log-text { color:var(--danger); }
 .log-line.debug .log-text { color:var(--muted); }
 .log-status { display:flex; align-items:center; gap:7px; padding:9px 17px; border-top:1px solid var(--border); color:var(--muted); font-size:9px; }
-.log-status .status-dot { width:5px; height:5px; background:var(--primary); }
+.log-status .status-dot { width:5px; height:5px; background:var(--border-strong); }
+.log-status .status-dot.open { background:var(--primary); }
 @media(max-width:767px) {
   .logs-page { min-height:0; }
   .toolbar-bottom { align-items:flex-start; flex-wrap:wrap; gap:7px; }

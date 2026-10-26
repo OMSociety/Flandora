@@ -101,9 +101,9 @@ onBeforeUnmount(() => {
 
     <section class="status-grid" aria-label="链路状态">
       <article class="card status-tile"><div class="tile-top"><span>微信收件源</span><AppIcon name="MessageCircle" :size="17" /></div><strong :class="inboundCard.cls">{{ inboundCard.text }}</strong><div class="tile-foot"><span class="mini-dot" :class="inboundCard.cls"></span>微信本地数据库</div></article>
-      <article class="card status-tile"><div class="tile-top"><span>OneBot 服务</span><AppIcon name="Zap" :size="17" /></div><strong :class="obCard.cls">{{ obCard.text }}</strong><div class="tile-foot">端口 {{ status.ob?.port || '—' }}<span class="foot-sep">/</span>WebSocket</div></article>
+      <article class="card status-tile"><div class="tile-top"><span>OneBot 服务</span><AppIcon name="Zap" :size="17" /></div><strong :class="obCard.cls">{{ obCard.text }}</strong><div class="tile-foot">端口 <span class="mono">{{ status.ob?.port || '—' }}</span><span class="foot-sep">/</span>WebSocket</div></article>
       <article class="card status-tile"><div class="tile-top"><span>发送通道</span><AppIcon name="Send" :size="17" /></div><strong>{{ status.send_method === 'uia' ? 'UI 自动化' : status.send_method || '未配置' }}</strong><button class="text-action" aria-label="识别与绑定微信窗口" @click="openWinModal">{{ windowInfo?.title || '识别微信窗口' }}<AppIcon name="ChevronRight" :size="13" /></button></article>
-      <article class="card status-tile"><div class="tile-top"><span>服务进程</span><AppIcon name="TerminalSquare" :size="17" /></div><strong class="mono">PID {{ status.pid ?? '—' }}</strong><div class="tile-foot">控制面板端口 {{ status.web_port ?? '—' }}</div></article>
+      <article class="card status-tile"><div class="tile-top"><span>服务进程</span><AppIcon name="TerminalSquare" :size="17" /></div><strong class="mono">PID {{ status.pid ?? '—' }}</strong><div class="tile-foot">控制面板端口 <span class="mono">{{ status.web_port ?? '—' }}</span></div></article>
     </section>
 
     <div class="dashboard-grid">
@@ -113,7 +113,7 @@ onBeforeUnmount(() => {
           <div class="metric-grid"><div><strong>{{ fmt(stats.today.recv) }}</strong><span><i class="metric-dot received"></i>接收消息</span></div><div><strong>{{ fmt(stats.today.pushed) }}</strong><span><i class="metric-dot pushed"></i>已推送事件</span></div><div><strong>{{ fmt(status.counters.sent) }}</strong><span><i class="metric-dot sent"></i>发送（本次运行）</span></div></div>
           <div v-if="status.counters.dropped > 0" class="drop-note"><AppIcon name="CircleAlert" :size="14" />{{ fmt(status.counters.dropped) }} 条消息被丢弃</div>
         </section>
-        <section class="card chart-card"><div class="section-head"><h3 class="card-title">24 小时消息量</h3><span class="section-note">按小时统计 · 发送为本次运行</span></div><HourlyBarChart :data="stats.hourly" /><div v-if="!stats.hourly?.length" class="chart-empty">暂无可展示的消息统计</div></section>
+        <section class="card chart-card"><div class="section-head"><h3 class="card-title">24 小时消息量</h3><span class="section-note">按小时统计 · 发送为本次运行</span></div><HourlyBarChart :data="stats.hourly" /><div v-if="!stats.hourly?.length" class="chart-empty">还没有消息统计：启动桥接、收到几条消息后，这里按小时画柱状图</div></section>
       </div>
       <aside class="side-column">
         <section class="card contacts-card"><div class="section-head"><h3 class="card-title">活跃联系人</h3><AppIcon name="MoreHorizontal" :size="17" /></div><div v-if="stats.top_contacts?.length" class="contacts"><div v-for="(c, i) in stats.top_contacts" :key="i" class="contact-row"><span class="rank">{{ String(i + 1).padStart(2, '0') }}</span><span class="cname">{{ c.contact }}</span><span class="ccount">{{ fmt(c.count) }}</span></div></div><div v-else class="empty"><AppIcon name="MessagesSquare" :size="24" /><span>开始对话后，活跃联系人会显示在这里。</span></div></section>
@@ -194,22 +194,6 @@ onBeforeUnmount(() => {
 .cname { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; }
 .ccount { font-size:11px; color:var(--muted); font-variant-numeric:tabular-nums; }
 .contacts-card .empty { min-height:130px; font-size:11px; padding-inline:10px; }
-.learning-card { box-shadow:none; }
-.learning-desc { margin:4px 0 0; }
-.learning-actions { display:flex; align-items:center; gap:9px; }
-.learning-progress { display:flex; align-items:center; gap:15px; padding-bottom:18px; border-bottom:1px solid var(--border); }
-.learning-progress .progress-track { flex:1; }
-.learning-progress > span { font-size:10px; color:var(--muted); }
-.learning-detail { display:grid; grid-template-columns:1.5fr 1fr; gap:24px; margin-top:17px; }
-.learning-detail h4 { margin-bottom:8px; font-size:11px; font-weight:500; color:var(--muted); }
-.guide-row { display:flex; align-items:center; gap:10px; font-size:12px; }
-.guide-row strong { font-weight:500; }
-.last-learn { color:var(--text-strong); font-size:12px; }
-.chips { display:flex; gap:6px; flex-wrap:wrap; margin-top:15px; }
-.samples { margin-top:14px; font-size:11px; }
-.samples summary { color:var(--muted); cursor:pointer; }
-.sample-row { padding:7px 0; border-bottom:1px solid var(--border); }
-.sample-row strong { margin-right:8px; }
 .auto-window { display:flex; justify-content:space-between; align-items:center; gap:10px; padding:14px; background:var(--inset); border-radius:9px; }
 .auto-window strong { font-size:12px; }
 .auto-window p { color:var(--muted); font-size:11px; margin-top:3px; }
@@ -221,7 +205,7 @@ onBeforeUnmount(() => {
 .win-actions { display:flex; gap:6px; flex-shrink:0; }
 .modal-hint { margin-top:16px; }
 @media(min-width:1500px) { .status-tile { padding:20px 22px; } }
-@media(max-width:1150px) { .status-grid { grid-template-columns:repeat(2,1fr); } .dashboard-grid { grid-template-columns:1fr; } .side-column { display:grid; grid-template-columns:1fr 1fr; align-items:start; } }
+@media(max-width:1100px) { .status-grid { grid-template-columns:repeat(2,1fr); } .dashboard-grid { grid-template-columns:1fr; } .side-column { display:grid; grid-template-columns:1fr 1fr; align-items:start; } }
 @media(max-width:767px) {
   .dashboard { gap:12px; }
   .service-panel { align-items:flex-start; flex-direction:column; gap:16px; padding:16px; }
@@ -236,10 +220,6 @@ onBeforeUnmount(() => {
   .metric-grid > div { padding-inline:10px; }
   .metric-grid strong { font-size:24px; }
   .metric-grid span { font-size:10px; white-space:normal; }
-  .learning-detail { grid-template-columns:1fr; gap:18px; }
-  .learning-progress { align-items:flex-start; flex-direction:column; gap:9px; }
-  .learning-progress .progress-track { width:100%; }
-  .learning-actions { gap:7px; }
   .win-row { align-items:flex-start; flex-direction:column; }
 }
 </style>

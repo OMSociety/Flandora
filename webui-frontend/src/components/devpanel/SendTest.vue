@@ -42,7 +42,7 @@ onMounted(loadContacts)
 .compose-card { padding:20px; }
 .field + .field { margin-top:22px; }
 .contact-input { display:flex; align-items:center; gap:9px; border:1px solid var(--border-strong); border-radius:8px; padding:0 11px; color:var(--muted); }
-.contact-input:focus-within { border-color:var(--primary); box-shadow:0 0 0 3px var(--primary-soft); }
+.contact-input:focus-within { border-color:var(--primary-deep); box-shadow:0 0 0 3px var(--primary-soft); }
 .contact-input input { flex:1; min-width:0; min-height:40px; border:0; outline:0; background:transparent; color:var(--text-strong); font-size:12px; }
 .field > .hint { margin-top:7px; }
 .message-label { display:flex; justify-content:space-between; margin-bottom:7px; font-size:12px; }

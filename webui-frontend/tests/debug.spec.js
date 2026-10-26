@@ -59,6 +59,22 @@ test('events panel reports a failed load instead of showing an empty state', asy
   await expect(page.getByText('还没有推送过消息')).toHaveCount(0)
 })
 
+test('debug panel tabs move with the arrow keys', async ({ page }) => {
+  await mockApi(page)
+  const errors = []
+  page.on('pageerror', (e) => errors.push(e.message))
+  await page.goto('/#/dev')
+  await page.getByRole('tab', { name: '动作调试' }).focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('tab', { name: '发送测试' })).toHaveAttribute('aria-selected', 'true')
+  // 末尾再按右键回到第一个，形成循环
+  await page.keyboard.press('ArrowRight')
+  await expect(page.getByRole('tab', { name: '动作调试' })).toHaveAttribute('aria-selected', 'true')
+  await page.keyboard.press('ArrowLeft')
+  await expect(page.getByRole('tab', { name: '发送测试' })).toHaveAttribute('aria-selected', 'true')
+  expect(errors).toEqual([])
+})
+
 test('debug panel switches tabs and keeps the tab in the address', async ({ page }) => {
   await mockApi(page)
   await page.goto('/#/dev')

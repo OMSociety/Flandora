@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted } from 'vue'
-import { messages, loadInitialMessages, clearMessages } from '../store'
+import { messages, loadInitialMessages, clearMessages, MSG_CAP } from '../store'
+import { wsState } from '../ws'
 import { formatClock, kindLabel } from '../utils/format'
 import AppIcon from '../components/AppIcon.vue'
 
@@ -9,6 +10,10 @@ const kind = ref('')
 const search = ref('')
 const confirmingClear = ref(false)
 const kindCls = { private: 'badge-green', group: 'badge-blue', manual: 'badge-amber' }
+const liveLabel = computed(() => {
+  if (wsState.state === 'open') return '实时更新'
+  return wsState.state === 'connecting' ? '正在连接…' : '连接断开，正在重连…'
+})
 const filtered = computed(() => {
   const query = search.value.trim().toLowerCase()
   return messages.filter((message) => {
@@ -27,15 +32,16 @@ onMounted(() => loadInitialMessages(200))
 </script>
 <template>
   <div class="messages-page">
-    <div class="page-tools"><span class="live-label"><i></i>实时更新</span></div>
-    <section class="card filter-panel" aria-label="消息筛选"><div class="search-field"><AppIcon name="Search" :size="17" /><input v-model="search" type="search" aria-label="搜索消息" placeholder="搜索联系人、发送者或消息内容" /><span v-if="search" class="result-count">{{ filtered.length }} 条结果</span></div><div class="filter-bottom"><div class="seg" role="group" aria-label="按消息方向筛选"><button :class="{ active: dir === '' }" @click="dir = ''">全部</button><button :class="{ active: dir === 'in' }" @click="dir = 'in'">接收</button><button :class="{ active: dir === 'out' }" @click="dir = 'out'">发送</button></div><select v-model="kind" class="select kind-filter" aria-label="按会话类型筛选"><option value="">全部类型</option><option value="private">私聊</option><option value="group">群聊</option><option value="manual">手动</option></select><span class="spacer"></span><button v-if="messages.length" class="btn btn-ghost btn-sm clear-btn" :class="{ confirming: confirmingClear }" title="只清空这一页显示的消息，本地存档与推送记录都不动（要删存档请到「存档」页）" @click="confirmClear"><AppIcon name="Trash2" :size="14" />{{ confirmingClear ? '再点一次：只清页面，存档不动' : '清空当前列表' }}</button></div></section>
-    <section class="card feed-panel" aria-label="消息列表"><div class="feed-head"><h3>消息流</h3><span>{{ filtered.length }} / {{ messages.length }} 条</span></div><div v-if="!messages.length" class="empty"><AppIcon name="MessagesSquare" :size="30" /><strong>还没有消息</strong><span>桥接收到或发送消息后，会实时出现在这里。</span></div><div v-else-if="!filtered.length" class="empty"><AppIcon name="Search" :size="28" /><strong>没有匹配的消息</strong><span>试试调整方向、类型或搜索关键词。</span></div><div v-else class="message-list"><article v-for="(m, i) in filtered" :key="`${m.ts}-${i}`" class="message-item"><div class="message-avatar" :class="m.dir"><AppIcon :name="m.dir === 'in' ? 'ArrowDownToLine' : 'ArrowUpRight'" :size="17" /></div><div class="message-body"><div class="message-meta"><strong>{{ m.contact || '未知联系人' }}</strong><span v-if="m.sender" class="sender">{{ m.sender }}</span><span v-else-if="m.dir === 'out'" class="sender">我</span><span class="badge" :class="kindCls[m.kind] || 'badge-gray'">{{ kindLabel(m.kind) }}</span><time class="mono">{{ formatClock(m.ts) }}</time></div><p>{{ m.text }}</p></div><span class="direction-label" :class="m.dir">{{ m.dir === 'in' ? '接收' : '发送' }}</span></article></div></section>
+    <div class="page-tools"><span class="live-label"><i :class="wsState.state"></i>{{ liveLabel }}</span></div>
+    <section class="card filter-panel" aria-label="消息筛选"><div class="search-field"><AppIcon name="Search" :size="17" /><input v-model="search" type="search" aria-label="搜索消息" placeholder="搜索联系人、发送者或消息内容" /><span v-if="search" class="result-count">{{ filtered.length }} 条结果</span></div><div class="filter-bottom"><div class="seg" role="group" aria-label="按消息方向筛选"><button :class="{ active: dir === '' }" @click="dir = ''">全部</button><button :class="{ active: dir === 'in' }" @click="dir = 'in'">接收</button><button :class="{ active: dir === 'out' }" @click="dir = 'out'">发送</button></div><select v-model="kind" class="select kind-filter" aria-label="按会话类型筛选"><option value="">全部类型</option><option value="private">私聊</option><option value="group">群聊</option><option value="manual">手动</option></select><span class="spacer"></span><button v-if="messages.length" class="btn btn-ghost btn-sm clear-btn" :class="{ confirming: confirmingClear }" title="只清空这一页显示的消息，本地存档与推送记录都不动（要删存档请到「系统设置 → 存储 → 消息存档」）" @click="confirmClear"><AppIcon name="Trash2" :size="14" />{{ confirmingClear ? '再点一次：只清页面，存档不动' : '清空当前列表' }}</button></div></section>
+    <section class="card feed-panel" aria-label="消息列表"><div class="feed-head"><h3>消息流</h3><span>{{ filtered.length }} / {{ messages.length }} 条 · 仅保留最近 {{ MSG_CAP }} 条</span></div><div v-if="!messages.length" class="empty"><AppIcon name="MessagesSquare" :size="30" /><strong>还没有消息</strong><span>桥接收到或发送消息后，会实时出现在这里。</span></div><div v-else-if="!filtered.length" class="empty"><AppIcon name="Search" :size="28" /><strong>没有匹配的消息</strong><span>试试调整方向、类型或搜索关键词。</span></div><div v-else class="message-list"><article v-for="(m, i) in filtered" :key="`${m.ts}-${i}`" class="message-item"><div class="message-avatar" :class="m.dir"><AppIcon :name="m.dir === 'in' ? 'ArrowDownToLine' : 'ArrowUpRight'" :size="17" /></div><div class="message-body"><div class="message-meta"><strong>{{ m.contact || '未知联系人' }}</strong><span v-if="m.sender" class="sender">{{ m.sender }}</span><span v-else-if="m.dir === 'out'" class="sender">我</span><span class="badge" :class="kindCls[m.kind] || 'badge-gray'">{{ kindLabel(m.kind) }}</span><time class="mono">{{ formatClock(m.ts) }}</time></div><p>{{ m.text }}</p></div><span class="direction-label" :class="m.dir">{{ m.dir === 'in' ? '接收' : '发送' }}</span></article></div></section>
   </div>
 </template>
 <style scoped>
 .messages-page { display:flex; flex-direction:column; gap:16px; }
 .live-label { display:flex; align-items:center; gap:6px; color:var(--muted); font-size:11px; white-space:nowrap; }
-.live-label i { width:6px; height:6px; border-radius:50%; background:var(--primary); }
+.live-label i { width:6px; height:6px; border-radius:50%; background:var(--border-strong); }
+.live-label i.open { background:var(--primary); }
 .filter-panel { padding:13px 16px; box-shadow:none; }
 .search-field { display:flex; align-items:center; gap:10px; padding:3px 0 13px; border-bottom:1px solid var(--border); color:var(--muted); }
 .search-field input { flex:1; min-width:0; border:0; outline:0; background:transparent; color:var(--text-strong); font-size:12px; }

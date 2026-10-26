@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import AppIcon from '../AppIcon.vue'
 import Modal from '../Modal.vue'
+import ConfirmDialog from '../ConfirmDialog.vue'
 import PasswordInput from '../PasswordInput.vue'
 import ToggleSwitch from '../ToggleSwitch.vue'
 import { toast } from '../../store'
@@ -15,6 +16,18 @@ const props = defineProps({
 const emit = defineEmits(['close', 'save'])
 
 const form = ref(null)
+const discardDialog = ref(false)
+const dirty = computed(
+  () => !!form.value && !!props.node && JSON.stringify(form.value) !== JSON.stringify(props.node),
+)
+function requestClose() {
+  if (dirty.value) discardDialog.value = true
+  else emit('close')
+}
+function discard() {
+  discardDialog.value = false
+  emit('close')
+}
 const meta = computed(() => typeMeta(form.value?.type))
 const problem = computed(() => (form.value ? nodeProblem(form.value) : ''))
 
@@ -38,7 +51,7 @@ function submit() {
 </script>
 
 <template>
-  <Modal :open="open" :title="`编辑${meta.dialog}`" :width="620" @close="emit('close')">
+  <Modal :open="open" :title="`编辑 ${meta.dialog}`" :width="620" @close="requestClose">
     <div v-if="form" class="node-form">
       <p class="dialog-hint">{{ meta.hint }}</p>
 
@@ -128,6 +141,15 @@ function submit() {
       </div>
     </div>
   </Modal>
+    <ConfirmDialog
+      :open="discardDialog"
+      title="放弃未保存的改动"
+      message="表单里有还没保存的内容，关掉就没了。确定要关吗？"
+      confirm-text="放弃改动"
+      :danger="true"
+      @cancel="discardDialog = false"
+      @confirm="discard"
+    />
 </template>
 
 <style scoped>

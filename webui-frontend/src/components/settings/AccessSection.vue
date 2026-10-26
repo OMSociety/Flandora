@@ -362,6 +362,7 @@ async function applyRestore() {
       title="重启桥接服务"
       message="重启期间消息收发会中断几秒钟，面板会自动恢复连接。确定现在重启吗？"
       confirm-text="重启"
+      :danger="true"
       @cancel="restartDialog = false"
       @confirm="restartBridge"
     />

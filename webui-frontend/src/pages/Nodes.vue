@@ -40,7 +40,12 @@ const connections = computed(() => runtime.value.reduce((sum, node) => sum + (no
 const enabledCount = computed(() => draft.value.filter((node) => node.enabled !== false).length)
 const counts = computed(() => Object.fromEntries(NODE_TYPES.map((type) => [type.value, draft.value.filter((node) => node.type === type.value).length])))
 const activeMeta = computed(() => typeMeta(activeType.value))
-const endpoint = computed(() => `ws://${general.ob_server_host || '127.0.0.1'}:${general.ob_server_port || 7999}`)
+const endpoint = computed(() => {
+  const host = general.ob_server_host || '127.0.0.1'
+  const port = Number(general.ob_server_port) || 0
+  // 与保存同一口径：0 就是没填，不拿默认值假装能用
+  return port ? `ws://${host}:${port}` : `ws://${host}:端口未填`
+})
 // 草稿与已保存的一致时才敢用运行态的行（多一个没保存的入口就会串行）。
 const rows = computed(() => {
   const live = stale.value ? [] : runtime.value
@@ -80,6 +85,10 @@ async function load() {
 }
 
 async function save() {
+  if (!Number(general.ob_server_port)) {
+    toast('先把 OneBot 端口填上（1–65535），留空保存不了', 'error')
+    return
+  }
   const payload = {
     ob_server_host: general.ob_server_host,
     ob_server_port: Number(general.ob_server_port) || 0,
@@ -132,6 +141,17 @@ function materializeGeneral() {
 }
 
 onMounted(load)
+
+function onTabKey(e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+  const tabs = [...e.currentTarget.querySelectorAll('[role="tab"]')]
+  const i = tabs.indexOf(document.activeElement)
+  if (i < 0) return
+  e.preventDefault()
+  const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : -1) + tabs.length) % tabs.length]
+  next.focus()
+  next.click()
+}
 </script>
 
 <template>
@@ -188,7 +208,7 @@ onMounted(load)
           </div>
         </header>
 
-        <div class="node-tabs" role="tablist" aria-label="入口类型">
+        <div class="node-tabs" role="tablist" aria-label="入口类型" @keydown="onTabKey">
           <button type="button" role="tab" :aria-selected="activeType === 'general' ? 'true' : 'false'" :class="{ active: activeType === 'general' }" @click="activeType = 'general'">通用设置</button>
           <button
             v-for="type in NODE_TYPES" :key="type.value" type="button" role="tab"

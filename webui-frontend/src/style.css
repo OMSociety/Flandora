@@ -206,9 +206,9 @@ code { background:var(--inset); padding:1px 5px; border-radius:4px; font-family:
   .page-tools { flex-wrap:wrap; gap:10px; }
   .card { padding:16px; }
   .grid-2, .grid-3, .grid-4 { grid-template-columns:1fr; gap:16px; }
-  .btn { min-height:40px; }
-  .btn-sm { min-height:36px; }
-  .icon-btn { width:38px; height:38px; }
+  .btn { min-height:44px; }
+  .btn-sm { min-height:44px; }
+  .icon-btn { width:44px; height:44px; }
   .input, .select { min-height:42px; font-size:14px; }
   .textarea { font-size:14px; }
   .toast-wrap { right:16px; bottom:16px; }

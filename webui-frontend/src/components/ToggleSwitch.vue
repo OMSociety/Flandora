@@ -29,7 +29,7 @@ const on = computed(() => props.modelValue !== false)
 <style scoped>
 .switch { position:relative; width:38px; height:22px; flex-shrink:0; padding:0; border:1px solid var(--border); border-radius:999px; background:var(--inset); cursor:pointer; transition:background .16s, border-color .16s; }
 .switch .knob { position:absolute; top:2px; left:2px; width:16px; height:16px; border-radius:50%; background:var(--card); box-shadow:0 1px 3px rgb(0 0 0 / .2); transition:transform .16s; }
-.switch[aria-checked="true"] { background:var(--primary); border-color:var(--primary); }
-.switch[aria-checked="true"] .knob { transform:translateX(16px); background:#fff; }
+.switch[aria-checked="true"] { background:var(--primary-strong); border-color:var(--primary-strong); }
+.switch[aria-checked="true"] .knob { transform:translateX(16px); }
 .switch:disabled { opacity:.45; cursor:not-allowed; }
 </style>

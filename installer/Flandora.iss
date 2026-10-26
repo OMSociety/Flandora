@@ -58,6 +58,7 @@ Source: "{#PayloadDir}\{#ManagerExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\tools\{#KeyToolExe}"; DestDir: "{app}\tools"; Flags: ignoreversion
 Source: "{#PayloadDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#PayloadDir}\build-info.json"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; data\ 是可写数据目录（config.json、数据库口令、图片密钥、日志），
 ; 由程序首次启动时自己生成，升级安装不能碰它

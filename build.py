@@ -16,14 +16,17 @@
 版本号只从 ``flandora/__init__.py`` 的 ``__version__`` 读；安装脚本的版本宏由
 ``tools/sync_version.py`` 写进 ``installer/version.iss``。用法：
 
-    python build.py              打包（前端产物比源码旧时自动重建）
+    python build.py              打包（前端产物比源码旧时自动重建；要求工作区干净）
     python build.py --skip-web   不重建前端，按现有 flandora/webui/dist 打包
-    python build.py --check      只校验不打包（版本、随包资源、前端产物、安装脚本引用）
+    python build.py --allow-dirty 工作区有未提交改动时也打包（build-info.json 标 dirty）
+    python build.py --check      只校验不打包（版本、随包资源、前端产物、安装脚本清单）
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -74,6 +77,7 @@ BRIDGE_DATA: tuple[tuple[Path, str], ...] = (
 # 载荷（dist/Flandora-v<版本>）里必须有的条目。这份清单就是安装器实际铺到
 # 用户机器上的东西；主 exe 内嵌的 config.example.json 与前端产物不在这里——它们
 # 随 exe 分发，往载荷里再放一份没有消费方，只会让 zip 变大。
+BUILD_INFO_NAME = "build-info.json"
 REQUIRED_PAYLOAD = (
     "Flandora.exe",
     "Flandora-Bridge.exe",
@@ -81,6 +85,7 @@ REQUIRED_PAYLOAD = (
     "README.md",
     "LICENSE",
     "docs",
+    BUILD_INFO_NAME,
 )
 
 # pip 走清华源，国内直连 PyPI 常常超时
@@ -385,13 +390,101 @@ def installer_sources() -> list[str]:
     return rels
 
 
+def installer_manifest() -> set[str]:
+    """安装脚本会铺到用户机器上的条目：目录去掉结尾的 ``/*``。"""
+    return {rel[:-2].rstrip("/") if rel.endswith("/*") else rel for rel in installer_sources()}
+
+
+def manifest_problems() -> list[str]:
+    """清单层自检：安装脚本引用与 ``REQUIRED_PAYLOAD`` 必须一一对应。
+
+    这一步比的是两张清单，不需要载荷目录存在——``--check`` 因此在任何环境下都真的
+    核对了安装脚本，而不是发现目录缺失就整段跳过。
+    """
+    sources = installer_manifest()
+    required = {name.rstrip("/") for name in REQUIRED_PAYLOAD}
+    problems = [f"安装脚本没有引用 {name}" for name in sorted(required - sources)]
+    problems += [f"安装脚本引用了清单外的 {name}" for name in sorted(sources - required)]
+    return problems
+
+
+def _git(*args: str) -> str | None:
+    """在仓库根跑一条 git 命令；git 不可用或不在仓库里时返回 None。"""
+    try:
+        done = subprocess.run(
+            ["git", *args],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except OSError:
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def git_state() -> tuple[str, bool]:
+    """当前提交与工作区是否脏；读不到 git 时按「未知且脏」处理。"""
+    commit = _git("rev-parse", "HEAD")
+    status = _git("status", "--porcelain")
+    if commit is None or status is None:
+        return "unknown", True
+    return commit.strip(), bool(status.strip())
+
+
+def build_info_document(payload: Path) -> dict:
+    """载荷的身份信息：版本、提交、是否脏、构建时间、每个文件的 sha256。"""
+    commit, dirty = git_state()
+    files = {}
+    for path in sorted(payload.rglob("*")):
+        if not path.is_file():
+            continue
+        rel = path.relative_to(payload).as_posix()
+        if rel.startswith("data/"):
+            # data/ 是用户机器上的可写状态（配置、口令、日志），不属于交付物身份
+            continue
+        files[rel] = hashlib.sha256(path.read_bytes()).hexdigest()
+    return {
+        "version": VERSION,
+        "commit": commit,
+        "dirty": dirty,
+        "built_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        "python": sys.version.split()[0],
+        "files": files,
+    }
+
+
+def write_build_info(payload: Path, document: dict | None = None) -> tuple[Path, dict]:
+    """把身份信息写进载荷根：解压后与安装后都能查出这个包对应哪个提交。"""
+    doc = build_info_document(payload) if document is None else document
+    path = payload / BUILD_INFO_NAME
+    path.write_text(
+        json.dumps(doc, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return path, doc
+
+
+def dirty_build_problem(commit: str, dirty: bool, allow_dirty: bool) -> str | None:
+    """全量打包前的脏树检查；返回要拦住打包的理由，干净或已放行时返回 None。"""
+    if not dirty or allow_dirty:
+        return None
+    return (
+        "工作区有未提交改动，打出来的包无法用提交号说明它是什么代码：\n"
+        f"  当前提交 {commit}\n"
+        "  先把改动提交，或加 --allow-dirty 生成一个在 build-info.json 里标 dirty 的包。"
+    )
+
+
 def verify_payload(payload: Path) -> list[str]:
     """载荷自检：必需条目与安装脚本引用的文件都在里面；返回问题清单。
 
     打包流程在生成 zip 之前调用它，缺项就中止——残缺包比没有包更坏：
     用户装上之后才发现少了管理器或文档。
     """
-    problems: list[str] = []
+    problems = manifest_problems()
+    required = {name.rstrip("/") for name in REQUIRED_PAYLOAD}
     for name in REQUIRED_PAYLOAD:
         path = payload / name
         ok = path.is_dir() if name == "docs" else path.is_file()
@@ -402,6 +495,9 @@ def verify_payload(payload: Path) -> list[str]:
             target = payload / rel[:-1].rstrip("/")
             if not target.is_dir() or not any(target.iterdir()):
                 problems.append(f"安装脚本引用的目录不存在或是空的：{target}")
+            continue
+        if rel.rstrip("/") in required:
+            # 上面已按必需清单核过，这里不重复报同一处缺项
             continue
         target = payload / rel
         if not target.is_file():
@@ -446,7 +542,12 @@ def assemble_zip() -> Path:
     if DOCS_SRC.is_dir():
         shutil.copytree(DOCS_SRC, rel / "docs")
 
-    # 6) 自检：缺项就在这里中止，不生成残缺 zip
+    # 6) 身份信息：写进载荷根，随后与其余条目一起自检
+    info, document = write_build_info(rel)
+    state = "含未提交改动" if document["dirty"] else "干净"
+    print(f"  身份信息：{info.name}（{document['commit'][:12]}，{state}）")
+
+    # 7) 自检：缺项就在这里中止，不生成残缺 zip
     problems = verify_payload(rel)
     if problems:
         raise SystemExit("载荷自检不通过，不生成 zip：\n  " + "\n  ".join(problems))
@@ -530,7 +631,7 @@ def check_only() -> int:
 
     四类校验：版本号各处一致、载荷目录与 build.py 的组装目标一致、
     ``config.example.json`` 在 ``--add-data`` 里、前端产物存在且不比源码旧、
-    安装脚本引用的文件都在载荷里（载荷还没生成时跳过并说明）。
+    安装脚本引用与 ``REQUIRED_PAYLOAD`` 一一对应（载荷在时再核每个文件真的存在）。
     """
     problems: list[str] = []
 
@@ -580,16 +681,25 @@ def check_only() -> int:
         print(f"  OK     {index} {_stamp(index.stat().st_mtime)}（{state}）")
 
     print("\n=== 安装脚本引用 ===")
-    if not target.is_dir():
-        print(f"  跳过：{target} 还不存在（先跑一次 python build.py 生成载荷）")
+    manifest = manifest_problems()
+    if manifest:
+        problems.extend(manifest)
+        for problem in manifest:
+            print(f"  DRIFT  {problem}")
     else:
-        payload_problems = verify_payload(target)
+        print(f"  OK     {len(installer_manifest())} 个条目与必需清单一一对应")
+    if target.is_dir():
+        payload_problems = [
+            problem for problem in verify_payload(target) if problem not in manifest
+        ]
         if payload_problems:
             problems.extend(payload_problems)
             for problem in payload_problems:
                 print(f"  MISSING  {problem}")
         else:
             print(f"  OK     {len(installer_sources())} 条 Source 引用都在 {target} 里")
+    else:
+        print(f"  文件层核对：{target} 还没生成，等打包时随 zip 一起做")
 
     if problems:
         print(f"\n检查不通过：{len(problems)} 项问题", file=sys.stderr)
@@ -602,6 +712,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Flandora 打包脚本（版本号只从包内读）")
     parser.add_argument("--check", action="store_true", help="只校验不打包；不通过以非零退出")
     parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="工作区有未提交改动时也打包；build-info.json 里会标 dirty",
+    )
+    parser.add_argument(
         "--skip-web",
         action="store_true",
         help="跳过前端重建，按现有 flandora/webui/dist 打包（会打印 mtime 依据）",
@@ -610,6 +725,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.check:
         return check_only()
+
+    if not args.skip_web:
+        commit, dirty = git_state()
+        problem = dirty_build_problem(commit, dirty, args.allow_dirty)
+        if problem is not None:
+            raise SystemExit(problem)
 
     t0 = time.time()
     clean()

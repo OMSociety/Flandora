@@ -1,11 +1,15 @@
-"""安装脚本与载荷布局的一致性。
+"""安装脚本、载荷布局与交付物身份。
 
 安装脚本用 ``{#BridgeExe}`` 这类 Inno 预处理常量拼路径。这里核对常量能展开成真实
-文件名，展开后的每一项都在载荷清单里，三个 exe 的落点与发布说明一致——打包自检与
-安装器因此看的是同一份事实，常量写错或漏放文件都会在这里先红。
+文件名、展开后的每一项都在载荷清单里且清单里没有多余项，三个 exe 的落点与发布说明
+一致——打包自检与安装器因此看的是同一份事实，常量写错或漏放文件都会在这里先红。
+
+``build-info.json`` 是交付物的身份证：这里同时钉住它的字段与 hash 覆盖范围。
 """
 
 from __future__ import annotations
+
+import json
 
 import build
 
@@ -27,8 +31,49 @@ def test_installer_sources_match_the_payload_list():
             assert name in files
 
 
+def test_manifest_is_exactly_the_required_payload():
+    assert build.manifest_problems() == []
+    assert build.installer_manifest() == set(build.REQUIRED_PAYLOAD)
+
+
 def test_entry_exe_and_bridge_sit_in_the_root_and_keytool_in_tools():
     sources = build.installer_sources()
     assert "Flandora.exe" in sources
     assert "Flandora-Bridge.exe" in sources
     assert "tools/Flandora-KeyTool.exe" in sources
+
+
+def test_build_info_covers_every_payload_file(tmp_path, monkeypatch):
+    (tmp_path / "tools").mkdir()
+    (tmp_path / "tools" / "Flandora-KeyTool.exe").write_bytes(b"MZ-keytool")
+    (tmp_path / "Flandora.exe").write_bytes(b"MZ-manager")
+    (tmp_path / "docs").mkdir()
+    (tmp_path / "docs" / "wip.md").write_text("# 计划内", encoding="utf-8")
+    (tmp_path / "data").mkdir()
+    (tmp_path / "data" / "config.json").write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(build, "git_state", lambda: ("a" * 40, False))
+
+    document = build.build_info_document(tmp_path)
+
+    assert document["version"] == build.VERSION
+    assert document["commit"] == "a" * 40
+    assert document["dirty"] is False
+    assert set(document["files"]) == {"Flandora.exe", "tools/Flandora-KeyTool.exe", "docs/wip.md"}
+
+
+def test_write_build_info_is_json_with_the_same_files(tmp_path, monkeypatch):
+    (tmp_path / "Flandora.exe").write_bytes(b"MZ")
+    monkeypatch.setattr(build, "git_state", lambda: ("b" * 40, True))
+
+    path, document = build.write_build_info(tmp_path)
+
+    assert path.name == build.BUILD_INFO_NAME
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved == document
+    assert saved["dirty"] is True
+
+
+def test_dirty_tree_is_refused_until_explicitly_allowed():
+    assert build.dirty_build_problem("abc", False, False) is None
+    assert build.dirty_build_problem("abc", True, False) is not None
+    assert build.dirty_build_problem("abc", True, True) is None

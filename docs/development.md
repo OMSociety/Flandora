@@ -51,12 +51,25 @@ python build.py
 
 产物在 `dist\`：`Flandora-v<版本>.zip` 与 `Flandora-v<版本>-setup.exe`，载荷目录里根目录是 `Flandora.exe`（托盘管理器，用户双击的入口）与 `Flandora-Bridge.exe`（桥接本体），取钥器在 `tools\Flandora-KeyTool.exe`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
 
-> **提示**：打包前会按 mtime 判断 `flandora/webui/dist/index.html` 是否比前端源码旧：旧了才调用 npm 重建。想直接复用现有产物就加 `--skip-web`，它会打印两边的时间；产物缺失时该参数会直接报错，不会打出没有界面的包。
+载荷根有 `build-info.json`：版本、提交、是否会脏、构建时间，以及每个随包文件的 sha256。解压后或安装后都能查出这个包对应哪个提交，`python tools/smoke.py` 拿它核对提交与哈希。
+
+> **提示**：全量打包要求工作区干净——包里的提交号必须真的代表这份代码，有未提交改动时 `build.py` 会报错退出。确实要打一个带改动的包就加 `--allow-dirty`，`build-info.json` 里会标 `dirty` 为真。
+>
+> 打包前还会按 mtime 判断 `flandora/webui/dist/index.html` 是否比前端源码旧：旧了才调用 npm 重建。想直接复用现有产物就加 `--skip-web`，它会打印两边的时间；产物缺失时该参数会直接报错，不会打出没有界面的包。
 
 取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。代码结构、依赖规则与扩展点见 [architecture.md](architecture.md)，工程约定与验收口径见 [AGENTS.md](../AGENTS.md)。
 
 ## 验收
 
-自动化测试看的是「同样的输入产生同样的输出」；UIA、真机微信与真实的 OneBot 客户端连接只能用清单验。发布前或改动收件、发送、桌面、更新链路后，按 [smoke-test.md](smoke-test.md) 走一遍，每一步都给了可观察的判据，最后把实际看到的结果记在当节下面。
+自动化测试看的是「同样的输入产生同样的输出」；UIA、真机微信与真实的 OneBot 客户端连接只能用清单验。
+
+发布前先跑验收脚本，它把能自动核的部分做掉：
+
+```powershell
+python tools/smoke.py           # 交付物身份、端口、自启项、打包自检
+python tools/smoke.py --live    # 额外发一次停止信号，验证端口释放与进程退出（会停掉正在跑的桥接）
+```
+
+脚本只读时不动任何东西；`--live` 会停桥接，跑之前确认没有正在用的实例。剩下的真机项目按 [smoke-test.md](smoke-test.md) 走一遍，每一步都给了可观察的判据，最后把实际看到的结果记在当节下面。
 
 九条自动闸门（语法检查、ruff、pytest、测试收集闸、配置样例、版本单一来源、打包校验、前端测试与构建、真机冒烟）的分工与判定口径写在 [AGENTS.md](../AGENTS.md)。

@@ -57,8 +57,9 @@
 | 装前端依赖 | `cd webui-frontend; npm install` |
 | 跑前端测试 | `cd webui-frontend; npm test`（Playwright 自动在 4175 起 vite，无需手工起服务） |
 | 构建前端 | `cd webui-frontend; npm run build`（产物写入 `flandora/webui/dist`） |
-| 打包前校验 | `python build.py --check`（版本号、载荷目录、`--add-data`、前端产物、安装脚本引用） |
-| 打包发行版 | `python build.py`（前端产物比源码旧时自动重建；`--skip-web` 复用现有产物，缺产物直接报错） |
+| 打包前校验 | `python build.py --check`（版本号、载荷目录、`--add-data`、前端产物、安装脚本清单） |
+| 打包发行版 | `python build.py`（要求工作区干净；`--allow-dirty` 打带改动的包并在 `build-info.json` 标 dirty；`--skip-web` 复用现有产物，缺产物直接报错） |
+| 发布前验收 | `python tools/smoke.py`（交付物身份、端口、自启项、打包自检）；`--live` 额外停一次桥接验证收尾 |
 
 lint 与格式化统一用 ruff，配置在仓库根的 `pyproject.toml`（line-length 100、`E/F/W/I` 规则、
 `E501` 交给 formatter）。仓库没有类型检查配置，不要凭经验编造 mypy/pyright 命令。

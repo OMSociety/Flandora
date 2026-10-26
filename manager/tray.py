@@ -195,7 +195,10 @@ class ManagerTray:
             time.sleep(POLL_SECONDS)
             self._refresh()
 
-    def _setup(self, _icon: pystray.Icon) -> None:
+    def _setup(self, icon: pystray.Icon) -> None:
+        # 传了 setup 回调，pystray 就不自己置 visible，图标会注册不上（隐藏窗口建了、
+        # 通知区域里什么都没有）。
+        icon.visible = True
         threading.Thread(target=self._poll_loop, daemon=True, name="tray-poll").start()
         threading.Thread(target=self._launch, daemon=True, name="tray-launch").start()
 

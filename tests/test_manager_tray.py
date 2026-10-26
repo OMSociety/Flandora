@@ -26,6 +26,7 @@ class _FakeIcon:
         self.menu = menu
         self.notifications: list[tuple[str, str]] = []
         self.stopped = False
+        self.visible = False
 
     def notify(self, message, title=None):
         self.notifications.append((title, message))
@@ -156,6 +157,13 @@ def test_launch_opens_the_panel_on_first_run(icon, monkeypatch):
     tray = tray_mod.ManagerTray(_FakeProcess(False), open_panel_when_ready=True)
     tray._launch()
     assert opened == ["http://127.0.0.1:4950"]
+
+
+def test_run_makes_the_icon_visible(icon):
+    """传了 setup 回调时 pystray 不自己置 visible，图标得由我们点亮。"""
+    tray = tray_mod.ManagerTray(_FakeProcess(True))
+    tray.run()
+    assert tray._icon.visible is True
 
 
 def test_icon_image_uses_two_colours():

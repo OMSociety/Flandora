@@ -77,3 +77,5 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：只读解密聊�
 - [WeChat-Onebot-Bridge](https://github.com/jessiongod/wechat-onebot-bridge)：本仓库的起点，部分设计参考自这个项目
 - [OneBot v11](https://github.com/botuniverse/onebot-11)：事件与动作遵循的协议规范
 - [SnowLuma](https://github.com/SnowLuma/SnowLuma)：优秀的 OneBot v11 服务端实现，本项目多有参考
+- [Astrbot](https://astrbot.app/)：一站式 Agent 聊天机器人平台
+- [Maibot](https://maibot.chat/)：她很可爱

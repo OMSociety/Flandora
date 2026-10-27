@@ -35,8 +35,10 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：只读解密聊�
 
 1. 从 [Releases](https://github.com/OMSociety/Flandora/releases) 取发布包，二选一：
 
-   - `Flandora-v1.0.0-setup.exe`：安装包，默认装到 `%LOCALAPPDATA%\Programs\Flandora`。
+   - `Flandora-v1.0.0-setup.exe`：安装包，默认装到 `%LOCALAPPDATA%\Programs\Flandora`，安装时可勾选开机自启与桌面快捷方式；卸载时问一句是否删掉 `data\`，默认保留。
    - `Flandora-v1.0.0.zip`：便携包，解压到任意目录即可，`data\` 会生成在 `Flandora.exe` 旁边。
+
+   装卸期间若托盘里还有 Flandora 的图标，安装程序会提示先从「退出程序」退掉它，不会替你结束进程。
 
 2. 退出自己的微信，双击 `Flandora.exe`。它在任务栏常驻并拉起桥接；左键图标或菜单「打开面板」都能打开面板页面，第一次运行（还没有 `data/config.json`）会自己弹出面板。
 

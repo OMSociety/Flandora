@@ -49,7 +49,7 @@ npm run build   # 产物写入 flandora\webui\dist
 python build.py
 ```
 
-产物在 `dist\`：`Flandora-v<版本>.zip` 与 `Flandora-v<版本>-setup.exe`，载荷目录里根目录是 `Flandora.exe`（托盘管理器，用户双击的入口）与 `Flandora-Bridge.exe`（桥接本体），取钥器在 `tools\Flandora-KeyTool.exe`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译，没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
+产物在 `dist\`：`Flandora-v<版本>.zip` 与 `Flandora-v<版本>-setup.exe`，载荷目录里根目录是 `Flandora.exe`（托盘管理器，用户双击的入口）与 `Flandora-Bridge.exe`（桥接本体），取钥器与表情解码用的 FFmpeg 在 `tools\`。安装程序由 [Inno Setup](https://jrsoftware.org/isdl.php) 编译（界面语言用 `installer\ChineseSimplified.isl`，随版本库提供），没装就只出便携包（可用环境变量 `ISCC` 指向 `ISCC.exe` 的完整路径）。
 
 载荷根有 `build-info.json`：版本、提交、是否会脏、构建时间，以及每个随包文件的 sha256。解压后或安装后都能查出这个包对应哪个提交，`python tools/smoke.py` 拿它核对提交与哈希。
 

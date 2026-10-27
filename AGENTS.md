@@ -1,7 +1,7 @@
 # AGENTS.md — Flandora Agent 宪法
 
 适用范围：本仓库全部目录；子目录另有 AGENTS.md 时，以更接近改动点的那份为准。
-最后更新：2026-10-25
+最后更新：2026-10-27
 
 ## 项目概览
 
@@ -18,6 +18,8 @@
 - pytest（后端）、Playwright（前端），PyInstaller + Inno Setup（打包）
 - 专有依赖：`uiautomation`（窗口自动化）、`frida`（只打进取钥器）、`zstandard`、`Pillow`
 - 托盘管理器（`manager/`）：`pystray` 托盘图标与菜单 + `Pillow` 画图标；`Flandora.exe` 是用户入口
+- 表情解码：`flandora/wx_emoticon.py` 调用随包的 LGPL 共享构建 `tools/ffmpeg/ffmpeg.exe`；
+  下载与 sha256 校验在 `build.py` 的 `FFMPEG_*` 常量，桥接 exe 自身不带 FFmpeg 库
 
 文档索引：
 
@@ -60,6 +62,7 @@
 | 打包前校验 | `python build.py --check`（版本号、载荷目录、`--add-data`、前端产物、安装脚本清单） |
 | 打包发行版 | `python build.py`（要求工作区干净；`--allow-dirty` 打带改动的包并在 `build-info.json` 标 dirty；`--skip-web` 复用现有产物，缺产物直接报错） |
 | 发布前验收 | `python tools/smoke.py`（交付物身份、端口、自启项、打包自检）；`--live` 额外停一次桥接验证收尾 |
+| 发版（tag 与 Release） | `git tag -a vX.Y.Z -m "Flandora X.Y.Z"` → `git push origin vX.Y.Z` → `gh release create vX.Y.Z --repo OMSociety/Flandora --latest --notes-file <说明> dist\Flandora-vX.Y.Z-setup.exe dist\Flandora-vX.Y.Z.zip` |
 
 lint 与格式化统一用 ruff，配置在仓库根的 `pyproject.toml`（line-length 100、`E/F/W/I` 规则、
 `E501` 交给 formatter）。仓库没有类型检查配置，不要凭经验编造 mypy/pyright 命令。
@@ -112,6 +115,7 @@ run_bridge.py -> flandora.main
 | 加一个面板页面 | `webui-frontend/src/pages/index.js` 的 `PAGES` 加一项（id/group/label/icon/description/component），侧栏、路由与 Playwright 用例都从这张表派生 |
 | 改收件（读库、字段解析） | `flandora/bridge_core.py`，数据层在 `flandora/wx_store.py` |
 | 改发送（投递、清空输入框） | `flandora/uia_sender.py` |
+| 改表情解码（缓存定位、密钥派生、wxgf 解帧） | `flandora/wx_emoticon.py`；随包 FFmpeg 的版本、地址与 sha256 在 `build.py` 的 `FFMPEG_*` |
 | 改桌面隔离与接管 | `flandora/wx_desktop.py` |
 | 改托盘图标、悬停提示或右键菜单 | `manager/tray.py` |
 | 改品牌标记或图标 | `flandora/branding.py`（形状与色值）、`assets/icon.svg`（矢量版）、`assets/icon.ico`（由 `python tools/make_icon.py` 生成并提交） |
@@ -145,6 +149,9 @@ run_bridge.py -> flandora.main
   `sdk/python` 与 `mcp/python` 的 `__init__.py`/`pyproject.toml`，并生成 `installer/version.iss`
   （`AppVersion` 与 `PayloadDir`）。`build.py` 不写字面量，运行期从包内读；别处再出现版本字面量会被
   `--check` 判为漂移。
+- 发版顺序：改版本 → 闸门全绿 → `python build.py`（要求工作区干净；载荷自检会核对安装脚本引用与
+  载荷清单）→ `git tag -a vX.Y.Z` → `gh release create`（见「常用命令」）。tag 指向的提交必须等于
+  载荷里 `build-info.json` 的 `commit`，Release 只放 setup 与便携 zip 两个资产。
 - 增删配置项：依次改 `flandora/config/fields.py`（字段声明：键名、默认值、kind、校验与 `desc`）
   → 跑 `python tools/gen_config_example.py` 重新生成 `flandora/config.example.json`（示例与 `_comment_`
   说明都由字段表派生，不要手改）→ `docs/config.md` 里对应的一节 →

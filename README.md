@@ -62,7 +62,7 @@ Flandora 是面向微信 PC 客户端的 Windows 桥接程序：只读解密聊�
 | 代码结构、依赖规则与扩展点 | [docs/architecture.md](docs/architecture.md) |
 | 发布前要手工走一遍的冒烟清单 | [docs/smoke-test.md](docs/smoke-test.md) |
 | 刻意不做的事与原因、需要在真机上确认的项 | [docs/wip.md](docs/wip.md)、[docs/needs-user.md](docs/needs-user.md) |
-| 工程约定与验收口径（给改代码的人） | [AGENTS.md](AGENTS.md) |
+| 工程约定与验收口径 | [AGENTS.md](AGENTS.md) |
 
 ## 使用边界与许可
 

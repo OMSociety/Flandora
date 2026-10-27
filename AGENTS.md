@@ -152,6 +152,8 @@ run_bridge.py -> flandora.main
 - 发版顺序：改版本 → 闸门全绿 → `python build.py`（要求工作区干净；载荷自检会核对安装脚本引用与
   载荷清单）→ `git tag -a vX.Y.Z` → `gh release create`（见「常用命令」）。tag 指向的提交必须等于
   载荷里 `build-info.json` 的 `commit`，Release 只放 setup 与便携 zip 两个资产。
+- 写版本条目时，`CHANGELOG.md` 的该版本段落与 Release 正文逐字一致（中文段在上、英文段在下，
+  官方六类、条目 1:1 直译）；首个 1.0.0 例外，两处都只有标准头部。
 - 增删配置项：依次改 `flandora/config/fields.py`（字段声明：键名、默认值、kind、校验与 `desc`）
   → 跑 `python tools/gen_config_example.py` 重新生成 `flandora/config.example.json`（示例与 `_comment_`
   说明都由字段表派生，不要手改）→ `docs/config.md` 里对应的一节 →
@@ -218,7 +220,8 @@ run_bridge.py -> flandora.main
 
 - 提交信息用中文，前缀 `feat:` / `fix:` / `docs:` / `refactor:`；破坏性变更写 `feat!:` 或 `fix!:`
   并在 body 逐条列出破坏点（改了哪个配置键、哪个文件名、哪个行为）。
-- 仓库不维护 CHANGELOG，变更说明写在 commit body。
+- 仓库的变更记录在 `CHANGELOG.md`（中上英下双语、官方六类）；首个 1.0.0 只有标准头部，
+  1.0.1 起才写版本条目。日常细节仍写在 commit body。
 - 直接提交到 `main`。
 
 ## 待办与未实现

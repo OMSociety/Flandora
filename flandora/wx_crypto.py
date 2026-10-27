@@ -26,6 +26,7 @@ import hmac
 import logging
 import os
 import struct
+import threading
 from ctypes import wintypes
 
 log = logging.getLogger("wx_crypto")
@@ -121,11 +122,30 @@ def aes_cbc_decrypt(key: bytes, iv: bytes, data: bytes) -> bytes:
 # --------------------------------------------------------------------------
 
 
+_KEY_CACHE_LIMIT = 32
+_KEY_CACHE: dict[tuple[bytes, bytes], tuple[bytes, bytes]] = {}
+_KEY_CACHE_LOCK = threading.Lock()
+
+
 def derive_keys(passphrase: bytes, salt: bytes) -> tuple:
-    """由口令与页 1 的 salt 派生 (enc_key, mac_key)。"""
+    """由口令与页 1 的 salt 派生 (enc_key, mac_key)。
+
+    256000 轮 PBKDF2 一次要 190 ms 左右，而每个库的 salt 是固定的：派生结果
+    按 (口令摘要, salt) 缓存在进程里，同一个库刷新多次只付一次派生成本。
+    换口令或换 salt（换账号、库重建）都会自然落到另一条缓存上。
+    """
+    cache_key = (hashlib.sha256(passphrase).digest(), salt)
+    with _KEY_CACHE_LOCK:
+        hit = _KEY_CACHE.get(cache_key)
+    if hit is not None:
+        return hit
     enc = hashlib.pbkdf2_hmac("sha512", passphrase, salt, KDF_ITER, dklen=32)
     mac_salt = bytes(x ^ SALT_MASK for x in salt)
     mac = hashlib.pbkdf2_hmac("sha512", enc, mac_salt, 2, dklen=32)
+    with _KEY_CACHE_LOCK:
+        if len(_KEY_CACHE) >= _KEY_CACHE_LIMIT:
+            _KEY_CACHE.clear()
+        _KEY_CACHE[cache_key] = (enc, mac)
     return enc, mac
 
 

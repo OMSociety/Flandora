@@ -46,13 +46,16 @@
 ## 一次收消息
 
 ```text
-wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
+wx_source.build_source()            按 poll_seconds 轮询本地库
+  -> source.poll()                  会话表先行：会话进度没动就只解 session.db，
+                                    动了才解消息库那一组（口令派生结果按库缓存）
   -> source.poll()                  产出统一形态的 dict（一条一条交）
   -> bridge_core._ingest()          去重（rawid）、过滤（自己发的、系统号）、日志
   -> Flandora.emit_message()
        -> _entry_for()              组装 InboundMessage：ChatRef/SenderRef/QuoteRef/正文/媒体
        -> events.record_inbound()   面板「消息」页留一份
        -> classify() 判类别        图片/表情包各起一个线程去解本地文件
+                                    表情没解出时在这个线程里等密钥扫描，最多 5 秒
        -> _notice_for()             撤回/拍一拍 → notice 事件，不进消息流
   -> _push_entry()
        -> ob_ids.contact_id()       微信字符串换成稳定整数 ID，名字进索引
@@ -73,6 +76,7 @@ wx_source.build_source()            按 poll_seconds 轮询 wlog 增量
   -> domain/send.py::execute()      唯一执行入口：SendText / SendMention / SendMedia
        -> send_plan.plan_message()  段序列 -> 发送动作
        -> sender.send_text() 等      uia_sender 投递进微信输入框（隔离桌面里）
+                                    每条动作用了多少毫秒记在 debug 日志里
   -> SendOutcome(SENT/FAILED/REFUSED) 逐条结果，回给调用方按原样报告
 ```
 

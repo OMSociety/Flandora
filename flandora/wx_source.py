@@ -32,6 +32,10 @@ class WxSourceError(Exception):
     """收件源起不来（口令缺失/账号不对/依赖缺失）。"""
 
 
+# 兜底整刷的间隔：会话表没跟上消息表这类异常，最多靠它补回来
+FULL_REFRESH_SECONDS = 15.0
+
+
 def default_key_file() -> str:
     """口令文件默认位置：可写数据目录下的 ``wx_key.dat``。
 
@@ -90,13 +94,13 @@ class WxLocalSource:
         self,
         store,
         backfill_seconds: int = 0,
-        poll_seconds: float = 1.0,
+        poll_seconds: float = 0.5,
         on_outgoing=None,
         image_key_watch=None,
     ):
         self.store = store
         self.backfill_seconds = max(0, int(backfill_seconds or 0))
-        self.poll_seconds = max(0.2, float(poll_seconds or 1.0))
+        self.poll_seconds = max(0.2, float(poll_seconds or 0.5))
         self.cursors = {}
         self.names = {}
         # 本进程开始收件的时刻：启动之后新出现的会话靠它划分「历史」与「刚到的」
@@ -107,6 +111,7 @@ class WxLocalSource:
         self.on_outgoing = on_outgoing
         # 取钥向导写盘晚于桥接启动时，靠它把新密钥接进正在跑的库读取，不必重启桥接
         self.image_key_watch = image_key_watch
+        self._last_full_refresh = 0.0
 
     # ---------- 启动 ----------
 
@@ -136,6 +141,7 @@ class WxLocalSource:
                         )
             self.cursors[username] = cursor
         self._primed = True
+        self._last_full_refresh = time.monotonic()
         if replayed:
             log.info(f"本地库收件：回填窗口 {self.backfill_seconds} 秒，涉及 {replayed} 条历史消息")
         else:
@@ -147,10 +153,16 @@ class WxLocalSource:
     # ---------- 轮询 ----------
 
     def poll(self):
-        """取回新消息。返回统一形态的字典列表，只含对方发来的消息。"""
+        """取回新消息。返回统一形态的字典列表，只含对方发来的消息。
+
+        会话表先行：没有会话的 last_local_id 越过游标，就说明这一轮没有新消息，
+        消息库不必重新解；兜底整刷保证异常情况下最多迟 FULL_REFRESH_SECONDS 秒。
+        """
         if not self._primed:
             self.prime()
-        self.store.refresh()
+        self.store.refresh_session()
+        if self._messages_maybe_changed() or self._full_refresh_due():
+            self.store.refresh_messages()
         self._adopt_new_image_key()
         out = []
         for s in self.store.sessions():
@@ -181,6 +193,35 @@ class WxLocalSource:
                     continue
                 out.append(self._to_data(s, m))
         return out
+
+    def _messages_maybe_changed(self) -> bool:
+        """会话表里有没有会话的进度越过当前游标。
+
+        读不到会话表时按「可能有」处理：多解一次库只是慢，漏消息才是错。
+        """
+        try:
+            sessions = self.store.sessions()
+        except WxStoreError as e:
+            log.debug("读会话表失败，按有新消息处理：%s", e)
+            return True
+        for s in sessions:
+            username = s["username"]
+            cursor = self.cursors.get(username)
+            if cursor is None:
+                # 新会话：游标会在下面按会话尾部对齐，历史消息不推送
+                return True
+            if int(s["last_local_id"] or 0) > cursor:
+                return True
+        return False
+
+    def _full_refresh_due(self) -> bool:
+        """距上次整刷超过 FULL_REFRESH_SECONDS 就整刷一次，兜住会话表滞后的情况。"""
+        now = time.monotonic()
+        if now - self._last_full_refresh < FULL_REFRESH_SECONDS:
+            return False
+        self._last_full_refresh = now
+        log.debug("本地库整刷一次（兜底）")
+        return True
 
     def _report_outgoing(self, username: str, msg) -> None:
         """把自己发出的一条消息的服务端号与发出时刻报给上层。绑号失败不影响收件。"""
@@ -283,6 +324,12 @@ class WxLocalSource:
                 if msg["kind"] == "image":
                     # 占位符与 domain.content 的判定共用常量，改字面量时两边一起改
                     data["content"] = f"{IMAGE_PLACEHOLDER} {path}"
+            if msg["kind"] == "emoji":
+                # 表情密钥可能还在扫（本机实测约 3 秒）。这条消息会交给桥接的独立
+                # 线程处理，md5 一并带过去，由那边决定等不等、等多久。
+                m = re.search(r'md5="([0-9a-fA-F]{32})"', msg["text"] or "")
+                if m:
+                    data["emojiMd5"] = m.group(1).lower()
         return data
 
     def _image_path_for(self, msg, talker: str = "") -> str:

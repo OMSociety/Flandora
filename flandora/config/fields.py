@@ -536,9 +536,9 @@ FIELDS: tuple[Field, ...] = (
         key="wx_poll_seconds",
         attr="WX_POLL_SECONDS",
         kinds=_RESTART,
-        default=1.0,
+        default=0.5,
         clean=_clean_poll_seconds,
-        desc="轮询本地库的间隔（秒）。默认 1 秒，新消息通常在这个延迟内被发现。",
+        desc="轮询本地库的间隔（秒）。默认 0.5 秒，新消息通常在这个延迟内被发现。",
     ),
     Field(
         key="wx_image_key_file",

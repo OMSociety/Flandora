@@ -11,12 +11,16 @@
 
 from __future__ import annotations
 
+import logging
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 
 from .message import SegmentKind
 from .window import Sender
+
+log = logging.getLogger("flandora.send")
 
 
 class SendStatus(StrEnum):
@@ -104,11 +108,15 @@ def execute(
     """
     outcomes: list[SendOutcome] = []
     for action in actions:
+        started = time.monotonic()
+        name = "?"
         if isinstance(action, SendText):
+            name = action.label
             outcomes.append(
                 _outcome(bool(sender.send_text(contact, action.text)), action.label, action.text)
             )
         elif isinstance(action, SendMention):
+            name = _MENTION_LABEL
             names, problem = resolve_mention(action.targets)
             if problem:
                 outcomes.append(SendOutcome(SendStatus.REFUSED, _MENTION_LABEL, problem))
@@ -124,9 +132,12 @@ def execute(
                 outcomes.append(SendOutcome(SendStatus.REFUSED, str(action.kind), reason))
                 continue
             label, record = target
+            name = label
             if action.kind in (SegmentKind.IMAGE, SegmentKind.EMOJI):
                 ok = bool(sender.send_image(contact, action.path))
             else:
                 ok = bool(sender.send_file(contact, action.path))
             outcomes.append(_outcome(ok, label, record))
+        # 每条动作用了多少时间：客户端觉得「发得慢」时，这里能直接看出是打字、贴图还是搜索会话慢
+        log.debug("%s 用时 %.0f ms（%s）", name, (time.monotonic() - started) * 1000, contact)
     return outcomes

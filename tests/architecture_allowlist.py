@@ -21,6 +21,7 @@ MODULE_STATE: dict[str, frozenset[str]] = {
     "flandora/config/__init__.py": frozenset({"_listeners", "_lock", "_store", "log"}),
     "flandora/config/logging_setup.py": frozenset({"_handler", "_stream"}),
     "flandora/config/store.py": frozenset({"log"}),
+    "flandora/domain/send.py": frozenset({"log"}),
     "flandora/main.py": frozenset({"_account_watcher", "log"}),
     "flandora/ob_ids.py": frozenset(
         {"_contact_ids", "_message_ids", "_names", "_names_lock", "_singleton_lock", "log"}

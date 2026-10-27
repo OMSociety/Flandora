@@ -263,7 +263,7 @@ def test_emoji_without_a_file_keeps_the_placeholder(isolated_ids, monkeypatch):
     assert event["message"] == [{"type": "text", "data": {"text": "[表情]"}}]
 
 
-# ===== 被引的是自己发的：补 at 段，并复用发送时已经分好的号 =====
+# ===== 被引的是自己发的：如实标记 reply_to_self，正文不改写；号复用发送时那个 =====
 
 SELF_WXID = "wxid_me"
 SELF_NICK = "芙兰朵露Flandre"
@@ -277,8 +277,12 @@ def _as_self(isolated_ids, bridge):
     return bridge
 
 
-def test_group_quote_of_our_own_message_adds_an_at_segment(isolated_ids, monkeypatch):
-    """群里 fromusr 是群标识，被引那位的名字在 displayname 里——按名字认出自己。"""
+def test_group_quote_of_our_own_message_is_marked_not_rewritten(isolated_ids, monkeypatch):
+    """群里 fromusr 是群标识，被引那位的名字在 displayname 里——按名字认出自己。
+
+    认出之后只在事件上标 reply_to_self，不往消息段里塞 @：正文里没有的东西不能
+    替客户端加上，唤醒与否留给客户端判断。
+    """
     bridge = _as_self(isolated_ids, _make_bridge())
     event = _push_once(
         monkeypatch,
@@ -289,8 +293,11 @@ def test_group_quote_of_our_own_message_adds_an_at_segment(isolated_ids, monkeyp
             "quote": {"server_id": "SN-9", "sender": GROUP, "name": SELF_NICK},
         },
     )
-    assert event["message"][0] == {"type": "at", "data": {"qq": isolated_ids.SELF.user_id()}}
-    assert event["message"][1] == {"type": "reply", "data": {"id": 0}}
+    assert event["reply_to_self"] is True
+    assert [seg["type"] for seg in event["message"]] == ["reply", "text"]
+    assert event["message"][0]["data"]["id"] == 0
+    # 没人 @ 机器人，is_mentioned 就还是假
+    assert event["is_mentioned"] is False
 
 
 def test_group_quote_of_someone_else_adds_no_at_segment(isolated_ids, monkeypatch):
@@ -304,11 +311,12 @@ def test_group_quote_of_someone_else_adds_no_at_segment(isolated_ids, monkeypatc
             "quote": {"server_id": "SN-9", "sender": GROUP, "name": "张三"},
         },
     )
+    assert event["reply_to_self"] is False
     assert [seg["type"] for seg in event["message"]] == ["reply", "text"]
 
 
-def test_private_quote_of_our_own_message_adds_an_at_segment(isolated_ids, monkeypatch):
-    """私聊里 fromusr 就是发送者 wxid，直接比 wxid。"""
+def test_private_quote_of_our_own_message_is_marked_too(isolated_ids, monkeypatch):
+    """私聊里 fromusr 就是发送者 wxid，直接比 wxid；同样只标记，不补段。"""
     bridge = _as_self(isolated_ids, _make_bridge())
     event = _push_once(
         monkeypatch,
@@ -325,7 +333,8 @@ def test_private_quote_of_our_own_message_adds_an_at_segment(isolated_ids, monke
             "quote": {"server_id": "SN-9", "sender": SELF_WXID, "name": "我"},
         },
     )
-    assert event["message"][0] == {"type": "at", "data": {"qq": isolated_ids.SELF.user_id()}}
+    assert event["reply_to_self"] is True
+    assert [seg["type"] for seg in event["message"]] == ["reply", "text"]
 
 
 def test_claim_reuses_the_id_handed_out_when_sending(isolated_ids, isolated_store, monkeypatch):
@@ -345,8 +354,8 @@ def test_claim_reuses_the_id_handed_out_when_sending(isolated_ids, isolated_stor
         },
     )
 
-    assert event["message"][0]["type"] == "at"
-    assert event["message"][1] == {"type": "reply", "data": {"id": sent_id}}, event["message"]
+    assert event["reply_to_self"] is True
+    assert event["message"][0] == {"type": "reply", "data": {"id": sent_id}}, event["message"]
     assert isolated_ids.message_by_server("SN-0") == sent_id
     archived = bridge_core.ob_store.message_store().get(sent_id)
     assert archived is not None and archived["raw_message"] == "更早的一句"

@@ -144,7 +144,7 @@ def quote_ref(body):
 
     `sender` 是被引消息的发送者：它可能在 `<fromusr>`，也可能只在 `<chatusr>`（群里
     `<chatusr>` 还可能是群标识），两个都认、先看 `<fromusr>`。调用方用它判断「被引的
-    是不是机器人自己发的消息」，认不出只是少补一个 at 段，不影响正文。
+    是不是机器人自己发的消息」，认不出只是 `reply_to_self` 标不出来，不影响正文与消息段。
     """
     if not body:
         return None

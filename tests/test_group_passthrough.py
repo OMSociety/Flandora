@@ -128,8 +128,8 @@ QUOTE_OF_ME = {
 }
 
 
-def test_quote_of_the_bot_itself_comes_with_an_at_self(isolated_ids, monkeypatch):
-    """有人引用机器人刚说过的话：最前面补一个 at 自己的段，客户端据此唤醒。"""
+def test_quote_of_the_bot_itself_is_marked_not_prefixed(isolated_ids, monkeypatch):
+    """有人引用机器人刚说过的话：事件标 reply_to_self，消息段不替客户端补 @。"""
     bridge = _make_bridge()
     pushed = _capture(monkeypatch)
     RUNTIME.store = _StubStore("芙兰朵露Flandre", names={"wxid_me": "芙兰朵露Flandre"})
@@ -138,11 +138,10 @@ def test_quote_of_the_bot_itself_comes_with_an_at_self(isolated_ids, monkeypatch
     bridge.emit_message({**GROUP_MSG, "content": "这话我同意", "quote": dict(QUOTE_OF_ME)})
 
     event = pushed[0]
-    assert [seg["type"] for seg in event["message"]] == ["at", "reply", "text"]
-    # at 的是桥接自己：qq 就是事件的 self_id，客户端的唤醒判定认这一条
-    assert event["message"][0]["data"]["qq"] == event["self_id"]
+    assert event["reply_to_self"] is True
+    assert [seg["type"] for seg in event["message"]] == ["reply", "text"]
     # 被引的是自己发的消息，没进过事件存档，只能给 0
-    assert event["message"][1]["data"]["id"] == 0
+    assert event["message"][0]["data"]["id"] == 0
     assert _text_of(event) == "这话我同意"
 
 

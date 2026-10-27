@@ -93,13 +93,11 @@ AstrBot 把消息链转成 OneBot 段名再发下来，它的语音段是 `recor
 
 ### 引用机器人自己发的消息
 
-被引的是机器人自己发出的那条时，Flandora 会在消息段最前面补一个 `at` 自己的段（`qq` 与事件的 `self_id` 相同），后面照旧跟一个 `reply` 段。
+被引的是机器人自己发出的那条时，Flandora 在事件上标 `reply_to_self: true`，消息段照旧是 `reply` 加正文——发消息的人没打的 @ 不会出现在消息里。
 
-补这一段的原因在 AstrBot 的唤醒检查里（`astrbot/core/pipeline/waking_check/stage.py`）：它把「被 @ 了」「被 @全体成员」「引用了机器人的消息」并列成三条唤醒条件，前两条不依赖回查被引消息，第三条要求 `Reply.sender_id` 等于 `self_id`——而 `sender_id` 来自按 `reply` 段 `message_id` 调 `get_msg` 的结果。机器人自己发出的消息现在也会进事件存档（`message_sent`），被引消息的号取得到，这条唤醒条件本身就成立。补上的 `at` 段是第二道保险：客户端版本旧、或存档被清过时，仍能按「被 @」认出这条消息冲着机器人来。机器人启动时会按会话尾部补报一遍已经发出去的消息的服务端号，所以重启之前发出的消息同样绑得上（按发出时刻就近认领，隔得太远的不认）。
+这条标记对应 AstrBot 唤醒检查里的第三种情形（`astrbot/core/pipeline/waking_check/stage.py` 把「被 @ 了」「被 @全体成员」「引用了机器人的消息」并列）：AstrBot 自己按 `reply` 段的 `message_id` 调 `get_msg`，拿到的 `sender_id` 等于 `self_id` 时就认为「引用了机器人的消息」。机器人自己发出的消息会进事件存档（`message_sent`），被引消息的 `server_id` 与 `message_id` 绑得上，所以这条唤醒条件靠 AstrBot 自己的判断就成立，桥接不需要替它补段。机器人启动时会按会话尾部补报一遍已经发出去的消息的服务端号，重启之前发出的消息同样绑得上（按发出时刻就近认领，隔得太远的不认）。
 
-正文不受影响：AstrBot 组装 `message_str` 时跳过开头的 at 段（`aiocqhttp_platform_adapter.py`：第一个 at 的是自己时，不写进 `message_str`）。
-
-> **提示**：这个 `at` 段是 Flandora 为唤醒补的，不是发消息的人真的 @ 了机器人。同一条消息本来就已经 @ 了机器人时不会再补第二个。
+读 `reply_to_self` 的客户端可以直接把它当成「在跟我说话」，不必再回查；不读的客户端也照旧能靠 `reply` 段取到原文。
 
 ## 5. 做不到的部分
 

@@ -616,6 +616,9 @@ def render_message_event(message: Message, message_format: str) -> dict:
     # font 是微信侧的字体编号，这里没有对应值就填 0（规范允许的默认值）。
     event["sub_type"] = "normal" if message.chat.is_group else "friend"
     event["font"] = 0
+    # 被引的消息是自己发的：如实标出来，正文不因此改写。客户端把它当成「在跟我
+    # 说话」的条件之一时读这个字段，桥接不替它往消息段里补 @。
+    event["reply_to_self"] = bool(message.reply_to_self)
     event["sender"] = {
         "user_id": user_id,
         "nickname": message.sender.nickname or str(user_id),

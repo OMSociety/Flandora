@@ -23,7 +23,6 @@ from .domain.message import (
     Emoji,
     Image,
     InboundMessage,
-    Mention,
     Message,
     QuoteRef,
     Reply,
@@ -263,8 +262,9 @@ class Flandora:
 
         群里 ``<refermsg><fromusr>`` 是群标识（实测 139 条群里全是 ``xxx@chatroom``），
         被引那位的名字只在 ``<displayname>``；私聊里 ``<fromusr>`` 才是发送者 wxid。
-        两条都认：wxid 相同，或群引用里显示名与自己一致。同群有人跟自己重名时会多补
-        一个 at 段，只影响唤醒判定，不改动正文。
+        两条都认：wxid 相同，或群引用里显示名与自己一致。判定结果写进事件的
+        ``reply_to_self``，不动正文。同群有人跟自己重名时这条标记会误报，客户端
+        按它决定要不要响应时需要容忍这一点。
         """
         if quote is None:
             return False
@@ -280,13 +280,9 @@ class Flandora:
         """把一条收到的消息还原成领域段。
 
         引用在前（客户端据此拿到被引消息的 message_id），正文里的真 @ 拆成 at 段，
-        其余保持文本。还原不出来的一律留在原文里，不改写内容。
-
-        被引的是机器人自己发的消息时，最前面再补一个 at 自己的段：客户端把「被 @」
-        当作唤醒条件（AstrBot 的唤醒检查就在其列）。机器人自己发出的消息现在也进事件
-        存档，按被引消息的号取得到原文（见 :meth:`_bind_outgoing_server`），这个 at 段
-        是第二道保险：客户端版本旧或存档被清过时，仍能按「被 @」认出这条消息冲机器人来。
-        正文里已经 @ 机器人时不补。群里的被引发送者藏在 ``<displayname>`` 里，
+        其余保持文本。还原不出来的一律留在原文里，不改写内容——被引的是自己发的
+        消息时不往正文里塞 @，那件事由事件的 ``reply_to_self`` 如实带出，要不要
+        当成「在跟我说话」由客户端决定。群里的被引发送者藏在 ``<displayname>``，
         判定见 :meth:`_quote_is_self`。
         """
         segments: list[Segment] = []
@@ -298,16 +294,9 @@ class Flandora:
         if reply is not None:
             segments.append(reply)
         names = self.resolve_names(message.chat.handle)
-        mentions = ob_inbound.split_mentions(
-            text, lambda name: ob_inbound.resolve_from_names(names, name)
+        segments.extend(
+            ob_inbound.split_mentions(text, lambda name: ob_inbound.resolve_from_names(names, name))
         )
-        mentioned_self = any(
-            isinstance(seg, Mention) and seg.user_id == ob_ids.SELF.user_id() for seg in mentions
-        )
-        if self._quote_is_self(message.quote) and not mentioned_self:
-            nick = ob_ids.SELF.nickname() or self.self_nickname()
-            segments.insert(0, Mention(user_id=ob_ids.SELF.user_id(), name=nick))
-        segments.extend(mentions)
         return segments
 
     def _claim_quoted(self, message: InboundMessage) -> int | None:
@@ -509,6 +498,7 @@ class Flandora:
                     message_id=message_id,
                     timestamp=message.timestamp,
                     mentioned=is_group and self._is_mentioned(message.raw),
+                    reply_to_self=self._quote_is_self(message.quote),
                 ),
                 config.OB_MESSAGE_FORMAT,
             )

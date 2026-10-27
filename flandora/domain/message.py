@@ -169,4 +169,7 @@ class Message:
     message_id: int
     timestamp: int
     mentioned: bool = False
+    # 被引的这条消息是自己发的：客户端要按「在跟我说话」处理时读它。正文照原样
+    # 上报——被引关系由 reply 段承载，桥接不替客户端补 @。
+    reply_to_self: bool = False
     self_id: int = 0

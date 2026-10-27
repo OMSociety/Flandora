@@ -79,7 +79,7 @@
 | `reply` | 支持 | 引用消息的 `refermsg/svrid` 就是被引消息的 `server_id`，按它回查 `message_id`；查不到时 `id` 记 `0`（引用关系仍在，取不到原文） |
 | `text` | 支持 | 其余内容按原文成段，认出中间夹着的提及时在前后切开 |
 
-被引的是机器人自己发出的消息时，收件方向会在消息段最前面补一个 `at` 自己的段（`qq` 与事件的 `self_id` 相同）：发出去的消息也会进存档（`post_type` 为 `message_sent`），被引消息的 `server_id` 与 `message_id` 绑得上，`reply` 段的 `id` 取得到；补 `at` 是第二道保险——客户端版本旧、或存档被清过时，仍能靠「被 @」认出这条消息冲着机器人来。接 AstrBot 时的来龙去脉见 [astrbot.md](astrbot.md)。
+被引的是机器人自己发出的消息时，事件带 `reply_to_self: true`，消息段照旧只有 `reply` 与正文：发出去的消息也会进存档（`post_type` 为 `message_sent`），被引消息的 `server_id` 与 `message_id` 绑得上，`reply` 段的 `id` 取得到原文。正文不改写——发消息的人没打的 @ 不会出现在消息里，要不要当成「在跟我说话」由客户端按这个字段决定。接 AstrBot 时的来龙去脉见 [astrbot.md](astrbot.md)。
 
 做不到的能力与各自原因写在 [wip.md](wip.md)；需要在真机上确认的两项（撤回、拍一拍）连同实验步骤写在 [needs-user.md](needs-user.md)；接 AstrBot 的步骤与能力缺口清单见 [astrbot.md](astrbot.md)。
 

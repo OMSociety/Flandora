@@ -541,6 +541,7 @@ class Flandora:
 
         RUNTIME.store = source.store
         source.prime()
+        wrong_key_rounds = 0
         try:
             while LIFECYCLE.should_continue():
                 try:
@@ -548,9 +549,19 @@ class Flandora:
                         if not LIFECYCLE.should_continue():
                             break
                         self._ingest(data)
+                    wrong_key_rounds = 0
                 except wx_crypto.WrongKey:
-                    log.error("微信口令与当前登录账号对不上（切换过账号？），本地库收件停止")
-                    return
+                    # 微信正在写库时偶尔会这样。收件不该因此停摆：记一次、歇一拍接着轮询，
+                    # 连续失败到一定次数才说明口令真的不对（换过账号，要去取钥向导重取）。
+                    wrong_key_rounds += 1
+                    if wrong_key_rounds == 1 or wrong_key_rounds % 20 == 0:
+                        log.warning(
+                            "这一轮读库时口令校验不过（第 %d 次）；微信正在写库时常有，"
+                            "若一直这样，请在面板的取钥向导里重新取一次口令",
+                            wrong_key_rounds,
+                        )
+                    time.sleep(max(1.0, source.poll_seconds))
+                    continue
                 except Exception as e:  # noqa: BLE001
                     log.warning(f"轮询本地库出错：{e}")
                 time.sleep(source.poll_seconds)

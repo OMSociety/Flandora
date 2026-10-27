@@ -38,6 +38,9 @@ log = logging.getLogger("flandora")
 
 ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 
+# 微信写库的间隙里解密会读到半行，表现为「口令对不上」；等一拍重来即可
+WX_WRITE_RETRY_SECONDS = 0.15
+
 # 微信通讯录里的伪联系人：不是真人，也不是群，作为好友上报只会让客户端
 # 把消息推给「服务通知」「微信团队」这类系统号。
 SYSTEM_USERNAMES = frozenset(
@@ -377,7 +380,13 @@ class WxStore:
             try:
                 size = wx_crypto.decrypt_to_file(self.passphrase, src, dst)
             except wx_crypto.WrongKey:
-                raise
+                # 微信正在写这个库时可能读到半行，表现为口令对不上。等一拍重来一次，
+                # 仍然不对才往上报（真的换过账号）；否则一次巧合会把收件停掉十秒。
+                time.sleep(WX_WRITE_RETRY_SECONDS)
+                try:
+                    size = wx_crypto.decrypt_to_file(self.passphrase, src, dst)
+                except wx_crypto.WrongKey:
+                    raise
             except Exception as e:  # noqa: BLE001
                 log.warning("解密 %s 失败：%s", name, e)
                 continue

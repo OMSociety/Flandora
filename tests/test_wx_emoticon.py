@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import io
 import struct
+import subprocess
 import sys
 import threading
 from pathlib import Path
 
 import pytest
+from PIL import Image
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
@@ -165,9 +168,54 @@ def test_image_for_passes_a_plaintext_cache_through(tmp_path, monkeypatch):
     assert Path(path).read_bytes().startswith(b"\x89PNG")
 
 
-def test_decode_hevc_refuses_a_stream_without_frames():
-    pytest.importorskip("av")
-    with pytest.raises(wx_emoticon.EmoticonError, match="解"):
+def test_decode_hevc_says_which_file_is_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(wx_emoticon, "ffmpeg_path", lambda: tmp_path / "nope" / "ffmpeg.exe")
+    with pytest.raises(wx_emoticon.EmoticonError, match="tools.{1,2}ffmpeg"):
+        wx_emoticon.decode_hevc(b"\x00" * 64)
+
+
+def test_decode_hevc_reports_the_decoder_error(monkeypatch, tmp_path):
+    exe = tmp_path / "ffmpeg.exe"
+    exe.write_bytes(b"stub")
+    monkeypatch.setattr(wx_emoticon, "ffmpeg_path", lambda: exe)
+    monkeypatch.setattr(
+        wx_emoticon.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 1, b"", b"bad stream\n"),
+    )
+    with pytest.raises(wx_emoticon.EmoticonError, match="bad stream"):
+        wx_emoticon.decode_hevc(b"\x00" * 64)
+
+
+def test_decode_hevc_splits_png_frames_from_one_pipe(monkeypatch, tmp_path):
+    exe = tmp_path / "ffmpeg.exe"
+    exe.write_bytes(b"stub")
+    first = io.BytesIO()
+    Image.new("RGB", (8, 6), (10, 20, 30)).save(first, format="PNG")
+    second = io.BytesIO()
+    Image.new("RGB", (8, 6), (30, 20, 10)).save(second, format="PNG")
+    payload = first.getvalue() + second.getvalue()
+    monkeypatch.setattr(wx_emoticon, "ffmpeg_path", lambda: exe)
+    monkeypatch.setattr(
+        wx_emoticon.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, payload, b""),
+    )
+    frames = wx_emoticon.decode_hevc(b"\x00" * 64)
+    assert [frame.size for frame in frames] == [(8, 6), (8, 6)]
+    assert frames[0].getpixel((0, 0)) == (10, 20, 30)
+
+
+def test_decode_hevc_reports_a_timeout(monkeypatch, tmp_path):
+    exe = tmp_path / "ffmpeg.exe"
+    exe.write_bytes(b"stub")
+
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(args[0], kwargs.get("timeout"))
+
+    monkeypatch.setattr(wx_emoticon, "ffmpeg_path", lambda: exe)
+    monkeypatch.setattr(wx_emoticon.subprocess, "run", fake_run)
+    with pytest.raises(wx_emoticon.EmoticonError, match="秒"):
         wx_emoticon.decode_hevc(b"\x00" * 64)
 
 

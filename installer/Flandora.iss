@@ -9,7 +9,10 @@
 ;      网页面板「安全与服务 → 开机启动」读写的就是同一条值（flandora/autostart.py），
 ;      两边的勾选状态因此永远一致。卸载时由 uninsdeletevalue 清掉。
 ;   2. data\ 下的文件一律 uninsneveruninstall，卸载时是否删除由
-;      InitializeUninstall() 里的对话框决定（默认删除）。
+;      InitializeUninstall() 里的对话框决定（默认保留）。
+;
+; 装卸期间的两个约定：Setup 用 AppMutex 盯住管理器与桥接的互斥量，有实例在跑时
+; 提示先退出，不去杀进程；静默安装跳过这项检查。
 
 ; 版本号与载荷目录由 tools/sync_version.py 写进 version.iss（唯一来源是
 ; flandora/__init__.py 的 __version__），本文件不写这两个值。
@@ -42,10 +45,17 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayName={#AppName}
 UninstallDisplayIcon={app}\{#ManagerExe}
+; 与 flandora/single_instance.py 的两个名字一致：有实例在跑时 Setup 会提示先退出
+AppMutex=Global\Flandora_Manager,Global\Flandora_Bridge
 MinVersion=10.0
 
+[Messages]
+SetupAppRunningError={#AppName} 正在运行（托盘里还有它的图标）。请先从托盘菜单选「退出程序」，再点「确定」继续；安装程序不会替你结束它。
+
 [Languages]
-Name: "chinese"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
+; 简体中文语言包取自 Inno Setup 官方仓库的同名文件（随本目录一起放进版本库，
+; 免得机器上没装对应语言组件时编译失败）
+Name: "chinese"; MessagesFile: "compiler:Default.isl,ChineseSimplified.isl"
 
 [Tasks]
 Name: "autostart"; Description: "开机自动启动（登录后自动运行管理器；微信由 bridge 在隔离桌面上拉起，不占用你的桌面）"; Flags: unchecked
@@ -56,6 +66,7 @@ Name: "desktopicon"; Description: "创建桌面快捷方式"; Flags: unchecked
 Source: "{#PayloadDir}\{#BridgeExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\{#ManagerExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\tools\{#KeyToolExe}"; DestDir: "{app}\tools"; Flags: ignoreversion
+Source: "{#PayloadDir}\tools\ffmpeg\*"; DestDir: "{app}\tools\ffmpeg"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "{#PayloadDir}\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#PayloadDir}\build-info.json"; DestDir: "{app}"; Flags: ignoreversion
@@ -93,12 +104,12 @@ begin
   if DirExists(DataDir) then
   begin
     { 用 SuppressibleMsgBox 而不是 MsgBox：后者在 /VERYSILENT 下照样弹框，
-      会把无人值守的卸载卡死。静默时按第四个参数取值，默认删除。 }
+      会把无人值守的卸载卡死。静默时按第四个参数取值，默认保留。 }
     if SuppressibleMsgBox('是否同时删除配置与已保存的微信口令？' + #13#10 + #13#10
               + '「是」删除 ' + DataDir + '，里面有 config.json、微信数据库口令、'
               + '图片密钥和日志。' + #13#10
               + '「否」保留它们，以后重新安装可以接着用。',
-              mbConfirmation, MB_YESNO or MB_DEFBUTTON1, IDYES) = IDYES then
+              mbConfirmation, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES then
       DelTree(DataDir, True, True, True);
   end;
 end;

@@ -25,15 +25,21 @@ def test_installer_sources_match_the_payload_list():
     files = {source for source in sources if not source.endswith("*")}
     dirs = {source[:-2] for source in sources if source.endswith("/*")}
     for name in build.REQUIRED_PAYLOAD:
-        if name == "docs":
-            assert name in dirs
-        else:
-            assert name in files
+        if name in files:
+            continue
+        # 目录形式的引用（docs\*、tools\ffmpeg\*）覆盖该目录自身与它下面的条目
+        assert any(name == rel or name.startswith(f"{rel}/") for rel in dirs), name
 
 
 def test_manifest_is_exactly_the_required_payload():
     assert build.manifest_problems() == []
-    assert build.installer_manifest() == set(build.REQUIRED_PAYLOAD)
+    manifest = build.installer_manifest()
+    for name in build.REQUIRED_PAYLOAD:
+        assert name in manifest or any(name.startswith(f"{rel}/") for rel in manifest), name
+    for rel in manifest:
+        assert rel in build.REQUIRED_PAYLOAD or any(
+            name.startswith(f"{rel}/") for name in build.REQUIRED_PAYLOAD
+        ), rel
 
 
 def test_entry_exe_and_bridge_sit_in_the_root_and_keytool_in_tools():

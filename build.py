@@ -83,11 +83,35 @@ REQUIRED_PAYLOAD = (
     "Flandora.exe",
     "Flandora-Bridge.exe",
     "tools/Flandora-KeyTool.exe",
+    "tools/ffmpeg/ffmpeg.exe",
     "README.md",
     "LICENSE",
     "docs",
     BUILD_INFO_NAME,
 )
+
+# 表情解码用的 FFmpeg：官方 FFmpeg 项目的 LGPL 共享构建（BtbN 的 autobuild），
+# 钉住具体构建与 zip 的 sha256，打包时下载一次、缓存进 build/，之后离线复用。
+FFMPEG_BUILD = "autobuild-2026-10-26-14-25"
+FFMPEG_ARCHIVE = "ffmpeg-n8.1.3-24-g92611900bb-win64-lgpl-shared-8.1.zip"
+FFMPEG_URL = (
+    f"https://github.com/BtbN/FFmpeg-Builds/releases/download/{FFMPEG_BUILD}/{FFMPEG_ARCHIVE}"
+)
+FFMPEG_SHA256 = "96afe9bee66012f4cbc336a473f0b595060d73bdc5efe4331d55101500d0a93e"
+# 共享构建里跑解码与 PNG 输出要的那几件：主程序、库与许可说明
+FFMPEG_FILES = (
+    "bin/ffmpeg.exe",
+    "bin/avcodec-62.dll",
+    "bin/avdevice-62.dll",
+    "bin/avfilter-11.dll",
+    "bin/avformat-62.dll",
+    "bin/avutil-60.dll",
+    "bin/swresample-6.dll",
+    "bin/swscale-9.dll",
+    "LICENSE.txt",
+)
+FFMPEG_TARGET = ROOT / "tools" / "ffmpeg"
+FFMPEG_CACHE = BUILD / FFMPEG_ARCHIVE
 
 # pip 走清华源，国内直连 PyPI 常常超时
 PIP_MIRROR = "https://pypi.tuna.tsinghua.edu.cn/simple"
@@ -104,12 +128,102 @@ def step(msg: str) -> None:
 
 
 def clean() -> None:
+    stash = _stash_ffmpeg_cache()
     for p in [DIST, BUILD]:
         if p.exists():
             shutil.rmtree(p, ignore_errors=True)
+    _restore_ffmpeg_cache(stash)
     for sub in [PKG_SRC, MANAGER_SRC, TOOLS_SRC]:
         for d in sub.rglob("__pycache__"):
             shutil.rmtree(d, ignore_errors=True)
+
+
+def _ffmpeg_cache_dir() -> Path:
+    return BUILD / "ffmpeg"
+
+
+def _stash_ffmpeg_cache() -> Path | None:
+    """clean() 删 build/ 之前把下载好的 FFmpeg 挪出去，省下一次 77 MB 下载。"""
+    cache = _ffmpeg_cache_dir()
+    if not cache.is_dir():
+        return None
+    stash = Path(tempfile.mkdtemp(prefix="flandora-ffmpeg-"))
+    shutil.move(str(cache), str(stash / "ffmpeg"))
+    return stash
+
+
+def _restore_ffmpeg_cache(stash: Path | None) -> None:
+    if stash is None:
+        return
+    cache = _ffmpeg_cache_dir()
+    if cache.exists():
+        shutil.rmtree(cache, ignore_errors=True)
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(stash / "ffmpeg"), str(cache))
+    shutil.rmtree(stash, ignore_errors=True)
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _download(url: str, target: Path) -> None:
+    import urllib.request
+
+    partial = target.with_suffix(target.suffix + ".part")
+    with urllib.request.urlopen(url, timeout=120) as response, partial.open("wb") as out:
+        total = int(response.headers.get("Content-Length") or 0)
+        done = 0
+        while True:
+            chunk = response.read(1024 * 1024)
+            if not chunk:
+                break
+            out.write(chunk)
+            done += len(chunk)
+            if total:
+                print(f"\r  {done / 1048576:.1f} / {total / 1048576:.1f} MB", end="", flush=True)
+    print()
+    partial.replace(target)
+
+
+def prepare_ffmpeg() -> Path:
+    """把官方 LGPL 共享构建的 FFmpeg 放到 tools/ffmpeg（源码运行与载荷共用）。
+
+    压缩包缓存在 build/ffmpeg，命中就不必再下载；每次都核 sha256，换版本时改
+    常量即可，坏包不会静默进发布物。
+    """
+    step("准备 FFmpeg（LGPL 共享构建）")
+    cache_dir = _ffmpeg_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    archive = cache_dir / FFMPEG_ARCHIVE
+    if archive.is_file() and _sha256(archive) == FFMPEG_SHA256:
+        print(f"  用已缓存的 {archive.name}")
+    else:
+        archive.unlink(missing_ok=True)
+        print(f"  下载 {FFMPEG_URL}")
+        _download(FFMPEG_URL, archive)
+        digest = _sha256(archive)
+        if digest != FFMPEG_SHA256:
+            archive.unlink(missing_ok=True)
+            raise SystemExit(
+                f"FFmpeg 压缩包校验不通过：期望 {FFMPEG_SHA256}，实际 {digest}；请检查网络或代理。"
+            )
+    target = FFMPEG_TARGET
+    if target.exists():
+        shutil.rmtree(target)
+    target.mkdir(parents=True)
+    with zipfile.ZipFile(archive) as zf:
+        root = zf.namelist()[0].split("/", 1)[0]
+        for name in FFMPEG_FILES:
+            with zf.open(f"{root}/{name}") as src, (target / Path(name).name).open("wb") as out:
+                shutil.copyfileobj(src, out)
+    size = sum(item.stat().st_size for item in target.iterdir()) / 1048576
+    print(f"  就绪：{target}（{len(FFMPEG_FILES)} 个文件，{size:.1f} MB）")
+    return target
 
 
 def run(cmd: list[str], cwd: Path | None = None) -> None:
@@ -286,9 +400,6 @@ def bridge_extras() -> list[str]:
             "uvicorn.protocols.websockets.websockets_impl",
             "--hidden-import",
             "uvicorn.lifespan.on",
-            # 表情缓存里的 wxgf 是 HEVC：PyAV 自带解码器，钩子会把它的 FFmpeg 动态库收进来
-            "--hidden-import",
-            "av",
         ]
     )
     return extras
@@ -403,12 +514,23 @@ def manifest_problems() -> list[str]:
     """清单层自检：安装脚本引用与 ``REQUIRED_PAYLOAD`` 必须一一对应。
 
     这一步比的是两张清单，不需要载荷目录存在——``--check`` 因此在任何环境下都真的
-    核对了安装脚本，而不是发现目录缺失就整段跳过。
+    核对了安装脚本，而不是发现目录缺失就整段跳过。脚本里 ``dir\\*`` 这种写法算作
+    整个目录，于是 ``tools/ffmpeg/*`` 覆盖 ``tools/ffmpeg/ffmpeg.exe`` 这类条目。
     """
     sources = installer_manifest()
     required = {name.rstrip("/") for name in REQUIRED_PAYLOAD}
-    problems = [f"安装脚本没有引用 {name}" for name in sorted(required - sources)]
-    problems += [f"安装脚本引用了清单外的 {name}" for name in sorted(sources - required)]
+    missing = [
+        name
+        for name in sorted(required)
+        if name not in sources and not any(name.startswith(f"{rel}/") for rel in sources)
+    ]
+    covered = {
+        rel
+        for rel in sources
+        if rel in required or any(name.startswith(f"{rel}/") for name in required)
+    }
+    problems = [f"安装脚本没有引用 {name}" for name in missing]
+    problems += [f"安装脚本引用了清单外的 {rel}" for rel in sorted(sources - covered)]
     return problems
 
 
@@ -530,7 +652,11 @@ def assemble_zip() -> Path:
             raise SystemExit(f"缺少打包产物 {src}")
         shutil.copy2(src, target_dir / fname)
 
-    # 2) 可写数据目录：首次启动时程序会在这里生成 config.json
+    # 2) 表情解码用的 FFmpeg：LGPL 共享构建，落在 tools/ffmpeg
+    ffmpeg = prepare_ffmpeg()
+    shutil.copytree(ffmpeg, rel / "tools" / "ffmpeg")
+
+    # 3) 可写数据目录：首次启动时程序会在这里生成 config.json
     (rel / "data").mkdir(parents=True, exist_ok=True)
 
     # 3) README
@@ -640,6 +766,9 @@ def find_iscc() -> Path | None:
         r"C:\Program Files\Inno Setup 7",
         r"C:\Program Files (x86)\Inno Setup 6",
         r"C:\Program Files\Inno Setup 6",
+        # winget 默认把 Inno Setup 装进用户目录
+        str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Inno Setup 6"),
+        str(Path(os.environ.get("LOCALAPPDATA", "")) / "Programs" / "Inno Setup 7"),
     ]
     for d in dirs:
         if d and (Path(d) / "ISCC.exe").is_file():

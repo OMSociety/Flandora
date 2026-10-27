@@ -43,3 +43,6 @@ Thumbs.db
 
 .coverage
 
+
+# 打包时下载的 FFmpeg（LGPL 共享构建），随发布包分发，不进版本库
+tools/ffmpeg/

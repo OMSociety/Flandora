@@ -5,7 +5,8 @@
     key = MD5(f"{seed}{wxid}EMOTICON").digest()      # iv 与 key 相同
     plaintext = AES-128-CBC-decrypt(key, iv=key, ciphertext)   # PKCS#7
 
-解出来的明文有两种：GIF/PNG/JPEG 本体，或 ``wxgf`` 容器（HEVC 帧，需要 PyAV 解码）。
+解出来的明文有两种：GIF/PNG/JPEG 本体，或 ``wxgf`` 容器（HEVC 帧，交给随包的
+``tools\ffmpeg\ffmpeg.exe`` 解码）。
 `HttpResource` 下的小图不带加密外壳，读到明文图片直接用。
 seed 是 32 位整数，只活在微信进程内存里，重登后可能变，所以按账号缓存、解不开时重扫。
 """
@@ -18,8 +19,12 @@ import logging
 import os
 import re
 import struct
+import subprocess
+import sys
 import threading
 from pathlib import Path
+
+from PIL import Image
 
 from . import wechat_account, wx_image_key
 from .wx_crypto import aes_cbc_decrypt
@@ -34,6 +39,11 @@ CACHE_SUBDIR = "cache"
 CACHE_KINDS = ("Emoticon", "HttpResource")
 BUSINESS_SUBDIR = os.path.join("business", "emoticon")
 FRAME_MS = 100
+
+# 解一帧表情的 HEVC 走这一步；随包的 ffmpeg 是 LGPL 构建，只做解码与图片输出
+FFMPEG_RELATIVE = os.path.join("tools", "ffmpeg", "ffmpeg.exe")
+DECODE_TIMEOUT = 20.0
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 
 _SEED_LOCK = threading.Lock()
 _SEEDS: dict[str, int] = {}
@@ -238,28 +248,66 @@ def parse_wxgf(plain: bytes) -> dict:
     }
 
 
-def decode_hevc(hevc: bytes) -> list:
-    """用 PyAV 把 HEVC 码流解成 PIL 帧。
+def ffmpeg_path() -> Path:
+    """随包 ffmpeg 的位置：冻结后在 exe 同级的 tools\\ffmpeg，源码时在仓库根。"""
+    root = (
+        Path(sys.executable).resolve().parent
+        if getattr(sys, "frozen", False)
+        else Path(__file__).resolve().parent.parent
+    )
+    return root / "tools" / "ffmpeg" / "ffmpeg.exe"
 
-    `wxgf` 里的码流只带 VPS/SPS/PPS 与一个 IDR 片，按裸码流喂给 CodecContext
-    一帧也解不出来；走 `hevc` 解复用器才认这套参数集与片头。
-    """
-    try:
-        import av
-    except Exception as exc:  # noqa: BLE001 - 没装解码器时退回占位文本
-        raise EmoticonError(f"没有 HEVC 解码器：{exc}") from exc
-    frames = []
-    try:
-        with av.open(io.BytesIO(hevc), format="hevc") as container:
-            for frame in container.decode(video=0):
-                frames.append(frame.to_image())
-    except EmoticonError:
-        raise
-    except Exception as exc:  # noqa: BLE001 - 坏码流按解析失败处理
-        raise EmoticonError(f"HEVC 解码失败：{exc}") from exc
-    if not frames:
+
+def _png_frames(blob: bytes) -> list:
+    """按 PNG 签名切出 ffmpeg 吐回来的帧序列。"""
+    starts = [i for i in range(len(blob)) if blob.startswith(PNG_MAGIC, i)]
+    if not starts:
         raise EmoticonError("HEVC 里没有解出帧")
+    frames = []
+    for index, start in enumerate(starts):
+        end = starts[index + 1] if index + 1 < len(starts) else len(blob)
+        frames.append(Image.open(io.BytesIO(blob[start:end])))
     return frames
+
+
+def decode_hevc(hevc: bytes) -> list:
+    """用随包的 ffmpeg 把 HEVC 码流解成 PIL 帧。
+
+    `wxgf` 里的码流只带 VPS/SPS/PPS 与若干 IDR 片，按裸码流喂给解码器最省事：
+    `-f hevc` 让它认这套参数集，帧从管道里以 PNG 序列吐回来。
+    """
+    exe = ffmpeg_path()
+    if not exe.is_file():
+        raise EmoticonError(
+            f"缺 {FFMPEG_RELATIVE}（表情解码要用它）：重新解压发布包即可，或者把它放回这个位置"
+        )
+    command = [
+        str(exe),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "hevc",
+        "-i",
+        "pipe:0",
+        "-f",
+        "image2pipe",
+        "-vcodec",
+        "png",
+        "pipe:1",
+    ]
+    try:
+        done = subprocess.run(
+            command, input=hevc, capture_output=True, timeout=DECODE_TIMEOUT, check=False
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise EmoticonError(f"HEVC 解码超过 {DECODE_TIMEOUT:g} 秒还没结束") from exc
+    except OSError as exc:
+        raise EmoticonError(f"起不了 ffmpeg：{exc}") from exc
+    if done.returncode != 0:
+        reason = done.stderr.decode("utf-8", "replace").strip().splitlines()
+        raise EmoticonError(f"HEVC 解码失败：{reason[-1] if reason else done.returncode}")
+    return _png_frames(done.stdout)
 
 
 def to_image_bytes(plain: bytes) -> tuple[bytes, str]:

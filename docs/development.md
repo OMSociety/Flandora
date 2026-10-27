@@ -53,6 +53,10 @@ python build.py
 
 载荷根有 `build-info.json`：版本、提交、是否会脏、构建时间，以及每个随包文件的 sha256。解压后或安装后都能查出这个包对应哪个提交，`python tools/smoke.py` 拿它核对提交与哈希。
 
+> **提示：** 打包会准备表情解码用的 FFmpeg（官方 LGPL 共享构建）：第一次从 `build.py`
+> 里的 `FFMPEG_URL` 下载到 `build\ffmpeg\`，核 `FFMPEG_SHA256` 后解到 `tools\ffmpeg\`
+> 并随载荷分发；缓存命中就不再联网。换版本时改那三个常量。
+
 > **提示**：全量打包要求工作区干净——包里的提交号必须真的代表这份代码，有未提交改动时 `build.py` 会报错退出。确实要打一个带改动的包就加 `--allow-dirty`，`build-info.json` 里会标 `dirty` 为真。
 >
 > 打包前还会按 mtime 判断 `flandora/webui/dist/index.html` 是否比前端源码旧：旧了才调用 npm 重建。想直接复用现有产物就加 `--skip-web`，它会打印两边的时间；产物缺失时该参数会直接报错，不会打出没有界面的包。

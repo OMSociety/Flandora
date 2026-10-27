@@ -48,9 +48,24 @@
 | packaging | 26.3 | Apache-2.0 或 BSD-2-Clause 双许可 | `packaging.txt` |
 | setuptools | 84.2.1 | MIT | `setuptools.txt` |
 
+## 随包工具
+
+表情缓存里的 `wxgf` 是 HEVC 帧，解码交给 `tools\ffmpeg\` 里的 FFmpeg（它是独立的
+exe 与动态库，不被嵌进任何 Flandora 可执行文件）。
+
+| 组件 | 版本 | 许可证 | 许可文件 |
+|---|---|---|---|
+| FFmpeg（BtbN 的 win64 LGPL 共享构建，autobuild-2026-10-26-14-25） | n8.1.3-24-g92611900bb | LGPL-3.0 | `ffmpeg-LGPL-3.0.txt` |
+
+FFmpeg 本体的许可是 LGPL-2.1-or-later，这份构建以 LGPL-3.0 分发并附上许可原文；
+它的源码可从 <https://ffmpeg.org/download.html> 取得。构建脚本与校验值记在
+`build.py` 的 `FFMPEG_*` 常量里。
+
 ## 说明
 
 - frida 只随 `tools\Flandora-KeyTool.exe` 分发。
 - pystray 与 Pillow 只随托盘管理器 `Flandora.exe` 分发。
+- FFmpeg 只随 `tools\ffmpeg\` 分发：换掉那里的 `ffmpeg.exe` 与同名动态库即可替换，
+  只要它认识 `-f hevc` 输入与 `image2pipe` 输出。
 - 若你要基于本仓库重新打包分发，请自行确认上述条款对你的分发方式是否满足，尤其是
-  LGPL-3.0（pystray）对「允许使用者替换该库」的要求。
+  LGPL-3.0（pystray 与 FFmpeg）对「允许使用者替换该库、并提供许可原文」的要求。

@@ -19,9 +19,8 @@ fastapi>=0.110.0
 uvicorn>=0.29.0
 # 微信消息正文在库里是 zstd 压缩的（收件源选 local 时需要）
 zstandard>=0.22.0
-# 表情缓存解密：wxgf 容器里是 HEVC 帧，用 PyAV 自带的解码器转成 GIF/PNG
-# （wx_emoticon.py 里按需导入，没有它只是表情退回占位文本）。
-av>=14.0.0
+# 表情缓存解密：wxgf 容器里是 HEVC 帧，交给随包的 tools\ffmpeg\ffmpeg.exe 转成
+# GIF/PNG（LGPL 共享构建，build.py 打包时下载并核 sha256；缺它只是表情退回占位文本）。
 # 内置取钥：Frida 注入微信进程，在登录瞬间截获数据库口令（wxkey/capture.py）。
 # 进程枚举与模块导出的取法在 17 上换过一次，代码对 16/17 都兼容，但只在 17.x
 # 上验证过，所以下限取 17。

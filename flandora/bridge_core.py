@@ -13,8 +13,9 @@ import logging
 import re
 import threading
 import time
+from dataclasses import replace
 
-from . import config, ob_ids, ob_inbound, ob_store, wx_crypto, wx_source
+from . import config, ob_ids, ob_inbound, ob_store, wx_crypto, wx_emoticon, wx_source
 from .domain.content import EMOJI_PLACEHOLDER, IMAGE_PLACEHOLDER, ContentKind, classify
 from .domain.message import (
     ChatKind,
@@ -42,6 +43,11 @@ log = logging.getLogger("flandora")
 
 # 微信给群名挂的 "(3)" 人数后缀：搜索会话时用不上，推事件前剥掉
 _GROUP_COUNT_SUFFIX = re.compile(r"\s*\(\d+\)\s*$")
+
+# 表情密钥只在微信渲染表情那几秒驻留内存，第一次遇到表情要现扫（本机实测约 3 秒）。
+# 表情消息本来就跑在独立线程上，所以这里等一会儿不会拖慢后面的消息；等到了就带图推送，
+# 等不到仍按占位文本上报——客户端只会看到一种结果，不会先收到文本再收到图。
+EMOJI_WAIT_SECONDS = 5.0
 
 
 def _quote_ref(quote) -> QuoteRef | None:
@@ -566,10 +572,25 @@ class Flandora:
     def process_emoji_message(self, message: InboundMessage):
         """处理表情包消息：以 image 段转发图片。
 
-        是否解读表情含义由客户端决定，桥接只负责把图片交出去。
+        是否解读表情含义由客户端决定，桥接只负责把图片交出去。收件时没解出文件的，
+        在这里等密钥扫描（最多 EMOJI_WAIT_SECONDS）：跑在独立线程上，不挡收件轮询。
         """
         source_name = str(message.raw.get("sourceName") or "未知")
         group_name = str(message.raw.get("groupName") or "")
         log.info(f"收到表情包: {source_name}" + (f" (群:{group_name})" if group_name else ""))
 
-        self._push_entry(message)
+        self._push_entry(self._with_emoji_image(message))
+
+    def _with_emoji_image(self, message: InboundMessage) -> InboundMessage:
+        """给还没解出文件的表情消息等一次密钥，拿到就把路径补进 media。"""
+        if message.media:
+            return message
+        md5 = str(message.raw.get("emojiMd5") or "")
+        if not md5:
+            return message
+        try:
+            path = wx_emoticon.image_for(md5, wait=EMOJI_WAIT_SECONDS)
+        except wx_emoticon.EmoticonError as exc:
+            log.info("[表情] 还原失败：%s", exc)
+            return message
+        return replace(message, media=(path,))

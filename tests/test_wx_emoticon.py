@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import struct
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -173,3 +174,30 @@ def test_decode_hevc_refuses_a_stream_without_frames():
 def test_image_for_refuses_a_md5_that_is_not_32_hex():
     with pytest.raises(wx_emoticon.EmoticonError, match="md5"):
         wx_emoticon.image_for("abc", cache_dir=".")
+
+
+def test_wait_for_seed_returns_none_when_nothing_is_scanning(monkeypatch):
+    monkeypatch.setattr(wx_emoticon, "_SCAN_THREAD", None)
+    assert wx_emoticon.wait_for_seed(WXID, 0.05) is None
+
+
+def test_wait_for_seed_picks_up_a_finished_scan(monkeypatch):
+    """后台扫到的 seed 落进 _SEEDS 后，等待中的那条消息就能直接用它解图。"""
+    monkeypatch.setattr(wx_emoticon, "_SEEDS", {})
+    thread = threading.Thread(target=lambda: wx_emoticon._SEEDS.__setitem__(WXID, 689159559))
+    monkeypatch.setattr(wx_emoticon, "_SCAN_THREAD", thread)
+    thread.start()
+    assert wx_emoticon.wait_for_seed(WXID, 2.0) == 689159559
+
+
+def test_image_for_gives_up_after_the_wait_window(tmp_path, monkeypatch):
+    """等不到密钥就如实报「等了 N 秒」，调用方据此退回落占位文本。"""
+    source = tmp_path / "cache" / "2026-10" / "Emoticon" / MD5[:2] / MD5
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"\x00" * 32)
+    monkeypatch.setattr(wx_emoticon, "find_cache", lambda name, root=None: source)
+    monkeypatch.setattr(wx_emoticon.wx_image_key, "current_wxid", lambda root=None: WXID)
+    monkeypatch.setattr(wx_emoticon, "start_seed_scan", lambda sample, wxid: True)
+    monkeypatch.setattr(wx_emoticon, "wait_for_seed", lambda wxid, timeout: None)
+    with pytest.raises(wx_emoticon.EmoticonError, match="等了"):
+        wx_emoticon.image_for(MD5, cache_dir=str(tmp_path / "out"), wait=0.1)

@@ -181,6 +181,19 @@ def cached_seed(wxid: str) -> int | None:
         return _SEEDS.get(wxid)
 
 
+def wait_for_seed(wxid: str, timeout: float) -> int | None:
+    """等后台扫描最多 timeout 秒，返回此刻拿到的 seed（没有就是 None）。
+
+    表情密钥只存在于微信渲染表情的那几秒，第一次遇到表情时才开始扫内存（本机实测
+    约 3 秒）。等的时候调用方要确保自己不在收件轮询线程上——桥接把每个表情消息交给
+    独立线程处理，所以最多几秒的等待不会拖慢后面的消息。
+    """
+    thread = _SCAN_THREAD
+    if thread is not None and thread.is_alive():
+        thread.join(max(0.0, float(timeout)))
+    return cached_seed(wxid)
+
+
 def start_seed_scan(sample: Path, wxid: str) -> bool:
     """在后台扫一次 seed；已经在扫或已扫到就返回 False。"""
     global _SCAN_THREAD
@@ -277,8 +290,19 @@ def to_image_bytes(plain: bytes) -> tuple[bytes, str]:
     return buffer.getvalue(), "gif"
 
 
-def image_for(md5: str, *, root: str | None = None, cache_dir: str | None = None) -> str:
-    """把一条表情消息还原成图片文件路径；失败抛 EmoticonError。"""
+def image_for(
+    md5: str,
+    *,
+    root: str | None = None,
+    cache_dir: str | None = None,
+    wait: float = 0.0,
+) -> str:
+    """把一条表情消息还原成图片文件路径；失败抛 EmoticonError。
+
+    ``wait`` 大于 0 时，若密钥还在扫就等它最多这么多秒再试一次：这样第一次遇到
+    表情也能带上图片，而不是先推一条占位文本。等之前会先确认本地真有这份缓存，
+    免得为一条根本没落盘的表情白等。
+    """
     from . import config
 
     name = (md5 or "").lower()
@@ -303,10 +327,15 @@ def image_for(md5: str, *, root: str | None = None, cache_dir: str | None = None
         return str(out)
     seed = cached_seed(wxid)
     if seed is None:
-        # 扫内存要十几秒，放到后台；这一条先按占位文本上报，扫到后自动生效
+        # 扫内存要几秒，放到后台；这条消息按 `wait` 等一会儿，等不到就先按占位文本上报
         if start_seed_scan(source, wxid):
             log.info("[表情] 正在扫当前账号的表情密钥，扫到后表情会自动变成图片")
-        raise EmoticonError("表情密钥还在扫描")
+        if wait > 0:
+            seed = wait_for_seed(wxid, wait)
+            if seed is None:
+                raise EmoticonError(f"等了 {wait:g} 秒还没扫到表情密钥")
+        else:
+            raise EmoticonError("表情密钥还在扫描")
     plain = decrypt(raw, derive_key(seed, wxid))
     data, ext = to_image_bytes(plain)
     target_dir.mkdir(parents=True, exist_ok=True)

@@ -47,9 +47,9 @@
 
 ```text
 wx_source.build_source()            按 poll_seconds 轮询本地库
-  -> source.poll()                  会话表先行：会话进度没动就只解 session.db，
-                                    动了才解消息库那一组（口令派生结果按库缓存）
-  -> source.poll()                  产出统一形态的 dict（一条一条交）
+  -> source.poll()                  每轮过一遍五个库：文件没动就跳过解密，
+                                    动了才解那几十毫秒（口令派生结果按库缓存）
+                                    产出统一形态的 dict（一条一条交）
   -> bridge_core._ingest()          去重（rawid）、过滤（自己发的、系统号）、日志
   -> Flandora.emit_message()
        -> _entry_for()              组装 InboundMessage：ChatRef/SenderRef/QuoteRef/正文/媒体

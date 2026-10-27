@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 
-from flandora.wx_source import FULL_REFRESH_SECONDS, PRIME_LIMIT, WxLocalSource
+from flandora.wx_source import PRIME_LIMIT, WxLocalSource
 
 
 class _StubStore:
@@ -19,8 +19,6 @@ class _StubStore:
         self._messages = {k: list(v) for k, v in (messages or {}).items()}
         self._names = dict(names or {})
         self.refreshed = 0
-        self.session_refreshed = 0
-        self.messages_refreshed = 0
         self.image_key = b""
         self.image_xor_key = -1
 
@@ -30,12 +28,6 @@ class _StubStore:
     # ---- WxLocalSource 用到的那几个方法 ----
     def refresh(self):
         self.refreshed += 1
-
-    def refresh_session(self):
-        self.session_refreshed += 1
-
-    def refresh_messages(self):
-        self.messages_refreshed += 1
 
     def sessions(self):
         return [dict(s) for s in self._sessions]
@@ -255,33 +247,16 @@ def test_startup_reports_already_sent_messages():
     assert src.poll() == []
 
 
-def test_poll_decrypts_messages_only_when_a_session_advanced():
-    """会话表的进度没动就只解它自己：消息库那几个大库不必每轮重来。"""
+def test_poll_refreshes_the_store_every_round():
+    """每轮都过一遍库：折叠群的会话进度会滞后，不能拿它当「有没有新消息」的判据。
+
+    库这边靠文件 mtime 跳过没动过的解密，所以每轮调用不等于每轮解密。
+    """
     store = _StubStore([{"username": "wxid_a", "is_group": False, "last_local_id": 3}])
     src = _source(store)
     src.prime()
     src.cursors["wxid_a"] = 3
 
     src.poll()
-    assert store.session_refreshed == 1
-    assert store.messages_refreshed == 0
-
-    store._sessions[0]["last_local_id"] = 4
     src.poll()
-    assert store.messages_refreshed == 1
-
-
-def test_poll_falls_back_to_a_full_refresh_on_a_schedule():
-    """兜底整刷：会话表长时间没动，也定期解一次消息库。"""
-    store = _StubStore([{"username": "wxid_a", "is_group": False, "last_local_id": 3}])
-    src = _source(store)
-    src.prime()
-    src.cursors["wxid_a"] = 3
-    src._last_full_refresh = time.monotonic() - FULL_REFRESH_SECONDS - 1
-
-    src.poll()
-    assert store.messages_refreshed == 1
-    assert src._last_full_refresh > time.monotonic() - 1
-
-    src.poll()
-    assert store.messages_refreshed == 1  # 刚整刷过，这一轮不再解
+    assert store.refreshed == 2

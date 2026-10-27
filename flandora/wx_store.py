@@ -354,22 +354,12 @@ class WxStore:
                 yield name, src, os.path.join(self.work_dir, name)
 
     def refresh(self, force: bool = False) -> bool:
-        """把改动过的库全部重新解出来。返回是否有库被更新。"""
-        return self._refresh_names({name for _, name in DBS}, force)
+        """把改动过的库全部重新解出来。返回是否有库被更新。
 
-    def refresh_session(self, force: bool = False) -> bool:
-        """只解 session.db。
-
-        会话表里的 last_local_id 是「有没有新消息」的先行指标，而这个库最小；
-        单独解它就能判断要不要动消息库，省下每轮把几个大库都解一遍的开销。
+        判据是文件的大小与 mtime（见 ``_refresh_names``）：没动过的库不解密，
+        所以每轮都调它也只花 stat 的时间。
         """
-        return self._refresh_names({"session.db"}, force)
-
-    def refresh_messages(self, force: bool = False) -> bool:
-        """解消息库与它依赖的索引库：消息本体、媒体索引、名册、硬链接。"""
-        return self._refresh_names(
-            {"message_0.db", "message_resource.db", "contact.db", "hardlink.db"}, force
-        )
+        return self._refresh_names({name for _, name in DBS}, force)
 
     def _refresh_names(self, wanted: set, force: bool) -> bool:
         changed = False

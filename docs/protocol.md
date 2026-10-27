@@ -92,7 +92,7 @@
 | `meta_event` / `heartbeat` | 每隔 `ob_heartbeat_seconds` 秒一次，取 0 关闭 | `interval`、`status.online`（桥接在跑且微信已接入）、`status.good`（发送通道也可用） |
 | `meta_event` / `lifecycle` | 每条连接建立时推 `connect`，桥接停止时推 `disable` | `sub_type`；`connect` 是逐连接发的，后连上的客户端同样收得到 |
 | `notice` / `group_recall`、`friend_recall` | 微信消息库里出现撤回系统消息 | `user_id`（撤回者）、`operator_id`、`message_id`、`message_id_known` |
-| `notice` / `notify` + `sub_type: poke` | 群里出现拍一拍 | `user_id`（发起者）、`target_id`（被拍的人）、`suffix`、有群时带 `group_id` |
+| `notice` / `notify` + `sub_type: poke` | 群里出现拍一拍 | `user_id`（发起者）、`target_id`（被拍的人）、`suffix` 与 `raw_info`（自定义文案，OneBot v11 的段列表）、有群时带 `group_id` |
 
 撤回与拍一拍**只走 notice，不作为消息事件推送**：这两类内容在微信里是系统提示行，没有可回复的正文，混在消息流里会让客户端对着一行「XX 撤回了一条消息」生成回复。
 

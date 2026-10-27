@@ -138,6 +138,38 @@ def test_image_for_starts_a_scan_instead_of_blocking(tmp_path, monkeypatch):
     assert started == [WXID]
 
 
+def test_cache_files_also_sees_the_plain_image_store(tmp_path):
+    """图片型表情落在 HttpResource 下，且不按前两位分桶。"""
+    target = tmp_path / "cache" / "2026-10" / "HttpResource" / MD5
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"\x89PNG\r\n\x1a\n")
+    assert wx_emoticon.cache_files(tmp_path, MD5) == [target]
+
+
+def test_image_for_passes_a_plaintext_cache_through(tmp_path, monkeypatch):
+    """缓存里本来就是明文图片时直接落盘，不去碰内存里的 seed。"""
+    source = tmp_path / "cache" / "2026-10" / "HttpResource" / MD5
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 32)
+    monkeypatch.setattr(wx_emoticon, "find_cache", lambda name, root=None: source)
+    monkeypatch.setattr(wx_emoticon.wx_image_key, "current_wxid", lambda root=None: WXID)
+    monkeypatch.setattr(
+        wx_emoticon,
+        "start_seed_scan",
+        lambda sample, wxid: pytest.fail("明文图片不该触发密钥扫描"),
+    )
+    out = tmp_path / "out"
+    path = wx_emoticon.image_for(MD5, cache_dir=str(out))
+    assert path == str(out / f"{MD5}.png")
+    assert Path(path).read_bytes().startswith(b"\x89PNG")
+
+
+def test_decode_hevc_refuses_a_stream_without_frames():
+    pytest.importorskip("av")
+    with pytest.raises(wx_emoticon.EmoticonError, match="解"):
+        wx_emoticon.decode_hevc(b"\x00" * 64)
+
+
 def test_image_for_refuses_a_md5_that_is_not_32_hex():
     with pytest.raises(wx_emoticon.EmoticonError, match="md5"):
         wx_emoticon.image_for("abc", cache_dir=".")

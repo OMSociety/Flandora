@@ -994,6 +994,8 @@ def make_poke_event(
     """拍一拍通知（notice/notify/poke）。
 
     `user_id` 是拍的人，`target_id` 是被拍的人，`suffix` 是对方设置的拍一拍文案。
+    `raw_info` 是 OneBot v11 给拍一拍文案留的段列表（go-cqhttp 同名），客户端
+    据此把「拍了拍谁」后面那句自定义文案原样显示出来。
     """
     event = {
         "time": int(time.time()),
@@ -1005,6 +1007,8 @@ def make_poke_event(
         "target_id": int(target_id),
         "suffix": suffix,
     }
+    if suffix:
+        event["raw_info"] = [{"type": "text", "data": {"text": suffix}}]
     if group_id:
         event["group_id"] = int(group_id)
     return event

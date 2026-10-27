@@ -70,6 +70,15 @@ def test_poke_event_shape():
     assert event["user_id"] == 456
     assert event["target_id"] == 789
     assert event["suffix"] == "的流萤说真好看"
+    # raw_info 是拍一拍文案在 OneBot v11 里的标准载体，客户端靠它显示后缀
+    assert event["raw_info"] == [{"type": "text", "data": {"text": "的流萤说真好看"}}]
+
+
+def test_poke_event_without_a_suffix_omits_raw_info():
+    event = ob_protocol.make_poke_event(group_id=123, user_id=456, target_id=789, suffix="")
+
+    assert event["suffix"] == ""
+    assert "raw_info" not in event
 
 
 @pytest.fixture()

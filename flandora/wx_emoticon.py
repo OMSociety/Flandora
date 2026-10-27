@@ -1,11 +1,12 @@
-"""微信表情（贴纸）缓存：把 ``cache/<月>/Emoticon/<md5>`` 还原成能发出去的图片。
+"""微信表情（贴纸）缓存：把 ``cache/<月>/{Emoticon,HttpResource}/<md5>`` 还原成能发出去的图片。
 
-微信 4.x 在本地按 ``AES-128-CBC`` 保存表情，密钥由账号级 seed 派生：
+微信 4.x 在本地按 ``AES-128-CBC`` 保存贴纸，密钥由账号级 seed 派生：
 
     key = MD5(f"{seed}{wxid}EMOTICON").digest()      # iv 与 key 相同
     plaintext = AES-128-CBC-decrypt(key, iv=key, ciphertext)   # PKCS#7
 
 解出来的明文有两种：GIF/PNG/JPEG 本体，或 ``wxgf`` 容器（HEVC 帧，需要 PyAV 解码）。
+`HttpResource` 下的小图不带加密外壳，读到明文图片直接用。
 seed 是 32 位整数，只活在微信进程内存里，重登后可能变，所以按账号缓存、解不开时重扫。
 """
 
@@ -30,6 +31,7 @@ RE_DECIMAL = re.compile(rb"(?<!\d)\d{8,12}(?!\d)")
 HEVC_START = b"\x00\x00\x00\x01\x40\x01"
 MAGICS = (b"\x89PNG", b"GIF8", b"\xff\xd8", b"RIFF", b"wxgf")
 CACHE_SUBDIR = "cache"
+CACHE_KINDS = ("Emoticon", "HttpResource")
 BUSINESS_SUBDIR = os.path.join("business", "emoticon")
 FRAME_MS = 100
 
@@ -82,7 +84,11 @@ def account_dirs(root: str | None = None) -> list[Path]:
 
 
 def cache_files(account: Path, md5: str) -> list[Path]:
-    """按 md5 找出这个账号下所有可能的缓存文件（cache 与 business 两处）。"""
+    """按 md5 找出这个账号下所有可能的缓存文件。
+
+    图片型表情落在 `cache/<月>/HttpResource/`（明文），贴纸落在
+    `cache/<月>/Emoticon/`（加密），收藏过的还可能在 `business/emoticon/Persist/`。
+    """
     name = md5.lower()
     prefix = name[:2]
     out: list[Path] = []
@@ -92,9 +98,11 @@ def cache_files(account: Path, md5: str) -> list[Path]:
     except OSError:
         months = []
     for month in months:
-        target = month / "Emoticon" / prefix / name
-        if target.is_file():
-            out.append(target)
+        for kind in CACHE_KINDS:
+            # 贴纸按 md5 前两位分桶，图片型表情直接落在种类目录下，两种布局都认
+            for candidate in (month / kind / prefix / name, month / kind / name):
+                if candidate.is_file():
+                    out.append(candidate)
     business = account / BUSINESS_SUBDIR / "Persist" / prefix / name
     if business.is_file():
         out.append(business)
@@ -218,16 +226,24 @@ def parse_wxgf(plain: bytes) -> dict:
 
 
 def decode_hevc(hevc: bytes) -> list:
-    """用 PyAV 把 HEVC 码流解成 PIL 帧。"""
+    """用 PyAV 把 HEVC 码流解成 PIL 帧。
+
+    `wxgf` 里的码流只带 VPS/SPS/PPS 与一个 IDR 片，按裸码流喂给 CodecContext
+    一帧也解不出来；走 `hevc` 解复用器才认这套参数集与片头。
+    """
     try:
         import av
     except Exception as exc:  # noqa: BLE001 - 没装解码器时退回占位文本
         raise EmoticonError(f"没有 HEVC 解码器：{exc}") from exc
-    ctx = av.CodecContext.create("hevc", "r")
     frames = []
-    for packet in ctx.parse(hevc):
-        for frame in ctx.decode(packet):
-            frames.append(frame.to_image())
+    try:
+        with av.open(io.BytesIO(hevc), format="hevc") as container:
+            for frame in container.decode(video=0):
+                frames.append(frame.to_image())
+    except EmoticonError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - 坏码流按解析失败处理
+        raise EmoticonError(f"HEVC 解码失败：{exc}") from exc
     if not frames:
         raise EmoticonError("HEVC 里没有解出帧")
     return frames
@@ -277,13 +293,21 @@ def image_for(md5: str, *, root: str | None = None, cache_dir: str | None = None
     source = find_cache(name, root)
     if source is None:
         raise EmoticonError("本地没有这个表情的缓存文件")
+    raw = source.read_bytes()
+    if looks_like_image(raw):
+        # 小表情（缩略图一类）在缓存里就是明文图片，没有加密外壳
+        data, ext = to_image_bytes(raw)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        out = target_dir / f"{name}.{ext}"
+        out.write_bytes(data)
+        return str(out)
     seed = cached_seed(wxid)
     if seed is None:
         # 扫内存要十几秒，放到后台；这一条先按占位文本上报，扫到后自动生效
         if start_seed_scan(source, wxid):
             log.info("[表情] 正在扫当前账号的表情密钥，扫到后表情会自动变成图片")
         raise EmoticonError("表情密钥还在扫描")
-    plain = decrypt(source.read_bytes(), derive_key(seed, wxid))
+    plain = decrypt(raw, derive_key(seed, wxid))
     data, ext = to_image_bytes(plain)
     target_dir.mkdir(parents=True, exist_ok=True)
     out = target_dir / f"{name}.{ext}"

@@ -35,6 +35,9 @@ DefaultDirName={localappdata}\Programs\Flandora
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 LicenseFile=..\LICENSE
+; 图标与三个 exe 同源：assets\icon.ico 由 tools\make_icon.py 从 flandora\branding.py
+; 的形状生成，安装包、程序和功能里的条目、快捷方式因此是同一张脸。
+SetupIconFile=..\assets\icon.ico
 OutputDir=..\dist
 OutputBaseFilename=Flandora-v{#AppVersion}-setup
 Compression=lzma2

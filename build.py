@@ -50,6 +50,7 @@ BUILD = ROOT / "build"
 PYTHON = Path(sys.executable)
 ISS = ROOT / "installer" / "Flandora.iss"
 VERSION_ISS = ROOT / "installer" / "version.iss"
+ICON = ROOT / "assets" / "icon.ico"
 
 
 def _read_version() -> str:
@@ -268,6 +269,9 @@ def pyi(
         cmd.append("--onefile")
     if windowed:
         cmd.append("--windowed")
+    if not ICON.is_file():
+        raise SystemExit(f"缺少品牌图标 {ICON}：跑 {TOOLS_SRC / 'make_icon.py'}")
+    cmd.extend(["--icon", str(ICON)])
     if extra_args:
         cmd.extend(extra_args)
     cmd.append(str(src))
@@ -812,6 +816,33 @@ def _version_problems() -> list[str]:
     return sync_version.check(str(ROOT))
 
 
+def _branding():
+    """取 ``flandora.branding``（形状的唯一来源）。"""
+    if str(ROOT) not in sys.path:
+        sys.path.insert(0, str(ROOT))
+    from flandora import branding
+
+    return branding
+
+
+def icon_problems() -> list[str]:
+    """``assets/icon.ico`` 必须与 ``flandora/branding.py`` 现在画出来的一致。
+
+    形状改了却忘了重新生成图标，打包出来的 exe 与安装包会停在旧样子；这里现场
+    重画一份比字节，省得靠人记。
+    """
+    if not ICON.is_file():
+        return [f"缺少品牌图标 {ICON}：跑 {TOOLS_SRC / 'make_icon.py'}"]
+    with tempfile.TemporaryDirectory() as tmp:
+        fresh = _branding().save_ico(Path(tmp) / "icon.ico")
+        if fresh.read_bytes() != ICON.read_bytes():
+            return [
+                f"{ICON} 与 branding.py 当前形状不一致："
+                f"跑 {TOOLS_SRC / 'make_icon.py'} 重新生成并提交"
+            ]
+    return []
+
+
 def check_only() -> int:
     """``--check``：只校验不打包。返回 0 表示全部通过。
 
@@ -865,6 +896,17 @@ def check_only() -> int:
         newest = _newest_frontend_mtime()
         state = "不比源码旧" if index.stat().st_mtime >= newest else "旧于源码，打包时会重建"
         print(f"  OK     {index} {_stamp(index.stat().st_mtime)}（{state}）")
+
+    print("\n=== 品牌图标 ===")
+    icon_issues = icon_problems()
+    if icon_issues:
+        problems.extend(icon_issues)
+        for problem in icon_issues:
+            print(f"  DRIFT  {problem}")
+    else:
+        print(
+            f"  OK     {ICON.name} 与 branding.py 一致（尺寸 {', '.join(str(s) for s in _branding().ICO_SIZES)}）"
+        )
 
     print("\n=== 安装脚本引用 ===")
     manifest = manifest_problems()

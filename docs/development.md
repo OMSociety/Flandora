@@ -63,6 +63,14 @@ python build.py
 
 取钥器单独打包，因为 frida 有几十 MB，不塞进主程序。代码结构、依赖规则与扩展点见 [architecture.md](architecture.md)，工程约定与验收口径见 [AGENTS.md](../AGENTS.md)。
 
+品牌图标只有一个来源：形状与色值在 `flandora\branding.py`，矢量版是 `assets\icon.svg`（面板 favicon 用它），三个 exe 与安装包的图标都取自 `assets\icon.ico`。改了形状或色值就重新生成并提交：
+
+```powershell
+python tools\make_icon.py    # 重新生成 assets\icon.ico
+```
+
+`tests\test_icon_assets.py` 会把 SVG 与 `branding.py` 的数字对表，`build.py --check` 也会现场重画比一次；忘了重新生成，两道闸都会拦。
+
 ## 验收
 
 自动化测试看的是「同样的输入产生同样的输出」；UIA、真机微信与真实的 OneBot 客户端连接只能用清单验。

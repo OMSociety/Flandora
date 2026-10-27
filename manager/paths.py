@@ -84,3 +84,14 @@ def python_for_scripts() -> Path:
         if windowed.exists():
             return windowed
     return exe
+
+
+def ensure_bridge_importable() -> None:
+    """把安装根放进 sys.path，让管理器用得上 ``flandora`` 包里的模块。
+
+    源码形态下 ``flandora/`` 与 ``manager/`` 是兄弟目录，不放进来就 import 不到；
+    打包形态下 PyInstaller 已经把包收进 exe，这一步是空操作。
+    """
+    root = str(BRIDGE_DIR)
+    if root not in sys.path:
+        sys.path.insert(0, root)

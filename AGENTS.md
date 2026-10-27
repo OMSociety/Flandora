@@ -114,6 +114,7 @@ run_bridge.py -> flandora.main
 | 改发送（投递、清空输入框） | `flandora/uia_sender.py` |
 | 改桌面隔离与接管 | `flandora/wx_desktop.py` |
 | 改托盘图标、悬停提示或右键菜单 | `manager/tray.py` |
+| 改品牌标记或图标 | `flandora/branding.py`（形状与色值）、`assets/icon.svg`（矢量版）、`assets/icon.ico`（由 `python tools/make_icon.py` 生成并提交） |
 | 改桥接的起停、状态探测与停止握手 | `manager/bridge.py`、`manager/paths.py`、`flandora/stop_request.py` |
 | 改开机自启 | `flandora/autostart.py`（Run 项的值名是 `Flandora`）；安装器 `[Registry]` 写同一条值，两边由 `tests/test_autostart.py` 对表 |
 | 加后端测试 | `tests/test_<模块>.py`，Windows 专属用例直接调用桌面 API |
@@ -179,6 +180,9 @@ run_bridge.py -> flandora.main
   只由用户在面板点「结束桌面上的微信」（`POST /api/desktop/quit-default-wechat`）。
 - 禁止前端直接接触微信或本地库。原因：浏览器侧只有 `/api/*` 一个入口，绕过它就拿不到密钥与桌面句柄。
 - 禁止手改 `flandora/webui/dist/`。原因：那是 vite 生成物且不入库；改源码后重新构建。
+- 改品牌形状或色值（`flandora/branding.py`，矢量版在 `assets/icon.svg`）后必须跑
+  `python tools/make_icon.py` 并提交 `assets/icon.ico`。原因：三个 exe 与安装包的图标都取自
+  这份位图，忘了生成就会发出旧样子的包；`tests/test_icon_assets.py` 与 `build.py --check` 都会拦。
 - 禁止给日志与控制台输出加 emoji。原因：Windows 控制台默认 GBK，`build.py` 曾因此打包成功
   却以退出码 1 结束。
 

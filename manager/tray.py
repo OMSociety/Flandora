@@ -18,11 +18,15 @@ import time
 import bridge as bridge_mod
 import paths
 import pystray
-from PIL import Image, ImageDraw
+from PIL import Image
 from pystray import Menu, MenuItem
 
-RUNNING_COLOUR = (7, 193, 96, 255)
-STOPPED_COLOUR = (150, 150, 150, 255)
+paths.ensure_bridge_importable()
+
+from flandora import branding  # noqa: E402  —— 上一行负责让它 import 得到
+
+RUNNING_COLOUR = branding.BRAND_GREEN
+STOPPED_COLOUR = branding.BRAND_GREY
 POLL_SECONDS = 2.0
 PANEL_WAIT_SECONDS = 10.0
 
@@ -58,42 +62,8 @@ def enable_dark_menus() -> bool:
 
 
 def make_icon_image(colour: tuple[int, int, int, int], size: int = 64) -> Image.Image:
-    """产品标记：圆角方底 + 两个白色气泡，与 assets/icon.svg 同一形状。"""
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-    unit = size / 40
-    draw.rounded_rectangle((0, 0, size - 1, size - 1), radius=int(12 * unit), fill=colour)
-    draw.rounded_rectangle(
-        (int(8.25 * unit), int(10.75 * unit), int(23.75 * unit), int(22.25 * unit)),
-        radius=int(5.2 * unit),
-        fill=(255, 255, 255, 255),
-    )
-    draw.polygon(
-        [
-            (int(13.45 * unit), int(22.25 * unit)),
-            (int(10.25 * unit), int(25.35 * unit)),
-            (int(10.25 * unit), int(21.15 * unit)),
-        ],
-        fill=(255, 255, 255, 255),
-    )
-    overlay = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    odraw = ImageDraw.Draw(overlay)
-    odraw.rounded_rectangle(
-        (int(16.75 * unit), int(14.75 * unit), int(31.75 * unit), int(26.25 * unit)),
-        radius=int(5.2 * unit),
-        fill=(255, 255, 255, 255),
-    )
-    odraw.polygon(
-        [
-            (int(26.55 * unit), int(26.25 * unit)),
-            (int(28.75 * unit), int(29.25 * unit)),
-            (int(28.75 * unit), int(25.75 * unit)),
-        ],
-        fill=(255, 255, 255, 255),
-    )
-    overlay.putalpha(overlay.getchannel("A").point(lambda a: int(a * 0.72)))
-    img.alpha_composite(overlay)
-    return img
+    """托盘图标：与 ``assets/icon.svg``、可执行文件同源的标记，只换底色。"""
+    return branding.icon_image(colour, size)
 
 
 class ManagerTray:

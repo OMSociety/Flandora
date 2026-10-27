@@ -15,7 +15,6 @@ from __future__ import annotations
 import os
 import socket
 import subprocess
-import sys
 import threading
 import time
 from typing import Optional
@@ -31,9 +30,7 @@ START_CONFIRM_SECONDS = 3.0
 
 def _stop_request():
     """取桥接侧的停止信号模块（同一个仓库，不在 manager/ 目录里）。"""
-    root = str(paths.BRIDGE_DIR)
-    if root not in sys.path:
-        sys.path.insert(0, root)
+    paths.ensure_bridge_importable()
     from flandora import stop_request
 
     return stop_request

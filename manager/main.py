@@ -29,8 +29,7 @@ def acquire_single_instance():
     与桥接那把不同名：管理器开着再去拉起桥接是正常工作形态，
     两者抢同一个名字会让被拉起的桥接把自己判成重复实例而退出。
     """
-    if str(paths.BRIDGE_DIR) not in sys.path:
-        sys.path.insert(0, str(paths.BRIDGE_DIR))
+    paths.ensure_bridge_importable()
     from flandora.single_instance import MANAGER_MUTEX_NAME, acquire_mutex
 
     return acquire_mutex(MANAGER_MUTEX_NAME)

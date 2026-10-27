@@ -3,6 +3,7 @@
 import base64
 import os
 import sys
+import time
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
@@ -260,3 +261,100 @@ def test_emoji_without_a_file_keeps_the_placeholder(isolated_ids, monkeypatch):
         emoji=True,
     )
     assert event["message"] == [{"type": "text", "data": {"text": "[表情]"}}]
+
+
+# ===== 被引的是自己发的：补 at 段，并复用发送时已经分好的号 =====
+
+SELF_WXID = "wxid_me"
+SELF_NICK = "芙兰朵露Flandre"
+
+
+def _as_self(isolated_ids, bridge):
+    """把当前登录身份设成测试账号，并让取昵称的入口直接给同一个名字。"""
+    isolated_ids.SELF.set_wxid(SELF_WXID)
+    isolated_ids.SELF.set_nickname(SELF_NICK)
+    bridge.self_nickname = lambda: SELF_NICK
+    return bridge
+
+
+def test_group_quote_of_our_own_message_adds_an_at_segment(isolated_ids, monkeypatch):
+    """群里 fromusr 是群标识，被引那位的名字在 displayname 里——按名字认出自己。"""
+    bridge = _as_self(isolated_ids, _make_bridge())
+    event = _push_once(
+        monkeypatch,
+        bridge,
+        {
+            **GROUP_MSG,
+            "content": "嗯",
+            "quote": {"server_id": "SN-9", "sender": GROUP, "name": SELF_NICK},
+        },
+    )
+    assert event["message"][0] == {"type": "at", "data": {"qq": isolated_ids.SELF.user_id()}}
+    assert event["message"][1] == {"type": "reply", "data": {"id": 0}}
+
+
+def test_group_quote_of_someone_else_adds_no_at_segment(isolated_ids, monkeypatch):
+    bridge = _as_self(isolated_ids, _make_bridge())
+    event = _push_once(
+        monkeypatch,
+        bridge,
+        {
+            **GROUP_MSG,
+            "content": "嗯",
+            "quote": {"server_id": "SN-9", "sender": GROUP, "name": "张三"},
+        },
+    )
+    assert [seg["type"] for seg in event["message"]] == ["reply", "text"]
+
+
+def test_private_quote_of_our_own_message_adds_an_at_segment(isolated_ids, monkeypatch):
+    """私聊里 fromusr 就是发送者 wxid，直接比 wxid。"""
+    bridge = _as_self(isolated_ids, _make_bridge())
+    event = _push_once(
+        monkeypatch,
+        bridge,
+        {
+            "sessionId": "wxid_lisi",
+            "sourceName": "李四",
+            "sender": "wxid_lisi",
+            "senderName": "李四",
+            "content": "收到",
+            "sessionType": "private",
+            "localId": 4101,
+            "serverId": "SN-10",
+            "quote": {"server_id": "SN-9", "sender": SELF_WXID, "name": "我"},
+        },
+    )
+    assert event["message"][0] == {"type": "at", "data": {"qq": isolated_ids.SELF.user_id()}}
+
+
+def test_claim_reuses_the_id_handed_out_when_sending(isolated_ids, isolated_store, monkeypatch):
+    """引用刚发出去的消息：补档要认领发送时那个号，不能另发一个。"""
+    bridge = _as_self(isolated_ids, _make_bridge())
+    sent_id = isolated_ids.allocate_message_id(GROUP)
+    row = {**QUOTED_ROW, "sender": SELF_WXID, "create_time": time.time()}
+    monkeypatch.setattr(bridge_core.RUNTIME, "store", _StubStore({"SN-0": row}))
+
+    event = _push_once(
+        monkeypatch,
+        bridge,
+        {
+            **GROUP_MSG,
+            "content": "同意",
+            "quote": {"server_id": "SN-0", "sender": GROUP, "name": SELF_NICK},
+        },
+    )
+
+    assert event["message"][0]["type"] == "at"
+    assert event["message"][1] == {"type": "reply", "data": {"id": sent_id}}, event["message"]
+    assert isolated_ids.message_by_server("SN-0") == sent_id
+    archived = bridge_core.ob_store.message_store().get(sent_id)
+    assert archived is not None and archived["raw_message"] == "更早的一句"
+
+
+def test_binding_a_sent_message_goes_through_the_module_helper(isolated_ids):
+    """回读本地库时按发出时刻认领号：这条路径之前因参数签名不对整段失效。"""
+    bridge = _make_bridge()
+    sent_id = isolated_ids.allocate_message_id(GROUP)
+    bridge._bind_outgoing_server(GROUP, "SN-11", time.time())
+    assert isolated_ids.message_by_server("SN-11") == sent_id

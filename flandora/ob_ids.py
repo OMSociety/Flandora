@@ -373,8 +373,14 @@ def message_by_server(server_id: str) -> int | None:
     return message_ids().message_by_server(server_id)
 
 
-def bind_pending_outgoing(talker: str, server_id: str, **kwargs) -> int | None:
-    return message_ids().bind_pending_outgoing(talker, server_id, **kwargs)
+def bind_pending_outgoing(
+    talker: str,
+    server_id: str,
+    sent_at: float,
+    *,
+    tolerance: float = 120.0,
+) -> int | None:
+    return message_ids().bind_pending_outgoing(talker, server_id, sent_at, tolerance=tolerance)
 
 
 # ---------------------------------------------------------------- 机器人身份

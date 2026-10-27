@@ -258,6 +258,24 @@ class Flandora:
         self._member_cache[session_id] = (now, names)
         return names
 
+    def _quote_is_self(self, quote: QuoteRef | None) -> bool:
+        """被引消息是不是机器人自己发的。
+
+        群里 ``<refermsg><fromusr>`` 是群标识（实测 139 条群里全是 ``xxx@chatroom``），
+        被引那位的名字只在 ``<displayname>``；私聊里 ``<fromusr>`` 才是发送者 wxid。
+        两条都认：wxid 相同，或群引用里显示名与自己一致。同群有人跟自己重名时会多补
+        一个 at 段，只影响唤醒判定，不改动正文。
+        """
+        if quote is None:
+            return False
+        wxid = ob_ids.SELF.wxid()
+        if wxid and quote.sender == wxid:
+            return True
+        if quote.sender and not quote.sender.endswith("@chatroom"):
+            return False
+        nick = ob_ids.SELF.nickname() or self.self_nickname()
+        return bool(nick) and bool(quote.name) and quote.name == nick
+
     def _inbound_segments(self, message: InboundMessage, text: str) -> list[Segment]:
         """把一条收到的消息还原成领域段。
 
@@ -268,7 +286,8 @@ class Flandora:
         当作唤醒条件（AstrBot 的唤醒检查就在其列）。机器人自己发出的消息现在也进事件
         存档，按被引消息的号取得到原文（见 :meth:`_bind_outgoing_server`），这个 at 段
         是第二道保险：客户端版本旧或存档被清过时，仍能按「被 @」认出这条消息冲机器人来。
-        正文里已经 @ 机器人时不补。
+        正文里已经 @ 机器人时不补。群里的被引发送者藏在 ``<displayname>`` 里，
+        判定见 :meth:`_quote_is_self`。
         """
         segments: list[Segment] = []
         reply = ob_inbound.reply_segment(message.quote, ob_ids.message_by_server)
@@ -282,15 +301,12 @@ class Flandora:
         mentions = ob_inbound.split_mentions(
             text, lambda name: ob_inbound.resolve_from_names(names, name)
         )
-        quote = message.quote
-        quoted_self = (
-            quote is not None and bool(quote.sender) and quote.sender == ob_ids.SELF.wxid()
-        )
         mentioned_self = any(
             isinstance(seg, Mention) and seg.user_id == ob_ids.SELF.user_id() for seg in mentions
         )
-        if quoted_self and not mentioned_self:
-            segments.insert(0, Mention(user_id=ob_ids.SELF.user_id(), name=ob_ids.SELF.nickname()))
+        if self._quote_is_self(message.quote) and not mentioned_self:
+            nick = ob_ids.SELF.nickname() or self.self_nickname()
+            segments.insert(0, Mention(user_id=ob_ids.SELF.user_id(), name=nick))
         segments.extend(mentions)
         return segments
 
@@ -301,8 +317,10 @@ class Flandora:
         或启动补报还没轮到的那条）时，`<refermsg><svrid>` 查不到 message_id。按 0 回过去，
         客户端拿到 `get_msg(0)` 只能报「没有 message_id=0 的消息」。
 
-        这里按服务端号回查同一个会话的本地库，给它分配它本来就会拿到的号（(会话, 行号)
-        幂等，与推送时一致），存一份进存档；引用段于是有了真号，`get_msg` 取得到原文。
+        这里按服务端号回查同一个会话的本地库：被引的是机器人自己发的消息时，先按发出
+        时刻把发送时就已经分好的号认领回来（客户端手里拿的是那个号，不能另发一个）；
+        其余情况按 (会话, 行号) 幂等分配——同一条消息任何时候取都是同一个号。补上的
+        这份进存档，引用段于是有了真号，`get_msg` 取得到原文。
         """
         quote = message.quote
         store = RUNTIME.store
@@ -332,9 +350,18 @@ class Flandora:
             # 私聊里被引的只可能是对方或自己，直接用当前会话的发言人身份
             sender = message.sender
 
-        message_id = self._message_id_for(
-            message.chat.handle or "", row.get("local_id"), quote.server_id
-        )
+        message_id = 0
+        if self._quote_is_self(quote):
+            bound = ob_ids.bind_pending_outgoing(
+                message.chat.handle or "", quote.server_id, float(row.get("create_time") or 0)
+            )
+            if bound is not None:
+                message_id = bound
+                log.debug(f"[OB11] 被引消息 {quote.server_id} 复用发送时的 message_id={bound}")
+        if not message_id:
+            message_id = self._message_id_for(
+                message.chat.handle or "", row.get("local_id"), quote.server_id
+            )
         text = str(row.get("text") or "")
         event = render_message_event(
             Message(

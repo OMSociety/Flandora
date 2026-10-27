@@ -223,3 +223,10 @@ def test_stale_or_foreign_ids_are_not_bound(tmp_path):
         assert ids.bind_pending_outgoing("wxid_bob", "srv-z", 0.0) is None
     finally:
         ids.close()
+
+
+def test_module_level_bind_takes_the_send_time(isolated_ids):
+    """桥接按位置传发出时刻：模块级包装的参数要与 MessageIds 同名同序。"""
+    mid = isolated_ids.allocate_message_id("wxid_bob")
+    assert isolated_ids.bind_pending_outgoing("wxid_bob", "srv-1", time.time()) == mid
+    assert isolated_ids.message_by_server("srv-1") == mid

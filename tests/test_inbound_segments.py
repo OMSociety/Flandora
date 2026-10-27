@@ -218,6 +218,8 @@ def test_image_with_a_file_is_one_segment(isolated_ids, monkeypatch, tmp_path):
     assert [seg["type"] for seg in event["message"]] == ["image"], event["message"]
     # 小图走 base64 内联，大图才给 file://；这里只关心「只有一个 image 段」
     assert event["message"][0]["data"]["file"].startswith(("base64://", "file://"))
+    # 普通图片不带表情包标记
+    assert "sub_type" not in event["message"][0]["data"]
 
 
 def test_image_without_a_file_keeps_the_placeholder(isolated_ids, monkeypatch):
@@ -245,6 +247,8 @@ def test_emoji_with_a_file_is_one_segment(isolated_ids, monkeypatch, tmp_path):
         emoji=True,
     )
     assert [seg["type"] for seg in event["message"]] == ["image"], event["message"]
+    # 表情包按 go-cqhttp 口径标 sub_type=1，客户端据此与普通图片分开显示
+    assert event["message"][0]["data"]["sub_type"] == 1
 
 
 def test_emoji_without_a_file_keeps_the_placeholder(isolated_ids, monkeypatch):

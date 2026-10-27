@@ -563,9 +563,14 @@ def to_segment_dict(segment: Segment) -> dict | None:
     if isinstance(segment, Reply):
         return {"type": "reply", "data": {"id": segment.message_id}}
     if isinstance(segment, (Image, Emoji)):
-        # 表情包本体就是一张图，客户端按 image 段渲染
+        # 表情包本体就是一张图，客户端按 image 段渲染；表情包带上 go-cqhttp
+        # 的 sub_type=1（0 是普通图片），认这个字段的客户端会分开显示
         data = _image_data(segment.path)
-        return None if data is None else {"type": "image", "data": data}
+        if data is None:
+            return None
+        if isinstance(segment, Emoji):
+            data = {**data, "sub_type": 1}
+        return {"type": "image", "data": data}
     if isinstance(segment, Face):
         return {"type": "face", "data": {"id": segment.face_id}}
     if isinstance(segment, Voice):

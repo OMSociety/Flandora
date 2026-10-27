@@ -19,6 +19,7 @@ from .domain.content import EMOJI_PLACEHOLDER, IMAGE_PLACEHOLDER, ContentKind, c
 from .domain.message import (
     ChatKind,
     ChatRef,
+    Emoji,
     Image,
     InboundMessage,
     Mention,
@@ -460,7 +461,10 @@ class Flandora:
             # 清掉——只有它知道哪一处 @ 是真提及，先清就再也认不出来了。
             # 图片拿到了可渲染的文件就不再带正文：正文此时只是「[图片]」占位符，
             # 客户端已经有 image 段可显示，再发一遍文本等于同一张图出现两次。
-            images = [Image(path=path) for path in message.media]
+            # 表情包与图片都走 image 段，表情包额外带 sub_type=1（go-cqhttp 口径），
+            # 客户端据此把它与普通图片分开显示。
+            media_cls = Emoji if message.kind is ContentKind.EMOJI else Image
+            images = [media_cls(path=path) for path in message.media]
             segments = self._inbound_segments(message, "" if images else message.text)
             segments.extend(images)
 

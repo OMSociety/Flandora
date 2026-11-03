@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flandora-sdk"
-version = "1.0.0"
+version = "1.0.1"
 description = "Flandora 的 OneBot v11 客户端：同步与异步两种调用方式、消息段构造器、CQ 码编解码"
 readme = "README.md"
 requires-python = ">=3.10"

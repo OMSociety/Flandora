@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "flandora-mcp"
-version = "1.0.0"
+version = "1.0.1"
 description = "Flandora 的 MCP 服务：把 OneBot 动作目录与调用能力提供给 AI 客户端"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -19,4 +19,4 @@
     wx_desktop       隔离桌面
 """
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"

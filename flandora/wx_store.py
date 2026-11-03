@@ -73,6 +73,11 @@ DBS = (
     ("hardlink", "hardlink.db"),
 )
 
+#: 这两个库的新行常常还停在 WAL 里：主库要到检查点才更新，只看主文件会让刚到的
+#: 图片行长期不可见（真机踩过：图片消息只报 ``[图片]``）。两者都很小，把 ``-wal``
+#: 一起纳入变更判据的代价可以忽略；10 MB 的 ``message_0.db`` 不在此列。
+WAL_TRACKED = frozenset({"hardlink.db", "message_resource.db"})
+
 # local_type 的低 32 位是消息大类，高 32 位是 49（appmsg）的子类型
 BASE_IMAGE = 3
 BASE_VOICE = 34
@@ -364,17 +369,35 @@ class WxStore:
         """
         return self._refresh_names({name for _, name in DBS}, force)
 
+    def _stamp(self, path: str, name: str):
+        """库文件的变更判据；``None`` 表示源文件不在了。
+
+        WAL 里的新行不会改主库的大小与 mtime，所以 ``WAL_TRACKED`` 里的库要连
+        ``-wal`` 一起看；其余库只看主库，免得每条消息都重解十兆的 ``message_0.db``。
+        """
+        try:
+            st = os.stat(path)
+        except OSError:
+            return None
+        stamp = (st.st_size, st.st_mtime_ns)
+        if name in WAL_TRACKED:
+            try:
+                wt = os.stat(path + "-wal")
+            except OSError:
+                stamp += (None, None)
+            else:
+                stamp += (wt.st_size, wt.st_mtime_ns)
+        return stamp
+
     def _refresh_names(self, wanted: set, force: bool) -> bool:
         changed = False
         os.makedirs(self.work_dir, exist_ok=True)
         for name, src, dst in self._pairs():
             if name not in wanted:
                 continue
-            try:
-                st = os.stat(src)
-            except OSError:
+            key = self._stamp(src, name)
+            if key is None:
                 continue
-            key = (st.st_size, st.st_mtime_ns)
             if not force and self._seen.get(name) == key:
                 continue
             try:
@@ -922,7 +945,15 @@ class WxStore:
         try:
             src = self._resolve_image(msg_md5, local_id, talker=talker)
         except WxStoreError as e:
-            log.debug("定位图片失败：%s", e)
+            # 以前这里只打 debug：线上表现就是图片突然变成 [图片]，日志里却什么都
+            # 没有。把 md5、local_id 与会话一起打出来，下次能顺着它直接查。
+            log.warning(
+                "定位图片失败（md5=%s, local_id=%s, talker=%s）：%s",
+                msg_md5,
+                local_id,
+                talker,
+                e,
+            )
             return None
         try:
             xor_key = self._ensure_xor_key()

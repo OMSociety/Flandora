@@ -5,6 +5,7 @@
 以及没有副本时退回占位符（返回 None）。
 """
 
+import logging
 import os
 import sqlite3
 import struct
@@ -226,3 +227,12 @@ def test_missing_talker_disables_the_resource_fallback(tmp_path):
     _resource_db(root, [("other_talker", OTHER)])
     _write(os.path.join(os.path.dirname(_main_path(root)), f"{OTHER}.dat"), _make_dat(PNG))
     assert _store(root).extract_image("f" * 32, 15) is None
+
+
+def test_unresolved_image_logs_a_warning(tmp_path, caplog):
+    """定位失败要留下 md5：线上「图片变成 [图片]」时，日志得能顺着查。"""
+    root = _account(tmp_path)
+    missing = "e" * 32
+    with caplog.at_level(logging.WARNING, logger="wx_store"):
+        assert _store(root).extract_image(missing) is None
+    assert any(missing in record.getMessage() for record in caplog.records)

@@ -62,24 +62,20 @@ def _failure(message: str, retcode: int, echo=None) -> dict:
 def _resolve_self_name() -> str:
     """机器人显示名：优先本地通讯录里自己那行的微信昵称，读不到退回 wechat-bot。
 
-    识别成功就记进 ``ob_ids.SELF``（账号切换时昵称缓存已作废，会按新账号重识别）；
-    失败不缓存，下次调用再试。昵称的读库与缓存由 bridge 实例统一负责，
-    与 @ 识别、防自回环用的是同一个来源。
+    先问 bridge 实例：它按 ``contact_revision`` 感知通讯录更新，改名后不必重启。
+    读到了就同步进 ``ob_ids.SELF``（供没有 bridge 的路径与引用判定兜底）；读不到
+    时用 ``SELF`` 里上一次成功的名字，再不行才用占位名。
     """
-    cached = ob_ids.SELF.nickname()
-    if cached:
-        return cached
     bridge = RUNTIME.bridge
-    if bridge is None:
-        return "wechat-bot"
-    try:
-        nick = bridge.self_nickname() or ""
-    except Exception:  # noqa: BLE001
-        nick = ""
-    if nick:
-        ob_ids.SELF.set_nickname(nick)
-        return nick
-    return "wechat-bot"
+    if bridge is not None:
+        try:
+            nick = bridge.self_nickname() or ""
+        except Exception:  # noqa: BLE001
+            nick = ""
+        if nick:
+            ob_ids.SELF.set_nickname(nick)
+            return nick
+    return ob_ids.SELF.nickname() or "wechat-bot"
 
 
 def _record_out(contact, is_group, text):

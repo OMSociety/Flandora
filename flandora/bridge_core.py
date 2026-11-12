@@ -73,28 +73,41 @@ class Flandora:
         self.sender = sender
         self.processed_ids = set()
         self.start_timestamp = int(time.time())
-        self._member_cache = {}  # session_id → (缓存时间, {wxid: 显示名})
-        self._nick_store = None  # 自己昵称的缓存宿主（store 换掉就重读）
+        self._member_cache = {}  # session_id → (缓存时间, 名册版本, {wxid: 显示名})
+        self._nick_key = None  # (store, contact_revision)，换账号或通讯录更新就重读
         self._nick = ""
+        self._warn_at = {}  # 告警节流：原因 → 上次记录时间
+
+    def _warn_throttled(self, key: str, message: str) -> None:
+        """同一原因的告警最多每分钟一条，避免通讯录长时间不可用时刷屏。"""
+        now = time.monotonic()
+        if now - self._warn_at.get(key, 0.0) < 60.0:
+            return
+        self._warn_at[key] = now
+        log.warning(message)
 
     def self_nickname(self) -> str:
         """机器人自己的微信昵称（本地通讯录里自己那行），读不到返回空串。
 
         @ 识别与防自回环都以这个昵称为准，它随登录账号变化，所以不落配置。
-        按当前收件源的 store 缓存；读不到时不记缓存，下次调用再试。
+        缓存按（收件源 store，``contact_revision``）记：改名后通讯录重新解密，
+        版本号一变就重读；读不到时不记缓存，下次调用再试。
         """
         store = RUNTIME.store
         if store is None:
             return ""
-        if store is not self._nick_store:
+        key = (store, getattr(store, "contact_revision", 0))
+        if key != self._nick_key:
             try:
                 nick = store.self_nickname() or ""
-            except Exception:  # noqa: BLE001
-                nick = ""
+            except Exception as e:  # noqa: BLE001
+                self._warn_throttled("nickname", f"读取自己昵称失败：{e}")
+                return ""
             if not nick:
+                self._warn_throttled("nickname", "通讯录里还没读到自己的昵称")
                 return ""
             self._nick = nick
-            self._nick_store = store
+            self._nick_key = key
         return self._nick
 
     def should_ignore(self, data):
@@ -237,24 +250,31 @@ class Flandora:
         return hits[0] if len(hits) == 1 else ""
 
     def resolve_names(self, session_id: str) -> dict[str, str]:
-        """解析会话成员 wxid → 显示名（带 10 分钟缓存）。
+        """解析会话成员 wxid → 显示名（按通讯录版本失效，最长 10 分钟）。
 
         名字统一取自本地库的 contact 表（备注名优先）。群里发言的人只要在联系人
         表里就能查到，查不到就退回 wxid。get_group_msg_history 用它还原历史发言人。
+        缓存记下当时的 ``contact_revision``：改名、改备注、新人进群让通讯录重新
+        解密后版本号变化，下一次调用就重读，不必等 10 分钟超时。
         """
+        store = RUNTIME.store
+        if store is None:
+            return {}
+        revision = getattr(store, "contact_revision", 0)
         now = time.time()
         cached = self._member_cache.get(session_id)
-        if cached and now - cached[0] < 600:
-            return cached[1]
+        if cached and cached[1] == revision and now - cached[0] < 600:
+            return cached[2]
 
-        names: dict[str, str] = {}
-        store = RUNTIME.store
-        if store is not None:
-            try:
-                names = dict(store.display_names())
-            except Exception as e:  # noqa: BLE001
-                log.warning(f"读取联系人失败 (session={session_id}): {e}")
-        self._member_cache[session_id] = (now, names)
+        try:
+            names = dict(store.display_names())
+        except Exception as e:  # noqa: BLE001
+            self._warn_throttled("names", f"读取联系人失败 (session={session_id}): {e}")
+            return {}
+        if not names:
+            self._warn_throttled("names", "通讯录为空，成员名册暂不可用")
+            return {}
+        self._member_cache[session_id] = (now, revision, names)
         return names
 
     def _quote_is_self(self, quote: QuoteRef | None) -> bool:
@@ -273,7 +293,7 @@ class Flandora:
             return True
         if quote.sender and not quote.sender.endswith("@chatroom"):
             return False
-        nick = ob_ids.SELF.nickname() or self.self_nickname()
+        nick = self.self_nickname() or ob_ids.SELF.nickname()
         return bool(nick) and bool(quote.name) and quote.name == nick
 
     def _inbound_segments(self, message: InboundMessage, text: str) -> list[Segment]:

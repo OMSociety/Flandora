@@ -141,3 +141,44 @@ def test_rows_that_only_live_in_the_wal_become_visible(tmp_path, monkeypatch):
 
     store.refresh()
     assert store.image_path(MD5) == "deadbeef.dat"
+
+
+def test_contact_revision_advances_only_when_contact_db_is_redecrypted(store):
+    """通讯录版本号只在 contact.db 真的重解时前进，昵称缓存靠它失效。"""
+    db, decrypted = store
+    db.refresh()
+    assert db.contact_revision == 1
+
+    assert db.refresh() is False
+    assert db.contact_revision == 1
+    decrypted.clear()
+
+    os.utime(os.path.join(db.data_dir, "db_storage", "contact", "contact.db"), (10, 10))
+    assert db.refresh() is True
+    assert decrypted == ["contact.db"]
+    assert db.contact_revision == 2
+
+
+def test_contact_wal_change_also_advances_the_revision(store):
+    """改名常常先落在 contact.db-wal 里，主库不动也要能感知到。"""
+    db, decrypted = store
+    db.refresh()
+    decrypted.clear()
+
+    wal = os.path.join(db.data_dir, "db_storage", "contact", "contact.db-wal")
+    with open(wal, "wb") as fh:
+        fh.write(b"new nickname row")
+
+    assert db.refresh() is True
+    assert decrypted == ["contact.db"]
+    assert db.contact_revision == 2
+
+
+def test_a_touched_message_database_does_not_advance_the_revision(store):
+    db, _decrypted = store
+    db.refresh()
+
+    os.utime(os.path.join(db.data_dir, "db_storage", "message", "message_0.db"), (10, 10))
+    db.refresh()
+
+    assert db.contact_revision == 1

@@ -73,10 +73,11 @@ DBS = (
     ("hardlink", "hardlink.db"),
 )
 
-#: 这两个库的新行常常还停在 WAL 里：主库要到检查点才更新，只看主文件会让刚到的
-#: 图片行长期不可见（真机踩过：图片消息只报 ``[图片]``）。两者都很小，把 ``-wal``
-#: 一起纳入变更判据的代价可以忽略；10 MB 的 ``message_0.db`` 不在此列。
-WAL_TRACKED = frozenset({"hardlink.db", "message_resource.db"})
+#: 这些库的新行常常还停在 WAL 里：主库要到检查点才更新，只看主文件会让刚到的
+#: 图片行、刚改的昵称长期不可见（真机踩过：图片消息只报 ``[图片]``，改名后 @
+#: 识别不到自己）。三者都很小，把 ``-wal`` 一起纳入变更判据的代价可以忽略；
+#: 10 MB 的 ``message_0.db`` 不在此列。
+WAL_TRACKED = frozenset({"hardlink.db", "message_resource.db", "contact.db"})
 
 # local_type 的低 32 位是消息大类，高 32 位是 49（appmsg）的子类型
 BASE_IMAGE = 3
@@ -351,9 +352,19 @@ class WxStore:
         self._xor_sniffed = False
         self._seen = {}  # 相对路径 -> (size, mtime_ns)
         self._decrypted = set()  # 已成功解出的库名
+        self._contact_revision = 0  # contact.db 每重解一次加一，名字缓存按它失效
         self._image_dir = os.path.join(work_dir, "images")
 
     # ---------- 路径与解密 ----------
+
+    @property
+    def contact_revision(self) -> int:
+        """联系人库的版本号；``contact.db`` 每被重新解密一次就加一。
+
+        昵称与成员名册的缓存以它为准：改名后通讯录一落盘，下一轮 ``refresh()``
+        换号，缓存随之作废，不需要重启桥接，也不用等超时。
+        """
+        return self._contact_revision
 
     def _pairs(self):
         for sub, name in DBS:
@@ -415,6 +426,8 @@ class WxStore:
                 continue
             self._seen[name] = key
             self._decrypted.add(name)
+            if name == "contact.db":
+                self._contact_revision += 1
             changed = True
             log.debug("已解密 %s（%d 字节）", name, size)
         return changed

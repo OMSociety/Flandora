@@ -237,6 +237,10 @@ def test_swap_script_contains_paths_and_rollback(monkeypatch, tmp_path):
     assert ('$staging = "%s"' % (tmp_path / "staging")) in script
     assert "Wait-Process" in script and "Start-Process" in script
     assert "回滚" in script
+    # 更新后拉起管理器（用户入口），桥接由管理器起；没有管理器时退回桥接
+    assert ('$launch = "%s"' % (tmp_path / "app" / "Flandora.exe")) in script
+    assert "if (-not (Test-Path -LiteralPath $launch)) { $launch = $exe }" in script
+    assert "Start-Process -FilePath $launch" in script
     # 拉起新版本后要观察存活，进程提前退出算失败
     assert "Get-Process" in script and f"$grace = {updater.STARTUP_GRACE_SECONDS}" in script
     assert "-LiteralPath" in script

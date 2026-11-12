@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复新加的群发不出回复的问题：群刚建好时群名册可能还没有群名，发送逻辑把群标识（`xxx@chatroom`）当成搜索词，微信搜索框永远选不中会话。现在发送前单独刷新通讯录、按实时群名发送，群名确实缺失时明确报错，不再拿群标识去搜。
 - 修复改昵称后 @ 识别滞后的问题：桥接缓存的自身昵称只在 `store` 对象变化时重读，群成员名册按 600 秒超时，运行中改名后新名字的 @ 既不算提及、也解析不出 at 段。现在 `contact.db` 每重解密一次，通讯录版本号就前进一位，昵称、名册与 `get_login_info`/引用判定用的自身昵称一起随之失效。
 - 修复「检查更新」查不到版本的问题：版本号改从订阅条目的 `<id>`（`…/Repository/<id>/<tag>`）读取，发布标题写成 `Flandora 1.0.2` 这类自由文本也能识别；条目只有标题且标题形如 `v1.2.3` 时仍按标题兜底。
+- 修复更新完成后托盘管理器不随新版本启动的问题：替换脚本只拉起了 `Flandora-Bridge.exe`，管理器退出后不再回来，用户只剩面板、看不到托盘。现在优先拉起管理器 `Flandora.exe`（桥接由管理器启动），老安装里没有管理器时才退回桥接。
 
 ### 变更
 
@@ -28,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed replies failing in newly added groups: before the group had a name in the local roster, the send path used the raw `xxx@chatroom` handle as the search text, which never selects a chat in WeChat's search box. The contact table is now refreshed right before sending, the live group name is used, and a missing name is reported instead of searching by handle.
 - Fixed stale `@` detection after a nickname change: the bridge cached its own nickname until the store object changed, and the member name map expired only after 600 seconds, so mentions of the new name were neither flagged nor turned into `at` segments. The contact table now carries a revision that advances whenever `contact.db` is re-decrypted, invalidating the nickname, the member map, and the self name used by `get_login_info` and quote checks.
 - Fixed update checks reporting no versions: the tag is read from the feed entry `<id>` (`…/Repository/<id>/<tag>`), so releases titled like `Flandora 1.0.2` are still discovered; entries that only carry a `v1.2.3` title keep working through the title fallback.
+- Fixed the tray manager not coming back after an update: the swap script relaunched only `Flandora-Bridge.exe`, so once the manager exited the tray icon was gone and only the panel remained. It now launches the manager `Flandora.exe` first (the manager starts the bridge) and falls back to the bridge only when the manager is absent.
 
 ### Changed
 

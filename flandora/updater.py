@@ -40,6 +40,9 @@ STARTUP_GRACE_SECONDS = 20
 MIN_EXE_BYTES = 1024 * 1024
 # 发布包里的桥接主程序：既有「这份包是不是 Flandora」的标记作用，也是替换后要重启的那个
 MAIN_EXE = "Flandora-Bridge.exe"
+#: 管理器是用户入口，更新完成后要拉起它；桥接由管理器自己起。老安装里没有管理器时
+#: 退回直接拉桥接，至少让面板还能用。
+LAUNCH_EXE = "Flandora.exe"
 
 _opener = urllib.request.urlopen
 
@@ -332,12 +335,16 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
     失败时把备份挪回去，保证程序至少还能启动。新版本拉起后观察
     ``STARTUP_GRACE_SECONDS`` 秒；进程提前退出同样算失败并回滚——「更新成功但起不来」
     比不更新更糟，用户至少还能回到备份里那份能跑的版本。
+
+    拉起的是管理器（``Flandora.exe``）而不是桥接：管理器是用户入口，桥接由它启动；
+    只拉桥接会让托盘图标消失。老安装里没有管理器时退回桥接。
     """
     target = info.get("app_dir") or app_dir()
     staging = info["staging"]
     version = info.get("version", "")
     backup = backup_dir or os.path.join(updates_dir(), f"backup-{version or 'old'}")
     exe = os.path.join(target, MAIN_EXE)
+    launch = os.path.join(target, LAUNCH_EXE)
     lines = [
         '$ErrorActionPreference = "Stop"',
         f"# 本进程 {os.getpid()} 退出后再动程序目录，最多等 60 秒",
@@ -347,6 +354,8 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
         f"$staging = {_ps_literal(staging)}",
         f"$backup = {_ps_literal(backup)}",
         f"$exe = {_ps_literal(exe)}",
+        f"$launch = {_ps_literal(launch)}",
+        "if (-not (Test-Path -LiteralPath $launch)) { $launch = $exe }",
         f"$grace = {STARTUP_GRACE_SECONDS}",
         f"# 本次更新到 {version or '未知版本'}",
         "if (Test-Path -LiteralPath $backup) { Remove-Item -LiteralPath $backup -Recurse -Force }",
@@ -358,7 +367,7 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
         "  Get-ChildItem -LiteralPath $staging -Force | ForEach-Object {",
         "    Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force",
         "  }",
-        "  $proc = Start-Process -FilePath $exe -PassThru",
+        "  $proc = Start-Process -FilePath $launch -PassThru",
         "  $deadline = (Get-Date).AddSeconds($grace)",
         "  $alive = $true",
         "  while ((Get-Date) -lt $deadline) {",

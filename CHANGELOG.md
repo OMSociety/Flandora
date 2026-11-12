@@ -10,6 +10,26 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-11-12
+
+### 修复
+
+- 修复改昵称后 @ 识别滞后的问题：桥接缓存的自身昵称只在 `store` 对象变化时重读，群成员名册按 600 秒超时，运行中改名后新名字的 @ 既不算提及、也解析不出 at 段。现在 `contact.db` 每重解密一次，通讯录版本号就前进一位，昵称、名册与 `get_login_info`/引用判定用的自身昵称一起随之失效。
+
+### 变更
+
+- `contact.db` 的变更判据纳入 `-wal`：改名常常先写进 WAL，只看主文件会漏。
+- 读不到通讯录时不再沿用旧昵称与旧名册，改为返回空并写 warning（同一原因每分钟最多一条）。
+
+### Fixed
+
+- Fixed stale `@` detection after a nickname change: the bridge cached its own nickname until the store object changed, and the member name map expired only after 600 seconds, so mentions of the new name were neither flagged nor turned into `at` segments. The contact table now carries a revision that advances whenever `contact.db` is re-decrypted, invalidating the nickname, the member map, and the self name used by `get_login_info` and quote checks.
+
+### Changed
+
+- The `contact.db` change check now includes its `-wal` file: renames usually land in the WAL first, so checking only the main file missed them.
+- When the contact table cannot be read, stale nicknames and name maps are no longer reused; an empty result is returned with a warning (at most once per minute per reason).
+
 ## [1.0.1] - 2026-11-03
 
 ### 修复

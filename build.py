@@ -91,14 +91,12 @@ REQUIRED_PAYLOAD = (
     BUILD_INFO_NAME,
 )
 
-# 表情解码用的 FFmpeg：官方 FFmpeg 项目的 LGPL 共享构建（BtbN 的 autobuild），
+# 表情解码用的 FFmpeg：官方 FFmpeg 项目的 LGPL 共享构建（FFmpeg-Builds 的 autobuild），
 # 钉住具体构建与 zip 的 sha256，打包时下载一次、缓存进 build/，之后离线复用。
-FFMPEG_BUILD = "autobuild-2026-10-26-14-25"
-FFMPEG_ARCHIVE = "ffmpeg-n8.1.3-24-g92611900bb-win64-lgpl-shared-8.1.zip"
-FFMPEG_URL = (
-    f"https://github.com/BtbN/FFmpeg-Builds/releases/download/{FFMPEG_BUILD}/{FFMPEG_ARCHIVE}"
-)
-FFMPEG_SHA256 = "96afe9bee66012f4cbc336a473f0b595060d73bdc5efe4331d55101500d0a93e"
+FFMPEG_BUILD = "autobuild-2026-11-11-12-39"
+FFMPEG_ARCHIVE = "ffmpeg-n8.1.3-35-gf1acb0a266-win64-lgpl-shared-8.1.zip"
+FFMPEG_URL = f"https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/{FFMPEG_BUILD}/{FFMPEG_ARCHIVE}"
+FFMPEG_SHA256 = "f7697c270197c04bf72759c65ada64fcaea663bcb80767c390752d2412ea2dcf"
 # 共享构建里跑解码与 PNG 输出要的那几件：主程序、库与许可说明
 FFMPEG_FILES = (
     "bin/ffmpeg.exe",

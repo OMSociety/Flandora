@@ -28,6 +28,10 @@ RELEASES_PAGE = f"https://github.com/{REPO}/releases"
 MAX_DOWNLOAD_BYTES = 512 * 1024 * 1024
 ASSET_RE = re.compile(r'href="(/[^"]*/releases/download/[^"]+\.zip)"')
 SHA256_RE = re.compile(r"\b([0-9a-fA-F]{64})\b")
+#: 订阅条目的 ``<id>`` 里带 tag（形如 ``…/Repository/123/v1.2.3``）；标题是自由文本，
+#: 发布时写成「Flandora 1.2.3」也合法，版本识别不能只看标题。
+ATOM_TAG_RE = re.compile(r"<id>tag:github\.com,2008:Repository/\d+/([^<\s]+)</id>")
+VERSION_TAG_RE = re.compile(r"^[vV]?\d+\.\d+")
 TIMEOUT = 20.0
 
 # 拉起新版本后观察它是否还活着的时间窗口：小于这个时间就退出视为「更新后起不来」
@@ -131,14 +135,15 @@ def latest_release(timeout: float = TIMEOUT) -> dict:
     except Exception as e:  # noqa: BLE001 - 网络问题统一归一成能展示的错
         log.warning(f"[更新] 查不到最新版本: {e}")
         raise UpdateError("查不到最新版本：网络或接口异常，详细原因见运行日志") from e
-    tags = re.findall(r"<title>([^<]+)</title>", body.decode("utf-8", "replace"))
-    # 第一个 <title> 是订阅本身的标题（形如「Release notes from Flandora」），版本在之后
-    candidates = [
-        t.strip() for t in tags[1:] if t.strip()[:1] in ("v", "V") or t.strip()[:1].isdigit()
-    ]
-    if not candidates:
+    text = body.decode("utf-8", "replace")
+    tags = [t for t in ATOM_TAG_RE.findall(text) if VERSION_TAG_RE.match(t)]
+    if not tags:
+        # 老式订阅条目只有标题：标题本身形如 v1.2.3 时按标题兜底
+        titles = re.findall(r"<title>([^<]+)</title>", text)
+        tags = [t.strip() for t in titles[1:] if VERSION_TAG_RE.match(t.strip())]
+    if not tags:
         raise UpdateError("发布订阅里没有版本条目")
-    tag = candidates[0]
+    tag = tags[0]
     version = _version_from_tag(tag)
     asset = _asset_for(tag)
     return {

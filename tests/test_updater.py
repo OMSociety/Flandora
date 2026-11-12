@@ -70,6 +70,26 @@ def test_latest_release_reads_tag_and_asset(monkeypatch):
     assert info["sha256"] is None
 
 
+def test_latest_release_uses_atom_id_when_title_is_freeform(monkeypatch):
+    atom = (
+        '<feed xmlns="http://www.w3.org/2005/Atom">'
+        "<title>Release notes from Flandora</title>"
+        "<entry><id>tag:github.com,2008:Repository/1430190978/v1.2.3</id>"
+        "<title>Flandora 1.2.3</title></entry>"
+        "<entry><id>tag:github.com,2008:Repository/1430190978/v1.2.2</id>"
+        "<title>Flandora 1.2.2</title></entry></feed>"
+    ).encode("utf-8")
+    page = b'<a href="/OMSociety/Flandora/releases/download/v1.2.3/Flandora-v1.2.3.zip">x</a>'
+
+    def fake_fetch(url, timeout):
+        return page if "expanded_assets" in url else atom
+
+    monkeypatch.setattr(updater, "_fetch", fake_fetch)
+    info = updater.latest_release()
+    assert info["tag"] == "v1.2.3"
+    assert info["version"] == "1.2.3"
+
+
 def test_asset_sha256_reads_sibling_file(monkeypatch):
     digest = "ab" * 32
     monkeypatch.setattr(

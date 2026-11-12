@@ -62,7 +62,8 @@ def _failure(message: str, retcode: int, echo=None) -> dict:
 def _resolve_self_name() -> str:
     """机器人显示名：优先本地通讯录里自己那行的微信昵称，读不到退回 wechat-bot。
 
-    先问 bridge 实例：它按 ``contact_revision`` 感知通讯录更新，改名后不必重启。
+    先问 bridge 实例：它按 ``contact_revision`` 感知通讯录更新，改名在下一条消息
+    就生效。
     读到了就同步进 ``ob_ids.SELF``（供没有 bridge 的路径与引用判定兜底）；读不到
     时用 ``SELF`` 里上一次成功的名字，再不行才用占位名。
     """

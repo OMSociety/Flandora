@@ -74,8 +74,8 @@ DBS = (
 )
 
 #: 这些库的新行常常还停在 WAL 里：主库要到检查点才更新，只看主文件会让刚到的
-#: 图片行、刚改的昵称长期不可见（真机踩过：图片消息只报 ``[图片]``，改名后 @
-#: 识别不到自己）。三者都很小，把 ``-wal`` 一起纳入变更判据的代价可以忽略；
+#: 图片行、刚改的昵称长期不可见，图片只能报 ``[图片]``，改名后 @ 识别不到自己。
+#: 三者都很小，把 ``-wal`` 一起纳入变更判据的代价可以忽略；
 #: 10 MB 的 ``message_0.db`` 不在此列。
 WAL_TRACKED = frozenset({"hardlink.db", "message_resource.db", "contact.db"})
 
@@ -967,8 +967,8 @@ class WxStore:
         try:
             src = self._resolve_image(msg_md5, local_id, talker=talker)
         except WxStoreError as e:
-            # 以前这里只打 debug：线上表现就是图片突然变成 [图片]，日志里却什么都
-            # 没有。把 md5、local_id 与会话一起打出来，下次能顺着它直接查。
+            # 定位失败在线上没有别的可观测信号（debug 不落盘），这里把 md5、
+            # local_id 与会话一起打出来，便于直接回查。
             log.warning(
                 "定位图片失败（md5=%s, local_id=%s, talker=%s）：%s",
                 msg_md5,

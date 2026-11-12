@@ -255,7 +255,7 @@ class Flandora:
         名字统一取自本地库的 contact 表（备注名优先）。群里发言的人只要在联系人
         表里就能查到，查不到就退回 wxid。get_group_msg_history 用它还原历史发言人。
         缓存记下当时的 ``contact_revision``：改名、改备注、新人进群让通讯录重新
-        解密后版本号变化，下一次调用就重读，不必等 10 分钟超时。
+        解密后版本号变化，下一次调用就重读；版本号不变时沿用缓存（最长 10 分钟）。
         """
         store = RUNTIME.store
         if store is None:

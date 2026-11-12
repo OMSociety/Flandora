@@ -182,3 +182,16 @@ def test_a_touched_message_database_does_not_advance_the_revision(store):
     db.refresh()
 
     assert db.contact_revision == 1
+
+
+def test_refresh_contacts_only_decrypts_the_contact_table(store):
+    """发送前刷群名只碰 contact.db，不重解十兆的消息库。"""
+    db, decrypted = store
+    db.refresh()
+    decrypted.clear()
+
+    os.utime(os.path.join(db.data_dir, "db_storage", "contact", "contact.db"), (10, 10))
+    os.utime(os.path.join(db.data_dir, "db_storage", "message", "message_0.db"), (10, 10))
+
+    assert db.refresh_contacts() is True
+    assert decrypted == ["contact.db"]

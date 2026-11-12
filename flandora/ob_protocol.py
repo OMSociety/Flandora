@@ -218,10 +218,12 @@ async def _handle_ob_api(data: dict):
         known_id = ob_ids.find_contact_id(contact_handle)
         contact = ob_ids.lookup_name(known_id) if known_id is not None else ""
         # 群聊：微信搜索框搜不到 @chatroom ID，必须有群名。
-        # 名字来源按「本次运行收到的群消息 → 本地库群名册」取，配置里的映射只作覆盖。
+        # 名字优先取本地库里的实时群名（改名立刻生效），其次用本次运行学到的名字；
+        # 配置里的映射只作覆盖。
         if is_group:
-            if not contact:
-                contact = await asyncio.to_thread(_group_name, contact_handle)
+            roster_name = await asyncio.to_thread(_group_name, contact_handle)
+            if roster_name:
+                contact = roster_name
             mapped_name = config.GROUP_NAME_MAP.get(contact_handle) or config.GROUP_NAME_MAP.get(
                 str(target)
             )
@@ -1126,10 +1128,25 @@ def _groups_roster() -> list:
 
 
 def _group_name(handle: str) -> str:
-    """在线程池中执行：按群 wxid 取微信里显示的群名，找不到返回空串。"""
+    """在线程池中执行：按群 wxid 取微信里显示的群名，找不到返回空串。
+
+    刚建的群，contact 行可能还在 ``-wal`` 里，要先单独刷一次通讯录再查；
+    群名与群标识相同时按「还没有群名」处理——拿 ``xxx@chatroom`` 去搜索框
+    永远选不中会话。
+    """
+    store = _store()
+    if store is not None:
+        try:
+            store.refresh_contacts()
+        except Exception:  # noqa: BLE001 - 刷不动就按旧副本查，别让发送卡在这里
+            log.debug("刷新通讯录失败", exc_info=True)
     for group in _groups_roster():
-        if group.get("username") == handle:
-            return str(group.get("name") or "")
+        if group.get("username") != handle:
+            continue
+        name = str(group.get("name") or "").strip()
+        if not name or name == handle or name.endswith("@chatroom"):
+            return ""
+        return name
     return ""
 
 

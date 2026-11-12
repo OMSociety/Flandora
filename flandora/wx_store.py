@@ -380,6 +380,15 @@ class WxStore:
         """
         return self._refresh_names({name for _, name in DBS}, force)
 
+    def refresh_contacts(self) -> bool:
+        """只把通讯录重新解出来；返回是否有更新。
+
+        发送前定位群名要用最新的群名册：刚建的群，contact 行可能比主库晚一步
+        才从 ``-wal`` 里落盘，用旧副本会拿到群标识本身（当不了搜索词）。
+        contact.db 只有几百 KB，单独刷一次的代价可以忽略。
+        """
+        return self._refresh_names({"contact.db"}, False)
+
     def _stamp(self, path: str, name: str):
         """库文件的变更判据；``None`` 表示源文件不在了。
 

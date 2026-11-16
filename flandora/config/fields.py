@@ -541,6 +541,15 @@ FIELDS: tuple[Field, ...] = (
         desc="轮询本地库的间隔（秒）。默认 0.5 秒，新消息通常在这个延迟内被发现。",
     ),
     Field(
+        key="ignore_official_chats",
+        attr="IGNORE_OFFICIAL_CHATS",
+        kinds=_RESTART,
+        default=True,
+        clean=_clean_flag,
+        desc="不把微信团队、服务通知、订阅号/服务号这类官方会话的消息推给机器人。"
+        "这些账号收到消息会自动回话，一来一回停不下来。关闭后照常上报。",
+    ),
+    Field(
         key="wx_image_key_file",
         attr="WX_IMAGE_KEY_FILE",
         kinds=_RESTART,

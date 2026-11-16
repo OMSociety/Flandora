@@ -18,7 +18,7 @@ import time
 from . import config, wechat_account, wx_crypto, wx_emoticon, wx_store
 from .domain.content import IMAGE_PLACEHOLDER
 from .wx_image_key import aes_key_from_payload
-from .wx_store import WxStoreError
+from .wx_store import WxStoreError, is_official_username
 from .wxkey.store import KeyStore, KeyStoreError
 
 log = logging.getLogger("flandora")
@@ -93,6 +93,7 @@ class WxLocalSource:
         poll_seconds: float = 0.5,
         on_outgoing=None,
         image_key_watch=None,
+        ignore_official: bool = True,
     ):
         self.store = store
         self.backfill_seconds = max(0, int(backfill_seconds or 0))
@@ -107,6 +108,8 @@ class WxLocalSource:
         self.on_outgoing = on_outgoing
         # 取钥向导写盘晚于桥接启动时，靠它把新密钥接进正在跑的库读取，不必重启桥接
         self.image_key_watch = image_key_watch
+        # 官方会话（微信团队、服务通知、公众号）会自动回话，来回停不下来；默认不收
+        self.ignore_official = bool(ignore_official)
 
     # ---------- 启动 ----------
 
@@ -118,6 +121,8 @@ class WxLocalSource:
         replayed = 0
         for s in self.store.sessions():
             username = s["username"]
+            if self.ignore_official and is_official_username(username):
+                continue
             latest = int(s["last_local_id"] or 0)
             cursor = latest
             if self.backfill_seconds > 0 and latest:
@@ -160,6 +165,8 @@ class WxLocalSource:
         out = []
         for s in self.store.sessions():
             username = s["username"]
+            if self.ignore_official and is_official_username(username):
+                continue
             cursor = self.cursors.get(username)
             if cursor is None:
                 # 会话是本进程跑起来之后才出现的。启动时那份名单里没有它，显示名要现取
@@ -463,6 +470,7 @@ def build_source(key_file: str = None, on_outgoing=None) -> WxLocalSource:
         poll_seconds=config.WX_POLL_SECONDS,
         on_outgoing=on_outgoing,
         image_key_watch=_image_key_watcher(account.wxid),
+        ignore_official=config.IGNORE_OFFICIAL_CHATS,
     )
     step = ", ".join(sorted(store._decrypted))
     log.info(

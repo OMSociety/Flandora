@@ -44,6 +44,8 @@
     "_comment_wx_backfill_seconds": "启动时把最近多少秒内的历史消息也收进来（按会话逐个从尾部判断）。0 = 不回放，不会把旧聊天记录灌给机器人。",
     "wx_poll_seconds": 0.5,
     "_comment_wx_poll_seconds": "轮询本地库的间隔（秒）。默认 0.5 秒，新消息通常在这个延迟内被发现。",
+    "ignore_official_chats": true,
+    "_comment_ignore_official_chats": "不把微信团队、服务通知、订阅号/服务号这类官方会话的消息推给机器人。这些账号收到消息会自动回话，一来一回停不下来。关闭后照常上报。",
     "wx_image_key_file": "",
     "_comment_wx_image_key_file": "微信图片密钥文件，留空 = 配置文件同目录下的 wx_image_key.json。缺它时图片消息退回占位符（文字消息不受影响）。密钥只在微信解码图片的那几秒驻留内存，所以要在 面板 的取钥向导里按提示让微信打开一张没看过的图片时抓（源码开发者也可以直接跑 tools/imagekey.py）。",
     "wxkey_manual_rva": 0,

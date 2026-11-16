@@ -57,6 +57,7 @@ class Settings:
     WX_WORK_DIR: str = ""
     WX_BACKFILL_SECONDS: int = 0
     WX_POLL_SECONDS: float = 1.0
+    IGNORE_OFFICIAL_CHATS: bool = True
     WX_IMAGE_KEY_FILE: str = ""
     WXKEY_MANUAL_RVA: int = 0
     ISOLATED_DESKTOP: bool = True

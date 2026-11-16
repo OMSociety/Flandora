@@ -64,6 +64,19 @@ SYSTEM_USERNAMES = frozenset(
     }
 )
 
+#: 收到消息会自动回话的官方会话：推给机器人只会一来一回停不下来。
+#: 文件传输助手不在此列——它不会自动回复，留着可以给机器人发消息。
+OFFICIAL_SESSION_USERNAMES = SYSTEM_USERNAMES - {"filehelper"}
+
+
+def is_official_username(username: str) -> bool:
+    """微信团队、服务通知这类官方会话，以及订阅号/服务号（``gh_`` 开头）。
+
+    文件传输助手是用户自己的会话，不会自动回话，不在此列。
+    """
+    return username in OFFICIAL_SESSION_USERNAMES or username.startswith("gh_")
+
+
 # 解密哪些库。顺序无关，只是把「要用的库」集中在一处便于核对。
 DBS = (
     ("session", "session.db"),

@@ -260,3 +260,40 @@ def test_poll_refreshes_the_store_every_round():
     src.poll()
     src.poll()
     assert store.refreshed == 2
+
+
+def test_official_sessions_are_skipped_by_default():
+    """微信团队、服务通知、公众号会自动回话，默认不推给客户端。"""
+    store = _StubStore()
+    for username in ("weixin", "notifymessage", "gh_3dfda90e39d6"):
+        store.add_session(username, 0)
+        store.add_message(username, 1, int(time.time()), "自动回复")
+    store.add_session("wxid_a", 1)
+    src = _source(store)
+    src.prime()
+
+    assert src.poll() == []
+    assert "weixin" not in src.cursors
+
+
+def test_official_sessions_can_be_kept():
+    """关掉忽略后，官方会话的消息照常上报。"""
+    store = _StubStore()
+    store.add_session("weixin", 0)
+    store.add_message("weixin", 1, int(time.time()), "欢迎使用微信")
+    src = WxLocalSource(store, ignore_official=False)
+    src.started_at = int(time.time())
+    src.prime()
+
+    assert [m["content"] for m in src.poll()] == ["欢迎使用微信"]
+
+
+def test_file_transfer_helper_is_not_an_official_chat():
+    """文件传输助手不会自动回话，照常上报。"""
+    store = _StubStore()
+    store.add_session("filehelper", 0)
+    store.add_message("filehelper", 1, int(time.time()), "备忘")
+    src = _source(store)
+    src.prime()
+
+    assert [m["content"] for m in src.poll()] == ["备忘"]

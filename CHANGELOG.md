@@ -10,6 +10,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2026-11-17
+
+### 新增
+
+- 新增 `ignore_official_chats` 配置（默认开启）：微信团队、服务通知、订阅号/服务号这类官方会话的消息不再推给机器人。这些账号收到消息会自动回话，推给机器人只会一来一回停不下来。文件传输助手是用户自己的会话，不在过滤范围；需要接收官方会话时可以关掉这一项。
+
+### Added
+
+- Added the `ignore_official_chats` setting (enabled by default): messages from official chats such as WeChat Team, service notifications and subscription/service accounts are no longer forwarded to the bot. Those accounts reply automatically, so forwarding them starts an endless back-and-forth. File Transfer Helper is the user's own chat and is not filtered; turn the setting off to receive official chats again.
 ## [1.0.2] - 2026-11-12
 
 ### 修复

@@ -48,6 +48,10 @@ WM_MOUSEMOVE = 0x0200
 WM_LBUTTONDOWN = 0x0201
 WM_LBUTTONUP = 0x0202
 MK_LBUTTON = 0x0001
+SRCCOPY = 0x00CC0020
+
+#: 切桌面抓屏会短暂占用用户的键盘与鼠标，同一时刻只允许一个抓取。
+_CAPTURE_LOCK = threading.Lock()
 
 _user32 = ctypes.WinDLL("user32", use_last_error=True)
 _kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
@@ -393,20 +397,35 @@ class IsolatedDesktop:
 
     def capture_png(self, hwnd: int, width: int, height: int) -> bytes | None:
         """截图为 PNG 字节，供面板直接返回。"""
-        raw = self.capture(hwnd, width, height)
-        if raw is None:
-            return None
-        try:
-            from PIL import Image
-        except ImportError:
-            log.warning("没有 PIL，无法编码 PNG；退回原始像素")
-            return raw
-        import io
+        return _png_bytes(self.capture(hwnd, width, height), width, height)
 
-        img = Image.frombuffer("RGBA", (width, height), raw, "raw", "BGRA", 0, 1)
-        out = io.BytesIO()
-        img.convert("RGB").save(out, format="PNG")
-        return out.getvalue()
+    def capture_screen(
+        self, hwnd: int, left: int, top: int, width: int, height: int
+    ) -> bytes | None:
+        """把本桌面切成当前桌面抓一帧，抓完切回，返回窗口区域的 BGRA 像素。
+
+        微信 4.2 的主窗口不响应 `PrintWindow`（返回 0），而隔离桌面在后台时
+        不参与合成、`BitBlt` 也读不到像素；只有让本桌面成为当前桌面，屏幕 DC
+        才有内容。抓取期间键盘与鼠标会落到本桌面，调用方只能在用户主动刷新
+        时调用。
+        """
+        if not self.handle or width <= 0 or height <= 0:
+            return None
+        if not _CAPTURE_LOCK.acquire(timeout=1.0):
+            return None
+        out: dict[str, bytes | None] = {"raw": None}
+
+        def work() -> None:
+            out["raw"] = _capture_current_desktop(self.handle, left, top, width, height)
+
+        thread = threading.Thread(target=work, name="flandora-capture", daemon=True)
+        thread.start()
+        thread.join(6.0)
+        _CAPTURE_LOCK.release()
+        if thread.is_alive():
+            log.warning("抓屏超时，已放弃本次取帧")
+            return None
+        return out["raw"]
 
     def click(self, hwnd: int, client_x: int, client_y: int) -> bool:
         """向窗口投递一次左键点击（客户区坐标）。
@@ -442,7 +461,90 @@ _CANDIDATE_DIRS = (
 _EXE_NAMES = ("Weixin.exe", "WeChat.exe")
 # 注册表与安装目录里用到的产品名
 _PRODUCT_NAMES = ("Weixin", "WeChat")
+
+
 # 每个盘符下可能装 Tencent 系产品的两级目录名
+def _capture_current_desktop(desk, left: int, top: int, width: int, height: int) -> bytes | None:
+    """把 `desk` 切成当前桌面，抓一层屏幕像素后切回默认桌面。
+
+    必须在独立线程里跑：`SetThreadDesktop` 会把调用线程永久绑到目标桌面，
+    FastAPI 的线程池线程不适合被这样绑住。
+    """
+    default = _user32.OpenDesktopW("Default", 0, False, DESKTOP_ALL_ACCESS)
+    if not default:
+        log.warning("打开默认桌面失败（错误码 %d）", ctypes.get_last_error())
+        return None
+    try:
+        if not _user32.SetThreadDesktop(desk):
+            log.warning("绑定隔离桌面失败（错误码 %d）", ctypes.get_last_error())
+            return None
+        if not _user32.SwitchDesktop(desk):
+            log.warning("切换到隔离桌面失败（错误码 %d）", ctypes.get_last_error())
+            return None
+        try:
+            time.sleep(0.35)  # 等桌面完成一帧合成，否则抓到的是切换前的残影
+            return _bitblt_screen(left, top, width, height)
+        finally:
+            _switch_back(default)
+    finally:
+        _user32.CloseDesktop(default)
+
+
+def _switch_back(default) -> None:
+    """切回默认桌面；桌面切换偶发失败，重试几次。"""
+    for _ in range(3):
+        if _user32.SwitchDesktop(default):
+            return
+        time.sleep(0.1)
+    log.warning("切回默认桌面失败（错误码 %d）", ctypes.get_last_error())
+
+
+def _bitblt_screen(left: int, top: int, width: int, height: int) -> bytes | None:
+    """抓当前桌面上 (left, top) 处 width×height 的像素，返回 BGRA。"""
+    hdc = _user32.GetDC(None)
+    if not hdc:
+        return None
+    mem = _gdi32.CreateCompatibleDC(hdc)
+    bmp = _gdi32.CreateCompatibleBitmap(hdc, width, height)
+    old = _gdi32.SelectObject(mem, bmp)
+    bi = _BITMAPINFO()
+    bi.bmiHeader.biSize = ctypes.sizeof(_BITMAPINFOHEADER)
+    bi.bmiHeader.biWidth = width
+    bi.bmiHeader.biHeight = -height
+    bi.bmiHeader.biPlanes = 1
+    bi.bmiHeader.biBitCount = 32
+    bi.bmiHeader.biCompression = 0
+    try:
+        if not _gdi32.BitBlt(mem, 0, 0, width, height, hdc, left, top, SRCCOPY):
+            return None
+        buf = ctypes.create_string_buffer(width * height * 4)
+        if not _gdi32.GetDIBits(mem, bmp, 0, height, buf, ctypes.byref(bi), 0):
+            return None
+        return buf.raw
+    finally:
+        _gdi32.SelectObject(mem, old)
+        _gdi32.DeleteObject(bmp)
+        _gdi32.DeleteDC(mem)
+        _user32.ReleaseDC(None, hdc)
+
+
+def _png_bytes(raw: bytes | None, width: int, height: int) -> bytes | None:
+    """把 BGRA 像素编码成 PNG；没有 PIL 时退回原始像素。"""
+    if raw is None:
+        return None
+    try:
+        from PIL import Image
+    except ImportError:
+        log.warning("没有 PIL，无法编码 PNG；退回原始像素")
+        return raw
+    import io
+
+    img = Image.frombuffer("RGBA", (width, height), raw, "raw", "BGRA", 0, 1)
+    out = io.BytesIO()
+    img.convert("RGB").save(out, format="PNG")
+    return out.getvalue()
+
+
 _PROGRAM_DIRS = ("Program Files", "Program Files (x86)")
 
 
@@ -545,6 +647,8 @@ class DesktopManager:
         self._lock = threading.Lock()
         self._error = ""
         self._exe = ""
+        # 4.2 的 Qt 主窗口不响应 PrintWindow；一旦失败就记住，后续直接走切桌面抓屏。
+        self._printwindow_ok: bool | None = None
 
     # ---- 生命周期 ----
 
@@ -713,6 +817,11 @@ class DesktopManager:
         # 磁盘上的旧登录记录依然在，按记录判断会把登录页报成已登录。
         if win:
             state = win32_windows.state_from_handle(win["hwnd"])
+            # 微信 4.2 的 Qt 主窗口不向 UIA 暴露子树，按内容判定只能得到 unknown。
+            # 登录页是小尺寸二维码窗，已登录的主窗口是完整聊天界面；用尺寸兜底，
+            # 避免把已登录的主窗口报成「状态未知」。
+            if state == "unknown" and win["width"] >= 800 and win["height"] >= 500:
+                state = "chat"
             info["state"] = state
             info["logged_in"] = state == "chat"
         else:
@@ -723,6 +832,11 @@ class DesktopManager:
     # ---- 截图与点击 ----
 
     def screenshot_png(self) -> bytes | None:
+        """取一帧微信画面：先试 PrintWindow，失败再切桌面抓屏。
+
+        PrintWindow 不切桌面、不打扰用户，能用就优先用；4.2 的 Qt 主窗口不
+        响应它，此时切桌面抓一帧再切回（调用方只在用户主动刷新时触发）。
+        """
         win = self.window()
         if not win:
             return None
@@ -730,7 +844,14 @@ class DesktopManager:
             desk = self._desk
         if not desk:
             return None
-        return desk.capture_png(win["hwnd"], win["width"], win["height"])
+        if self._printwindow_ok is not False:
+            png = desk.capture_png(win["hwnd"], win["width"], win["height"])
+            if png is not None:
+                self._printwindow_ok = True
+                return png
+            self._printwindow_ok = False
+        raw = desk.capture_screen(win["hwnd"], win["left"], win["top"], win["width"], win["height"])
+        return _png_bytes(raw, win["width"], win["height"])
 
     def click(self, client_x: int, client_y: int) -> bool:
         """把面板上的点击转发到隔离桌面上的微信窗口。"""

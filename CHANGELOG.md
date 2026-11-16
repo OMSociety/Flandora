@@ -15,18 +15,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 修复
 
 - 修复「安装并重启」在托盘管理器运行时什么都不做的问题：替换脚本只等桥接退出，管理器仍占着 `Flandora.exe`，脚本挪不动程序目录、回滚也删不掉，最后静默结束。现在先停掉管理器与桥接并等进程退出，挪文件带重试，整段过程写进 `data/updates/apply-<版本>.log`。
+- 修复「微信画面」在微信 4.2 上取不到图的问题：4.2 的主窗口不响应 `PrintWindow`，改为切到隔离桌面抓一帧再切回；顺带按窗口尺寸识别已登录的 Qt 主窗口，不再把已登录状态报成「状态未知」。
 
 ### 新增
 
 - 新增 `ignore_official_chats` 配置（默认开启）：微信团队、服务通知、订阅号/服务号这类官方会话的消息不再推给机器人。这些账号收到消息会自动回话，推给机器人只会一来一回停不下来。文件传输助手是用户自己的会话，不在过滤范围；需要接收官方会话时可以关掉这一项。
 
+### 变更
+
+- 「微信画面」不再自动刷新：取一帧要短暂切到微信所在桌面，轮询会反复抢屏；改为打开页面时取一帧、之后点「刷新画面」再取。
+
 ### Fixed
 
 - Fixed "install and restart" doing nothing while the tray manager was running: the swap script waited only for the bridge, but the manager kept `Flandora.exe` locked, so the program directory could be neither moved nor rolled back, and the script ended silently. It now stops the manager and the bridge first, retries the move, and records the run in `data/updates/apply-<version>.log`.
+- Fixed the "WeChat screen" page showing nothing on WeChat 4.2: the 4.2 main window does not answer `PrintWindow`, so the frame is now taken by switching to the isolated desktop and back; the window size is also used to recognise a logged-in Qt main window instead of reporting "unknown".
 
 ### Added
 
 - Added the `ignore_official_chats` setting (enabled by default): messages from official chats such as WeChat Team, service notifications and subscription/service accounts are no longer forwarded to the bot. Those accounts reply automatically, so forwarding them starts an endless back-and-forth. File Transfer Helper is the user's own chat and is not filtered; turn the setting off to receive official chats again.
+
+### Changed
+
+- The "WeChat screen" page no longer auto-refreshes: taking a frame briefly switches to the WeChat desktop, and polling would keep stealing the screen. A frame is now taken when the page opens and when "refresh" is pressed.
 ## [1.0.2] - 2026-11-12
 
 ### 修复

@@ -201,7 +201,86 @@ def test_main_window_falls_back_to_the_largest_when_title_is_unfamiliar():
     assert wx_desktop.pick_main_window([]) is None
 
 
-# ===== 6. 进程级单例 =====
+# ===== 6. 截图回退与状态兜底 =====
+
+
+class _FakeDesktop:
+    """只实现 `window()` / 截图所需接口的假桌面。"""
+
+    def __init__(self, width=1276, height=669, printwindow_png=None, screen_raw=b"raw"):
+        self.is_open = True
+        self.width = width
+        self.height = height
+        self.printwindow_png = printwindow_png
+        self.screen_raw = screen_raw
+        self.printwindow_calls = 0
+        self.screen_calls = 0
+
+    def main_window(self, timeout=0.1):
+        return {
+            "hwnd": 7,
+            "class": "Qt51514QWindowIcon",
+            "title": "微信",
+            "left": 100,
+            "top": 50,
+            "width": self.width,
+            "height": self.height,
+        }
+
+    def capture_png(self, hwnd, width, height):
+        self.printwindow_calls += 1
+        return self.printwindow_png
+
+    def capture_screen(self, hwnd, left, top, width, height):
+        self.screen_calls += 1
+        return self.screen_raw
+
+
+def test_screenshot_falls_back_to_screen_capture(monkeypatch, desktop_cfg):
+    """PrintWindow 取不到时改走切桌面抓屏，并把这一点记住，下次不再白试。"""
+    desktop_cfg(ISOLATED_DESKTOP=True, ISOLATED_DESKTOP_NAME="FlandoraTestDesk")
+    desk = _FakeDesktop(printwindow_png=None)
+    monkeypatch.setattr(wx_desktop, "_png_bytes", lambda raw, w, h: b"PNG" if raw else None)
+    mgr = wx_desktop.DesktopManager()
+    mgr._desk = desk
+
+    assert mgr.screenshot_png() == b"PNG"
+    assert desk.printwindow_calls == 1 and desk.screen_calls == 1
+    assert mgr._printwindow_ok is False
+
+    assert mgr.screenshot_png() == b"PNG"
+    assert desk.printwindow_calls == 1, "已知 PrintWindow 不可用后不应再试"
+    assert desk.screen_calls == 2
+
+
+def test_screenshot_prefers_printwindow_when_it_works(desktop_cfg):
+    """4.1 这类能响应 PrintWindow 的窗口不走切屏，避免无谓打扰用户。"""
+    desktop_cfg(ISOLATED_DESKTOP=True, ISOLATED_DESKTOP_NAME="FlandoraTestDesk")
+    desk = _FakeDesktop(printwindow_png=b"PNG")
+    mgr = wx_desktop.DesktopManager()
+    mgr._desk = desk
+
+    assert mgr.screenshot_png() == b"PNG"
+    assert desk.screen_calls == 0
+    assert mgr._printwindow_ok is True
+
+
+def test_status_treats_large_qt_window_as_logged_in(monkeypatch, desktop_cfg):
+    """4.2 的 Qt 主窗口没有 UIA 子树：大尺寸主窗口按已登录算，小尺寸登录页不硬报。"""
+    desktop_cfg(ISOLATED_DESKTOP=True, ISOLATED_DESKTOP_NAME="FlandoraTestDesk")
+    monkeypatch.setattr(wx_desktop.win32_windows, "state_from_handle", lambda hwnd: "unknown")
+
+    mgr = wx_desktop.DesktopManager()
+    mgr._desk = _FakeDesktop(width=1276, height=669)
+    st = mgr.status()
+    assert st["state"] == "chat" and st["logged_in"] is True, st
+
+    mgr._desk = _FakeDesktop(width=320, height=480)
+    st = mgr.status()
+    assert st["state"] == "unknown" and st["logged_in"] is False, st
+
+
+# ===== 7. 进程级单例 =====
 
 
 def test_manager_is_process_singleton():

@@ -3,9 +3,10 @@ import { ref, onBeforeUnmount } from 'vue'
 /**
  * 隔离桌面上的微信画面。
  *
- * 画面只有 PNG 一种来源（隔离桌面用户看不见，PrintWindow 是唯一的取景方式），
- * 点击按图片的显示尺寸与原始像素比例换算成客户区坐标再转发。因为浏览器会把
- * 上一张图的 objectURL 一直留着，每次换图都要显式释放，否则内存会随轮询涨。
+ * 取一帧要把屏幕切到微信所在的桌面再切回（见后端 `screenshot_png`），所以这里
+ * 不做轮询，只在打开页面与用户点刷新时调用 `refresh()`。点击按图片的显示尺寸
+ * 与原始像素比例换算成客户区坐标再转发。浏览器会一直留着上一张图的 objectURL，
+ * 换图时要显式释放。
  */
 export function useDesktopShot() {
   const imgUrl = ref('')

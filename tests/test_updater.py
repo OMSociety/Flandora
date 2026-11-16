@@ -248,7 +248,7 @@ def test_swap_script_contains_paths_and_rollback(monkeypatch, tmp_path):
     assert "function Stop-OurProcesses" in script
     assert "Stop-OurProcesses" in script.split("try {")[0]
     # 脚本以脱离控制台的方式启动，输出要留痕，否则失败后无从查起
-    assert 'Start-Transcript -Path $log -Force' in script
+    assert "Start-Transcript -Path $log -Force" in script
     assert ('$log = "%s"' % (tmp_path / "updates" / "apply-1.4.0.log")) in script
     path = updater.write_swap_script(info)
     assert os.path.isfile(path) and path.endswith("apply-1.4.0.ps1")

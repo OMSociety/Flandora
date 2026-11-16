@@ -17,6 +17,9 @@ Desktop 上，它升到前台只影响那个桌面，用户所在的 Default 桌
    登录页画面显示出来，用户扫码或用手机确认。实测该界面文案为「需在手机上完成登录」。
 3. 隔离桌面上 UIA 的 `Invoke` 不生效（Qt 在窗口未激活时不响应），点击要走
    `PostMessage` 投鼠标消息。
+4. 投递鼠标消息与 UIA 动作都受 UIPI 约束：微信以管理员权限运行时，桥接也必须
+   提权，否则点击与发送都会被系统静默丢弃。`DesktopManager.status()` 会带上
+   双方的权限级别，面板据此提示用户。
 
 ## 用法
 
@@ -428,18 +431,26 @@ class IsolatedDesktop:
         return out["raw"]
 
     def click(self, hwnd: int, client_x: int, client_y: int) -> bool:
-        """向窗口投递一次左键点击（客户区坐标）。
+        """向窗口投递一次左键点击（客户区坐标），三条消息都送达才算成功。
 
-        隔离桌面上 UIA 的 `InvokePattern.Invoke()` 会报告成功但界面不动——Qt 在
-        窗口未激活时不处理 UIA 触发的动作。投鼠标消息这条路径实测有效。
+        投递受 UIPI 约束：微信与桥接的权限级别不一致时 `PostMessageW` 返回 0，
+        点击不会生效——失败必须如实返回，不能报成功。
         """
         lp = (client_y << 16) | (client_x & 0xFFFF)
         try:
-            _user32.PostMessageW(hwnd, WM_MOUSEMOVE, 0, lp)
-            time.sleep(0.05)
-            _user32.PostMessageW(hwnd, WM_LBUTTONDOWN, MK_LBUTTON, lp)
-            time.sleep(0.05)
-            _user32.PostMessageW(hwnd, WM_LBUTTONUP, 0, lp)
+            posts = (
+                (WM_MOUSEMOVE, 0),
+                (WM_LBUTTONDOWN, MK_LBUTTON),
+                (WM_LBUTTONUP, 0),
+            )
+            for message, wparam in posts:
+                if not _user32.PostMessageW(hwnd, message, wparam, lp):
+                    log.warning(
+                        "投递点击被窗口拒绝（错误码 %d）：微信与桥接的权限级别可能不一致",
+                        ctypes.get_last_error(),
+                    )
+                    return False
+                time.sleep(0.05)
         except Exception as exc:  # noqa: BLE001
             log.warning("投递点击失败：%s", exc)
             return False
@@ -649,6 +660,8 @@ class DesktopManager:
         self._exe = ""
         # 4.2 的 Qt 主窗口不响应 PrintWindow；一旦失败就记住，后续直接走切桌面抓屏。
         self._printwindow_ok: bool | None = None
+        # 权限级别不一致的警告只写一次日志，状态查询会反复触发。
+        self._privilege_warned = False
 
     # ---- 生命周期 ----
 
@@ -705,8 +718,11 @@ class DesktopManager:
                     self._error = ""
                     log.info("隔离桌面已就绪（%s，pid=%d）", self.desktop_name(), desk.pid)
         # 在锁外等窗口：start() 可能要等几十秒，持锁会把面板的状态查询卡住
-        if desk.main_window(timeout=60.0) is None:
+        win = desk.main_window(timeout=60.0)
+        if win is None:
             log.warning("隔离桌面上 60 秒内没等到微信窗口，微信可能启动失败")
+        else:
+            self._warn_privilege_once(win["hwnd"])
         return True
 
     def _adopt_existing(self) -> IsolatedDesktop | None:
@@ -809,6 +825,13 @@ class DesktopManager:
         if win:
             info["width"] = win["width"]
             info["height"] = win["height"]
+            try:
+                info["privilege"] = self.privilege_status(win["hwnd"])
+            except Exception:
+                info["privilege"] = None
+            self._warn_privilege_once(win["hwnd"])
+        else:
+            info["privilege"] = None
         try:
             info["wxid"] = _current_wxid()
         except Exception:
@@ -828,6 +851,34 @@ class DesktopManager:
             info["state"] = "absent"
             info["logged_in"] = False
         return info
+
+    # ---- 权限级别 ----
+
+    def privilege_status(self, hwnd: int) -> dict:
+        """微信与桥接的令牌级别，以及注入是否会被 UIPI 拦下。"""
+        from .win32 import privilege as win32_privilege
+
+        return win32_privilege.status(hwnd)
+
+    def _warn_privilege_once(self, hwnd: int) -> None:
+        if self._privilege_warned:
+            return
+        self._privilege_warned = True
+        try:
+            state = self.privilege_status(hwnd)
+        except Exception:
+            return
+        if not state.get("blocked"):
+            return
+        if state.get("wechat_elevated") is None:
+            detail = "读不到微信进程的令牌（多半是微信以更高权限运行）"
+        else:
+            detail = "微信以管理员权限运行，桥接是普通权限"
+        log.warning(
+            "微信与桥接的权限级别不一致：%s。发送消息与点击转发会被 Windows 拦下；"
+            "以管理员身份重启 Flandora，或重启电脑后让普通权限的 Flandora 重新拉起微信。",
+            detail,
+        )
 
     # ---- 截图与点击 ----
 

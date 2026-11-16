@@ -240,7 +240,9 @@ def test_swap_script_contains_paths_and_rollback(monkeypatch, tmp_path):
     # 更新后拉起管理器（用户入口），桥接由管理器起；没有管理器时退回桥接
     assert ('$launch = "%s"' % (tmp_path / "app" / "Flandora.exe")) in script
     assert "if (-not (Test-Path -LiteralPath $launch)) { $launch = $exe }" in script
-    assert "Start-Process -FilePath $launch" in script
+    # 更新脚本可能以管理员权限运行：拉起新版本必须经过资源管理器，落到普通权限
+    assert "Start-Process -FilePath explorer.exe -ArgumentList ('\"' + $launch + '\"')" in script
+    assert "Start-Process -FilePath $launch" not in script
     # 拉起新版本后要观察存活，进程提前退出算失败
     assert "Get-Process" in script and f"$grace = {updater.STARTUP_GRACE_SECONDS}" in script
     assert "-LiteralPath" in script

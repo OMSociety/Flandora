@@ -280,7 +280,82 @@ def test_status_treats_large_qt_window_as_logged_in(monkeypatch, desktop_cfg):
     assert st["state"] == "unknown" and st["logged_in"] is False, st
 
 
-# ===== 7. 进程级单例 =====
+# ===== 7. 点击投递与权限级别 =====
+
+
+class _PostMessageStub:
+    """替身 user32：记录 PostMessageW 调用并返回预设结果。"""
+
+    def __init__(self, result: int):
+        self.result = result
+        self.calls: list[tuple[int, int]] = []
+
+    def PostMessageW(self, hwnd, message, wparam, lparam):
+        self.calls.append((message, wparam))
+        return self.result
+
+
+def test_click_reports_when_window_rejects_messages(monkeypatch):
+    """PostMessage 返回 0（权限级别不一致）时必须如实失败，不能报成功。"""
+    stub = _PostMessageStub(0)
+    monkeypatch.setattr(wx_desktop, "_user32", stub)
+    desk = wx_desktop.IsolatedDesktop("FlandoraTestNoOpen")
+
+    assert desk.click(1, 10, 10) is False
+    assert len(stub.calls) == 1, "第一条消息被拒后不该继续投"
+
+
+def test_click_reports_success_when_messages_accepted(monkeypatch):
+    stub = _PostMessageStub(1)
+    monkeypatch.setattr(wx_desktop, "_user32", stub)
+    desk = wx_desktop.IsolatedDesktop("FlandoraTestNoOpen")
+
+    assert desk.click(1, 10, 10) is True
+    assert [message for message, _ in stub.calls] == [
+        wx_desktop.WM_MOUSEMOVE,
+        wx_desktop.WM_LBUTTONDOWN,
+        wx_desktop.WM_LBUTTONUP,
+    ]
+
+
+def test_status_reports_privilege_block(monkeypatch, desktop_cfg):
+    """微信比桥接权限高时，状态里带 blocked，面板据此提示。"""
+    desktop_cfg(ISOLATED_DESKTOP=True, ISOLATED_DESKTOP_NAME="FlandoraTestDesk")
+    monkeypatch.setattr(wx_desktop.win32_windows, "state_from_handle", lambda hwnd: "chat")
+    monkeypatch.setattr(
+        wx_desktop.DesktopManager,
+        "privilege_status",
+        lambda self, hwnd: {"self_elevated": False, "wechat_elevated": True, "blocked": True},
+    )
+    mgr = wx_desktop.DesktopManager()
+    mgr._desk = _FakeDesktop()
+
+    st = mgr.status()
+    assert st["privilege"]["blocked"] is True, st
+    assert st["state"] == "chat", st
+
+
+def test_status_has_no_privilege_without_window(desktop_cfg):
+    """窗口不在时没有双方的权限可比较，字段为 None。"""
+    desktop_cfg(ISOLATED_DESKTOP=True, ISOLATED_DESKTOP_NAME="FlandoraTestDesk")
+    assert wx_desktop.DesktopManager().status()["privilege"] is None
+
+
+def test_privilege_warning_is_logged_once(monkeypatch, caplog):
+    """状态查询会被反复调用，权限警告只写一次日志。"""
+    mgr = wx_desktop.DesktopManager()
+    monkeypatch.setattr(
+        mgr,
+        "privilege_status",
+        lambda hwnd: {"self_elevated": False, "wechat_elevated": None, "blocked": True},
+    )
+    with caplog.at_level("WARNING", logger="wx_desktop"):
+        mgr._warn_privilege_once(7)
+        mgr._warn_privilege_once(7)
+    assert len([r for r in caplog.records if "权限级别不一致" in r.getMessage()]) == 1
+
+
+# ===== 8. 进程级单例 =====
 
 
 def test_manager_is_process_singleton():

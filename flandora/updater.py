@@ -337,7 +337,9 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
     比不更新更糟，用户至少还能回到备份里那份能跑的版本。
 
     拉起的是管理器（``Flandora.exe``）而不是桥接：管理器是用户入口，桥接由它启动；
-    只拉桥接会让托盘图标消失。老安装里没有管理器时退回桥接。
+    只拉桥接会让托盘图标消失。老安装里没有管理器时退回桥接。启动交给资源管理器
+    （``explorer.exe``）：更新脚本可能以管理员权限运行，直接启动会让新版本继承
+    提权，微信与桥接从此不在同一权限级别。
     """
     target = info.get("app_dir") or app_dir()
     staging = info["staging"]
@@ -396,7 +398,18 @@ def swap_script(info: dict, backup_dir: str | None = None) -> str:
         "  Get-ChildItem -LiteralPath $staging -Force | ForEach-Object {",
         "    Copy-Item -LiteralPath $_.FullName -Destination $target -Recurse -Force",
         "  }",
-        "  $proc = Start-Process -FilePath $launch -PassThru",
+        "  # 更新脚本可能运行在管理员权限下；直接 Start-Process 会让新版本继承提权，",
+        "  # 微信与桥接从此不在同一权限级别，发送与点击都会被 UIPI 拦下。交给已登录的",
+        "  # 资源管理器启动，新版本就回到普通权限。",
+        "  Start-Process -FilePath explorer.exe -ArgumentList ('\"' + $launch + '\"')",
+        "  $proc = $null",
+        "  for ($i = 0; $i -lt 40 -and $null -eq $proc; $i++) {",
+        "    Start-Sleep -Milliseconds 500",
+        "    $proc = Get-Process -Name 'Flandora', 'Flandora-Bridge' -ErrorAction SilentlyContinue |",
+        "      Where-Object { $_.Path -and $_.Path.StartsWith($target, 'OrdinalIgnoreCase') } |",
+        "      Select-Object -First 1",
+        "  }",
+        '  if ($null -eq $proc) { throw "拉起后 20 秒内没看到管理器进程（$launch）" }',
         "  $deadline = (Get-Date).AddSeconds($grace)",
         "  $alive = $true",
         "  while ((Get-Date) -lt $deadline) {",

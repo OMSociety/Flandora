@@ -62,6 +62,9 @@ async function stopWeChat() {
   else toast(res.data?.error || '停止失败', 'error')
 }
 const defaultWeChatBlocking = computed(() => /已有微信在运行/.test(desktopStatus.value?.error || ''))
+// 微信比桥接权限高时，Windows 的 UIPI 会丢弃投递的鼠标与键盘消息：发送与点击
+// 都会失败，但画面与扫码登录不受影响。
+const privilegeBlocked = computed(() => !!desktopStatus.value?.privilege?.blocked)
 async function quitDefaultWeChat() {
   busy.value = true
   const res = await post('/api/desktop/quit-default-wechat', {}, true)
@@ -79,6 +82,7 @@ onMounted(async () => {
     <div class="page-tools"><span class="badge" :class="running ? 'badge-green' : 'badge-gray'">{{ stateLabel }}</span></div>
     <div v-if="!enabled" class="banner"><AppIcon name="Info" :size="17" /><span>隔离桌面模式未开启。请在「系统设置」中将 <code>isolated_desktop</code> 设为 true 并重启。开启后，自动化操作不会抢占你正在使用的桌面。</span></div>
     <div v-if="desktopStatus && !desktopStatus.exe_found" class="banner banner-danger"><AppIcon name="CircleAlert" :size="17" /><span>这台电脑上没找到微信。装好微信桌面版后刷新本页即可；装在非默认目录的话，在「系统设置」里把 <code>wechat_exe</code> 填成 <code>Weixin.exe</code> 的完整路径。</span></div>
+    <div v-if="privilegeBlocked" class="banner banner-danger"><AppIcon name="CircleAlert" :size="17" /><span>微信的权限级别高于 Flandora，Windows 会拦下发送消息与点击转发（画面查看与扫码登录不受影响）。修复：退出 Flandora 后右键「以管理员身份运行」；或重启电脑后让自动启动的 Flandora 以普通权限重新拉起微信。</span></div>
     <section class="card viewer-card"><div class="viewer-toolbar"><div class="viewer-title"><AppIcon name="Monitor" :size="17" /><strong>隔离桌面实况</strong><span v-if="desktopStatus?.desktop" class="desktop-name">{{ desktopStatus.desktop }}</span></div><div class="viewer-actions"><button class="icon-btn" title="刷新画面" aria-label="刷新微信画面" @click="refreshShot"><AppIcon name="RefreshCw" :size="16" /></button><button class="btn btn-outline btn-sm" :disabled="busy || (desktopStatus && !desktopStatus.exe_found)" @click="startWeChat"><AppIcon name="Play" :size="13" />{{ running ? '再次启动' : '启动微信' }}</button><button v-if="running" class="btn btn-outline-danger btn-sm" :disabled="busy" @click="stopDialog = true"><AppIcon name="Square" :size="12" />结束</button></div></div><div v-if="lastError || desktopStatus?.error" class="viewer-error"><AppIcon name="CircleAlert" :size="16" />{{ lastError || desktopStatus.error }}</div><div v-if="defaultWeChatBlocking" class="viewer-quit"><button class="btn btn-outline-danger btn-sm" :disabled="busy" @click="quitDialog = true"><AppIcon name="Square" :size="12" />结束桌面上的微信</button><span>结束的是你在自己桌面上开着的微信，点一下才会关。</span></div><div class="shot-wrap"><img v-if="imgUrl" :src="imgUrl" class="shot" alt="隔离桌面上的微信窗口，点击可转发操作" @load="onImgLoad" @click="onClickShot" /><div v-else class="shot-empty"><div class="empty-screen"><AppIcon name="Monitor" :size="32" /></div><strong>{{ emptyTitle }}</strong><span>{{ emptyHint }}</span><button v-if="statusError" class="btn btn-outline btn-sm" @click="loadStatus">重试</button></div></div><div class="viewer-footer"><span><AppIcon name="Info" :size="13" />点击画面可将操作转发到微信；刷新时屏幕会短暂切到隔离桌面</span><div><span v-if="natural.w">{{ natural.w }} × {{ natural.h }}</span><span v-if="shotAt">更新于 {{ shotAt }}</span></div></div></section>
     <section class="desktop-info"><div><span class="info-label">运行模式</span><strong>{{ enabled ? '隔离桌面' : '未开启' }}</strong></div><div><span class="info-label">微信进程</span><strong>{{ running ? '运行中' : '未运行' }}</strong></div><div><span class="info-label">登录状态</span><strong :class="{ warning: state === 'login' }">{{ stateLabel }}</strong></div><p>登录时在画面中点击「登录」，然后按微信提示使用手机扫码或确认。</p></section>
     <ConfirmDialog

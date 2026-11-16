@@ -142,6 +142,10 @@ def api_desktop_click(payload: dict):
         return JSONResponse({"ok": False, "error": "x/y 必须是整数"}, 400)
     if not wx_desktop.manager().click(x, y):
         return JSONResponse(
-            {"ok": False, "error": f"点击未送达（窗口不在，或坐标越界: {x},{y}）"}, 400
+            {
+                "ok": False,
+                "error": f"点击未送达（窗口不在、坐标越界，或微信的权限级别高于 Flandora）: {x},{y}",
+            },
+            400,
         )
     return {"ok": True}

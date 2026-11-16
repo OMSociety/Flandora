@@ -802,7 +802,8 @@ class UiaSender(BaseSender):
             if not user32.AttachThreadInput(self._tid_me, self._tid_wx, True):
                 log.warning(
                     f"附着微信输入队列失败（错误码 {ctypes.get_last_error()}）："
-                    "两个线程不在同一张桌面上时必然失败，修饰键与鼠标消息都会丢"
+                    "微信与桥接不在同一权限级别（UIPI）或同一张桌面时必然失败，"
+                    "投递的修饰键与鼠标消息都会丢；需让两者权限一致"
                 )
             user32.SetActiveWindow(hwnd)
             self._attached = True

@@ -16,6 +16,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 修复「安装并重启」在托盘管理器运行时什么都不做的问题：替换脚本只等桥接退出，管理器仍占着 `Flandora.exe`，脚本挪不动程序目录、回滚也删不掉，最后静默结束。现在先停掉管理器与桥接并等进程退出，挪文件带重试，整段过程写进 `data/updates/apply-<版本>.log`。
 - 修复「微信画面」在微信 4.2 上取不到图的问题：4.2 的主窗口不响应 `PrintWindow`，改为切到隔离桌面抓一帧再切回；顺带按窗口尺寸识别已登录的 Qt 主窗口，不再把已登录状态报成「状态未知」。
+- 修复微信与桥接权限级别不一致时发送与点击静默失效的问题：微信以管理员权限运行时，普通权限的桥接投递的鼠标、键盘消息与 UIA 动作会被 Windows（UIPI）丢弃，日志与面板却显示正常。桥接现在比较双方进程的令牌级别，`/api/desktop/status` 带上 `privilege` 字段，面板显示提示条；点击投递失败如实返回错误，不再报告成功。
+- 修复更新后新版本继承更新进程提权、导致微信与桥接权限级别不一致的问题：替换脚本拉起新版本改为经资源管理器发起。
 
 ### 新增
 
@@ -29,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed "install and restart" doing nothing while the tray manager was running: the swap script waited only for the bridge, but the manager kept `Flandora.exe` locked, so the program directory could be neither moved nor rolled back, and the script ended silently. It now stops the manager and the bridge first, retries the move, and records the run in `data/updates/apply-<version>.log`.
 - Fixed the "WeChat screen" page showing nothing on WeChat 4.2: the 4.2 main window does not answer `PrintWindow`, so the frame is now taken by switching to the isolated desktop and back; the window size is also used to recognise a logged-in Qt main window instead of reporting "unknown".
+- Fixed sends and forwarded clicks failing silently when WeChat and the bridge run at different privilege levels: Windows (UIPI) drops mouse, keyboard and UIA messages posted by a lower-integrity process, while the log and panel still look healthy. The bridge now compares both process tokens, `/api/desktop/status` reports a `privilege` field, and the panel shows a banner; a rejected click returns an error instead of reporting success.
+- Fixed the update relaunch inheriting the updater's elevation, which left WeChat and the bridge at different privilege levels: the swap script now starts the new version through Explorer.
 
 ### Added
 

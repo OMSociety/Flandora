@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### 变更
 
 - 「微信画面」不再自动刷新：取一帧要短暂切到微信所在桌面，轮询会反复抢屏；改为打开页面时取一帧、之后点「刷新画面」再取。
+- 「微信画面」页每 3 秒重新读取一次登录状态（只查状态、不抓画面，不切屏），状态角标会跟着变化；画面仍只在打开页面与点「刷新画面」时更新。
 
 ### Fixed
 
@@ -41,6 +42,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - The "WeChat screen" page no longer auto-refreshes: taking a frame briefly switches to the WeChat desktop, and polling would keep stealing the screen. A frame is now taken when the page opens and when "refresh" is pressed.
+- The "WeChat screen" page now re-reads the login state every 3 seconds (status only, without capturing a frame or switching desktops), so the badge follows along; the picture is still updated only when the page opens and when "refresh" is pressed.
 ## [1.0.2] - 2026-11-12
 
 ### 修复

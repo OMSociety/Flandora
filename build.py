@@ -707,7 +707,8 @@ def _stash_payload_data() -> bool:
     存档一起抹掉。挪出去、重建完再挪回来，用户不必每次重配。
     """
     data = DIST / PKG_NAME / "data"
-    if not data.is_dir():
+    if not data.is_dir() or not any(data.iterdir()):
+        # 空目录没有可保留的内容；搬来搬去会让放回步骤把「空」误判成丢失
         return False
     stash = payload_data_stash()
     if stash.exists():

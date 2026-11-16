@@ -244,6 +244,12 @@ def test_swap_script_contains_paths_and_rollback(monkeypatch, tmp_path):
     # 拉起新版本后要观察存活，进程提前退出算失败
     assert "Get-Process" in script and f"$grace = {updater.STARTUP_GRACE_SECONDS}" in script
     assert "-LiteralPath" in script
+    # 管理器活着时 exe 被映像锁住：替换前必须停掉它和桥接，否则目录挪不动
+    assert "function Stop-OurProcesses" in script
+    assert "Stop-OurProcesses" in script.split("try {")[0]
+    # 脚本以脱离控制台的方式启动，输出要留痕，否则失败后无从查起
+    assert 'Start-Transcript -Path $log -Force' in script
+    assert ('$log = "%s"' % (tmp_path / "updates" / "apply-1.4.0.log")) in script
     path = updater.write_swap_script(info)
     assert os.path.isfile(path) and path.endswith("apply-1.4.0.ps1")
 

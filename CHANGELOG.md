@@ -12,9 +12,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.3] - 2026-11-17
 
+### 修复
+
+- 修复「安装并重启」在托盘管理器运行时什么都不做的问题：替换脚本只等桥接退出，管理器仍占着 `Flandora.exe`，脚本挪不动程序目录、回滚也删不掉，最后静默结束。现在先停掉管理器与桥接并等进程退出，挪文件带重试，整段过程写进 `data/updates/apply-<版本>.log`。
+
 ### 新增
 
 - 新增 `ignore_official_chats` 配置（默认开启）：微信团队、服务通知、订阅号/服务号这类官方会话的消息不再推给机器人。这些账号收到消息会自动回话，推给机器人只会一来一回停不下来。文件传输助手是用户自己的会话，不在过滤范围；需要接收官方会话时可以关掉这一项。
+
+### Fixed
+
+- Fixed "install and restart" doing nothing while the tray manager was running: the swap script waited only for the bridge, but the manager kept `Flandora.exe` locked, so the program directory could be neither moved nor rolled back, and the script ended silently. It now stops the manager and the bridge first, retries the move, and records the run in `data/updates/apply-<version>.log`.
 
 ### Added
 

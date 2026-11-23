@@ -346,11 +346,24 @@ class UiaSender(BaseSender):
             return
 
         log.info("正在搜索微信窗口...")
-        self._find_window()
-        if self._window:
+        try:
+            found = self._find_window()
+        except Exception as exc:  # noqa: BLE001 - 过渡期控件随时失效，不能让它把发送器建不起来
+            log.warning(f"定位微信窗口时出错：{exc}")
+            found = bool(self._window)
+        if not found or not self._window:
+            return
+        # 窗口名与句柄都是 UIA 属性访问：微信从登录界面走进主界面时会把窗口换掉，
+        # 旧控件连不上提供方，读属性会抛 E_NOCONNECTION。取不到只是少一条日志。
+        try:
             log.info(f"微信窗口: '{self._window.Name}' ClassName={self._window.ClassName}")
+        except Exception as exc:  # noqa: BLE001
+            log.debug(f"读取微信窗口信息失败（控件可能已换掉）：{exc}")
+        try:
             self._hwnd = self._window.NativeWindowHandle
-            self._ready = True
+        except Exception:  # noqa: BLE001 - 沿用 _find_window 记下的句柄
+            pass
+        self._ready = True
 
     @staticmethod
     def _exe_name(pid: int) -> str:
@@ -488,11 +501,12 @@ class UiaSender(BaseSender):
         return False
 
     def _await_isolated_enter(self, auto, hwnd: int):
-        """等微信从登录界面走进主界面，返回可用的控件；等不到返回 None。
+        """等微信从登录界面走进主界面，返回 (控件, 句柄)；等不到返回 None。
 
         微信刚启动时先显示「正在进入」，十几秒后才切到主界面；自动登录还会停在
         「进入微信」这个确认按钮上等一次点击。点过之后窗口句柄会换掉，所以每轮
-        重新枚举，而不是一直盯着旧句柄。
+        重新枚举，而不是一直盯着旧句柄——返回的句柄必须跟控件配对使用，拿旧句柄
+        配新控件会让后续 ``IsWindow`` 校验一直失败。
         """
         deadline = time.monotonic() + ISOLATED_ENTER_SECONDS
         announced = False
@@ -506,14 +520,14 @@ class UiaSender(BaseSender):
             for info in cands:
                 try:
                     control = auto.ControlFromHandle(info["hwnd"])
+                    if not control or not control.Exists(0.3):
+                        continue
                 except Exception:  # noqa: BLE001 - 过渡期控件随时失效，下一轮再试
-                    continue
-                if not control or not control.Exists(0.3):
                     continue
                 if self._window_state(control) != "login":
                     if announced or clicked:
                         log.info("微信已进入主界面")
-                    return control
+                    return control, info["hwnd"]
                 if not clicked:
                     clicked = self._click_enter_wechat(info["hwnd"])
                 if not announced:
@@ -540,19 +554,18 @@ class UiaSender(BaseSender):
                 w = auto.ControlFromHandle(info["hwnd"])
                 if not w or not w.Exists(0.3):
                     continue
+                hwnd = info["hwnd"]
                 if self._window_state(w) == "login":
-                    entered = self._await_isolated_enter(auto, info["hwnd"])
+                    entered = self._await_isolated_enter(auto, hwnd)
                     if entered is None:
                         log.error(
                             "隔离桌面上的微信需要登录：在面板「微信画面」里点「进入微信」或扫码"
                         )
                         return False
-                    w = entered
+                    w, hwnd = entered
                 self._window = w
-                self._hwnd = info["hwnd"]
-                log.info(
-                    "已绑定隔离桌面 %s 上的微信窗口 hwnd=%d", self.isolated_desktop, info["hwnd"]
-                )
+                self._hwnd = hwnd
+                log.info("已绑定隔离桌面 %s 上的微信窗口 hwnd=%d", self.isolated_desktop, hwnd)
                 return True
             except Exception as exc:  # noqa: BLE001
                 log.warning("绑定隔离窗口 hwnd=%s 失败：%s", info["hwnd"], exc)

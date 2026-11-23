@@ -19,6 +19,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 修复带 `[旺柴]` 这类表情码的文字发送失败：微信把表情码就地换成内嵌对象，输入框回读到的是对象占位符，被误判为文字没进到输入框。
 - 修复图片「发糊」：存在高清原图 `_h.dat` 时优先使用它，不再只取微信给的中图主文件。
 - 修复微信重新登录后桥接把离线期间同步进本地库的旧消息逐条推给机器人的问题：这些消息的本地编号是新的、发送时间却是当初的，只看游标会把它们当成新消息。现在发送时间早于闸线的消息不再推送，日志按会话汇总一行。
+- 修复微信从登录界面进主界面后发送通道整体不可用的问题：换窗口后旧控件连不上 UI Automation 提供方，读取窗口属性抛 `E_NOCONNECTION`，异常打断发送器创建，此后每次发送都报「桥接未运行」。现在读取窗口信息失败只记调试日志，发送器照常建起来；绑定用的句柄也随窗口一起换成新的。
 
 ### 新增
 
@@ -36,6 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed text containing emoji codes such as `[旺柴]` failing to send: WeChat turns the code into an embedded object, so reading the input box back returned an object placeholder that was mistaken for text that never made it in.
 - Fixed blurry images: when the full-resolution `_h.dat` exists it is used first instead of the medium-size main file.
 - Fixed the bridge pushing old messages to the bot one by one after WeChat logs in again: messages synced into the local database while offline carry fresh local ids but their original send times, so the cursor alone treated them as new. Messages sent before the cutoff are no longer pushed, and the log reports one summary line per chat.
+- Fixed the whole send channel being unusable once WeChat moved from the login screen into the main window: the replaced window's old control can no longer reach its UI Automation provider, reading its properties raised `E_NOCONNECTION`, the exception aborted sender creation, and every later send reported "the bridge is not running". Reading window information now only logs at debug level, the sender is still created, and the bound handle follows the new window.
 
 ### Added
 

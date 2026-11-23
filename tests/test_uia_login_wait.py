@@ -113,3 +113,76 @@ def test_client_point_takes_the_centre_of_the_button():
     window = _Rect(1069, 514, 1489, 1084)
 
     assert UiaSender._client_point(button, window) == (210, 441)
+
+
+def test_the_handle_taken_after_entering_is_the_one_bound(monkeypatch):
+    """点过「进入微信」微信会换窗口：绑新句柄，旧句柄配新控件会一直校验失败。"""
+    clicked: list[tuple[int, int, int]] = []
+    sender = _sender(monkeypatch, _Auto(["login", "login", "chat"], _Button()))
+
+    def _enum(desktop):
+        # 点过之后微信换了一个窗口，旧句柄不再存在
+        return [{"hwnd": 5353 if clicked else 4242, "rect": (0, 0, 800, 600)}]
+
+    monkeypatch.setattr(uia_sender.win32_windows, "enum_wechat_windows", _enum)
+    monkeypatch.setattr(uia_sender.win32_windows, "join_thread_to_desktop", lambda name: True)
+    monkeypatch.setattr(uia_sender, "ensure_com", lambda: None)
+    monkeypatch.setattr(
+        UiaSender,
+        "_post_left_click",
+        staticmethod(lambda hwnd, x, y: clicked.append((hwnd, x, y)) or True),
+    )
+
+    assert sender._find_window_isolated() is True
+    assert clicked == [(4242, 210, 441)]
+    assert sender._hwnd == 5353
+
+
+class _NamelessWindow:
+    """窗口能枚举到，但读属性时连不上提供方（E_NOCONNECTION）。"""
+
+    def Exists(self, timeout=0):  # noqa: N802
+        return True
+
+    def __getattr__(self, name):
+        raise OSError(-2147220991, "事件无法调用任何订户")
+
+
+def test_window_that_lost_its_automation_still_creates_a_sender(monkeypatch):
+    """微信从登录界面走进主界面时换窗口，旧控件读属性会抛 E_NOCONNECTION。
+
+    这条异常不能让 UiaSender 建不起来：建不起来等于发送通道整条不可用。
+    """
+    sender = object.__new__(UiaSender)
+    sender._window = None
+    sender._hwnd = 0
+    sender._ready = False
+
+    def _find(_self):
+        _self._window = _NamelessWindow()
+        return True
+
+    monkeypatch.setattr(UiaSender, "_find_window", _find)
+
+    UiaSender._init(sender)
+
+    assert sender._ready is True
+    assert sender._hwnd == 0
+
+
+def test_failure_while_locating_the_window_keeps_the_sender_constructible(monkeypatch):
+    """定位过程中抛异常同样不能把发送器建不起来：发送时会惰性重找窗口。"""
+    sender = object.__new__(UiaSender)
+    sender._window = None
+    sender._hwnd = 0
+    sender._ready = False
+
+    def _boom(_self):
+        raise OSError(-2147220991, "事件无法调用任何订户")
+
+    monkeypatch.setattr(UiaSender, "_find_window", _boom)
+
+    UiaSender._init(sender)
+
+    assert sender._ready is False
+    assert sender._window is None

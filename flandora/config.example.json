@@ -42,6 +42,8 @@
     "_comment_wx_work_dir": "解密结果与游标的存放目录，留空 = 配置文件同目录下的 wx_cache。这里只放解密后的副本，原始库始终是只读的。",
     "wx_backfill_seconds": 0,
     "_comment_wx_backfill_seconds": "启动时把最近多少秒内的历史消息也收进来（按会话逐个从尾部判断）。0 = 不回放，不会把旧聊天记录灌给机器人。",
+    "wx_stale_seconds": 600,
+    "_comment_wx_stale_seconds": "发送时间早于这么多秒的消息不推给机器人。微信重新登录时会把离线期间的消息一次性同步进本地库，这些消息对桥接来说是「新写入」的，不设这一道闸会逐条推出去。被挡掉的消息在日志里按会话汇总一行。0 = 不过滤；开了回填时取两者中较大的一个。",
     "wx_poll_seconds": 0.5,
     "_comment_wx_poll_seconds": "轮询本地库的间隔（秒）。默认 0.5 秒，新消息通常在这个延迟内被发现。",
     "ignore_official_chats": true,

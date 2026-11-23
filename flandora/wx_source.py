@@ -7,6 +7,10 @@
 不重放历史（需要重放时把 wx_backfill_seconds 设成正数）；启动之后才出现的会话
 （陌生人第一次来信、新加群、删掉又重建的会话）按同一个分界处理：分界之前算历史，
 分界之后——也就是程序正跑着的时候到的——照常推送。
+
+另有一道按消息年龄的闸（stale_seconds）：微信重新登录时会把离线期间的消息一次性同步进
+本地库，这些行的 local_id 是新的、create_time 却是当初的发送时刻，只看游标会把它们当成
+新消息逐条推出去。发送时间早于闸线的消息游标照常前进、但不推送。
 """
 
 import json
@@ -94,9 +98,13 @@ class WxLocalSource:
         on_outgoing=None,
         image_key_watch=None,
         ignore_official: bool = True,
+        stale_seconds: int = 0,
     ):
         self.store = store
         self.backfill_seconds = max(0, int(backfill_seconds or 0))
+        # 0 = 不按年龄过滤；开了回填就不能比回填窗口更严，否则窗口里的消息会被自己挡掉
+        stale = max(0, int(stale_seconds or 0))
+        self.stale_seconds = max(stale, self.backfill_seconds) if stale else 0
         self.poll_seconds = max(0.2, float(poll_seconds or 0.5))
         self.cursors = {}
         self.names = {}
@@ -163,6 +171,7 @@ class WxLocalSource:
         self.store.refresh()
         self._adopt_new_image_key()
         out = []
+        stale_cutoff = int(time.time()) - self.stale_seconds if self.stale_seconds else 0
         for s in self.store.sessions():
             username = s["username"]
             if self.ignore_official and is_official_username(username):
@@ -186,12 +195,23 @@ class WxLocalSource:
             except WxStoreError as e:
                 log.debug("读取 %s 的消息失败：%s", username, e)
                 continue
+            stale = []
             for m in msgs:
                 self.cursors[username] = max(self.cursors[username], m["local_id"])
                 if m["outgoing"]:
                     self._report_outgoing(username, m)
                     continue
+                sent_at = m["create_time"] or 0
+                if stale_cutoff and sent_at and sent_at < stale_cutoff:
+                    stale.append(sent_at)
+                    continue
                 out.append(self._to_data(s, m))
+            if stale:
+                log.info(
+                    f"本地库收件：{self.names.get(username) or username} 有 {len(stale)} 条"
+                    f"发送时间早于 {self.stale_seconds} 秒的消息（多为离线期间同步进来的，"
+                    f"最老 {int(time.time()) - min(stale)} 秒前），不推送"
+                )
         return out
 
     def _report_outgoing(self, username: str, msg) -> None:
@@ -471,6 +491,7 @@ def build_source(key_file: str = None, on_outgoing=None) -> WxLocalSource:
         on_outgoing=on_outgoing,
         image_key_watch=_image_key_watcher(account.wxid),
         ignore_official=config.IGNORE_OFFICIAL_CHATS,
+        stale_seconds=config.WX_STALE_SECONDS,
     )
     step = ", ".join(sorted(store._decrypted))
     log.info(

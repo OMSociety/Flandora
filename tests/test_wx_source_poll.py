@@ -297,3 +297,56 @@ def test_file_transfer_helper_is_not_an_official_chat():
     src.prime()
 
     assert [m["content"] for m in src.poll()] == ["备忘"]
+
+
+def test_offline_catch_up_messages_are_not_pushed():
+    """重新登录后离线消息一次性写进库：发送时间早于闸线的不推，游标照常前进。"""
+    now = int(time.time())
+    store = _StubStore([{"username": "wxid_a", "is_group": False, "last_local_id": 0}])
+    src = WxLocalSource(store, stale_seconds=600)
+    src.started_at = now
+    src.prime()
+
+    store.add_message("wxid_a", 1, now - 7200, "两小时前的")
+    store.add_message("wxid_a", 2, now - 700, "十几分钟前的")
+    store.add_message("wxid_a", 3, now - 30, "刚发的")
+    assert [m["content"] for m in src.poll()] == ["刚发的"]
+    assert src.cursors["wxid_a"] == 3
+    assert src.poll() == []
+
+
+def test_stale_gate_off_by_default_and_with_zero():
+    """stale_seconds 为 0 时不按年龄过滤。"""
+    now = int(time.time())
+    store = _StubStore([{"username": "wxid_a", "is_group": False, "last_local_id": 0}])
+    src = WxLocalSource(store, stale_seconds=0)
+    src.started_at = now
+    src.prime()
+
+    store.add_message("wxid_a", 1, now - 7200, "老消息")
+    assert [m["content"] for m in src.poll()] == ["老消息"]
+
+
+def test_stale_gate_never_stricter_than_backfill_window():
+    """回填窗口比闸线大时以窗口为准，窗口内的消息不被自己挡掉。"""
+    src = WxLocalSource(_StubStore(), backfill_seconds=3600, stale_seconds=600)
+    assert src.stale_seconds == 3600
+    assert WxLocalSource(_StubStore(), backfill_seconds=3600).stale_seconds == 0
+
+
+def test_stale_gate_does_not_hide_own_outgoing_binding():
+    """自己发出的老消息照常交给上层绑号，只是不推送。"""
+    now = int(time.time())
+    store = _StubStore([{"username": "wxid_a", "is_group": False, "last_local_id": 0}])
+    seen = []
+    src = WxLocalSource(
+        store,
+        stale_seconds=600,
+        on_outgoing=lambda talker, sid, when: seen.append(sid),
+    )
+    src.started_at = now
+    src.prime()
+
+    store.add_message("wxid_a", 1, now - 7200, "我很早发的", outgoing=True, server_id="srv-x")
+    assert src.poll() == []
+    assert seen == ["srv-x"]

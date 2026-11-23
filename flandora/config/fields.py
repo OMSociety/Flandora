@@ -533,6 +533,16 @@ FIELDS: tuple[Field, ...] = (
         "不会把旧聊天记录灌给机器人。",
     ),
     Field(
+        key="wx_stale_seconds",
+        attr="WX_STALE_SECONDS",
+        kinds=_RESTART,
+        default=600,
+        clean=_clean_plain_int,
+        desc="发送时间早于这么多秒的消息不推给机器人。微信重新登录时会把离线期间的消息一次性"
+        "同步进本地库，这些消息对桥接来说是「新写入」的，不设这一道闸会逐条推出去。被挡掉的"
+        "消息在日志里按会话汇总一行。0 = 不过滤；开了回填时取两者中较大的一个。",
+    ),
+    Field(
         key="wx_poll_seconds",
         attr="WX_POLL_SECONDS",
         kinds=_RESTART,

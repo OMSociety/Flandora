@@ -56,6 +56,7 @@ class Settings:
     WX_KEY_FILE: str = ""
     WX_WORK_DIR: str = ""
     WX_BACKFILL_SECONDS: int = 0
+    WX_STALE_SECONDS: int = 600
     WX_POLL_SECONDS: float = 1.0
     IGNORE_OFFICIAL_CHATS: bool = True
     WX_IMAGE_KEY_FILE: str = ""

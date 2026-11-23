@@ -10,6 +10,24 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 修复
+
+- 修复微信重新登录后桥接把离线期间同步进本地库的旧消息逐条推给机器人的问题：这些消息的本地编号是新的、发送时间却是当初的，只看游标会把它们当成新消息。现在发送时间早于闸线的消息不再推送，日志按会话汇总一行。
+
+### 新增
+
+- 新增 `wx_stale_seconds` 配置（默认 `600`，`0` 表示不过滤）：发送时间早于这么多秒的消息不推给机器人；开启 `wx_backfill_seconds` 时取两者中较大的一个，回填窗口内的消息不会被挡掉。
+
+### Fixed
+
+- Fixed the bridge pushing old messages to the bot one by one after WeChat logs in again: messages synced into the local database while offline carry fresh local ids but their original send times, so the cursor alone treated them as new. Messages sent before the cutoff are no longer pushed, and the log reports one summary line per chat.
+
+### Added
+
+- Added the `wx_stale_seconds` setting (default `600`; `0` disables the filter): messages sent more than this many seconds ago are not pushed to the bot. When `wx_backfill_seconds` is enabled the larger of the two applies, so messages inside the backfill window are never dropped.
+
 ## [1.0.3] - 2026-11-17
 
 ### 修复

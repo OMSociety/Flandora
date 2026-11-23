@@ -32,7 +32,7 @@
 
 | 分类 | 动作 |
 | --- | --- |
-| 消息 | `send_msg`、`send_private_msg`、`send_group_msg`、`get_msg`、`get_group_msg_history`、`get_friend_msg_history` |
+| 消息 | `send_msg`、`send_private_msg`、`send_group_msg`、`get_msg`、`get_group_msg_history`、`get_friend_msg_history`、`get_group_file_url`、`get_private_file_url` |
 | 信息 | `get_login_info`、`get_status`、`get_version_info`、`can_send_image`、`can_send_record`、`get_contact_id`、`get_contact_handle`、`get_contact_ids` |
 | 好友 | `get_friend_list`、`get_stranger_info`、`get_friend_info` |
 | 群 | `get_group_list`、`get_group_info`、`get_group_member_list`、`get_group_member_info` |
@@ -81,7 +81,7 @@
 | `text` | 支持 | 其余内容按原文成段，认出中间夹着的提及时在前后切开 |
 | `record` | 支持 | 语音消息的 SILK 数据转成 WAV，`file` 为本机路径；本体未到时等待至多 30 秒，仍没有则只推文字 |
 | `video` | 支持 | 微信已落盘的 mp4，`file` 为本机路径；没有时只推 `[视频] N 秒` 文字 |
-| `file` | 支持 | 微信已落盘的文件，`file` 为路径、`name` 为文件名，正文保留 `[文件] 名字` |
+| `file` | 支持 | 微信已落盘的文件：`file` 为本机路径，`name` 为文件名，`url` 为面板上的下载地址（`http://<web_bind_host>:<web_port>/files/<令牌>/<文件名>`，只服务这次登记过的文件），`file_id` 为令牌，可用 `get_group_file_url`、`get_private_file_url` 换回地址；正文保留 `[文件] 名字`。面板监听全部网卡时地址里的主机是 `127.0.0.1`，远端客户端需自行换成桥接机器的地址 |
 
 被引的是机器人自己发出的消息时，事件带 `reply_to_self: true`，消息段照旧只有 `reply` 与正文：发出去的消息也会进存档（`post_type` 为 `message_sent`），被引消息的 `server_id` 与 `message_id` 绑得上，`reply` 段的 `id` 取得到原文。正文不改写——发消息的人没打的 @ 不会出现在消息里，要不要当成「在跟我说话」由客户端按这个字段决定。接 AstrBot 时的来龙去脉见 [astrbot.md](astrbot.md)。
 

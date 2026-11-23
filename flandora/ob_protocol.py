@@ -22,6 +22,7 @@ from . import (
     __version__,
     action_catalog,
     config,
+    file_share,
     ob_ids,
     ob_segments,
     ob_store,
@@ -358,6 +359,19 @@ async def _handle_ob_api(data: dict):
     elif action == "can_send_image":
         resp_data["data"] = {"yes": True}
 
+    elif action in ("get_group_file_url", "get_private_file_url"):
+        entry = file_share.lookup(str(params.get("file_id", "")))
+        if entry is None:
+            return _failure(
+                "file_id 不存在：只有 Flandora 推送过的文件才取得到",
+                action_catalog.RETCODE_NOT_FOUND,
+                echo,
+            )
+        resp_data["data"] = {
+            "url": file_share.url_for(str(params["file_id"]), entry[1]),
+            "file_name": entry[1],
+        }
+
     elif action == "can_send_record":
         # 微信 PC 客户端只能按住麦克风录音，外部无法提交语音消息；
         # record 段目前以 mp3 文件形式投递，因此这里如实回 false。
@@ -577,7 +591,17 @@ def to_segment_dict(segment: Segment) -> dict | None:
         return {"type": "record", "data": {"file": segment.path}}
     if isinstance(segment, Video):
         return {"type": "video", "data": {"file": segment.path}}
-    return {"type": "file", "data": {"file": segment.path, "name": segment.name}}
+    # 客户端读不到桥接机器上的路径：同时给出 http 地址与能换出地址的 file_id
+    token = file_share.register(segment.path, segment.name)
+    return {
+        "type": "file",
+        "data": {
+            "file": segment.path,
+            "name": segment.name,
+            "file_id": token,
+            "url": file_share.url_for(token, segment.name),
+        },
+    }
 
 
 def to_cq(segments) -> str:

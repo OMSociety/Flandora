@@ -48,6 +48,47 @@
       "params": []
     },
     {
+      "name": "get_group_file_url",
+      "category": "消息",
+      "summary": "用入站 file 段的 file_id 换下载地址",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "file_id",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        },
+        {
+          "name": "group_id",
+          "type": "id",
+          "required": false,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "get_private_file_url",
+      "category": "消息",
+      "summary": "用入站 file 段的 file_id 换下载地址",
+      "readOnly": true,
+      "implemented": true,
+      "wip": "",
+      "params": [
+        {
+          "name": "file_id",
+          "type": "string",
+          "required": true,
+          "default": null,
+          "desc": ""
+        }
+      ]
+    },
+    {
       "name": "can_send_record",
       "category": "信息",
       "summary": "是否支持发送语音",

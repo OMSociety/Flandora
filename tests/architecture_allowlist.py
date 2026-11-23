@@ -22,6 +22,7 @@ MODULE_STATE: dict[str, frozenset[str]] = {
     "flandora/config/logging_setup.py": frozenset({"_handler", "_stream"}),
     "flandora/config/store.py": frozenset({"log"}),
     "flandora/domain/send.py": frozenset({"log"}),
+    "flandora/file_share.py": frozenset({"_by_path", "_entries", "_lock"}),
     "flandora/main.py": frozenset({"_account_watcher", "log"}),
     "flandora/ob_ids.py": frozenset(
         {"_contact_ids", "_message_ids", "_names", "_names_lock", "_singleton_lock", "log"}
@@ -40,6 +41,7 @@ MODULE_STATE: dict[str, frozenset[str]] = {
     "flandora/updater.py": frozenset({"log"}),
     "flandora/wechat_account.py": frozenset({"log"}),
     "flandora/wx_emoticon.py": frozenset({"log"}),
+    "flandora/webui/api/files.py": frozenset({"router"}),
     "flandora/webui/api/auth.py": frozenset({"log", "router"}),
     "flandora/webui/api/autostart.py": frozenset({"log", "router"}),
     "flandora/webui/api/config.py": frozenset({"log", "router"}),

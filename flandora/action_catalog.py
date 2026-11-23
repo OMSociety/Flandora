@@ -142,6 +142,20 @@ ACTIONS: tuple[Action, ...] = (
         read_only=True,
     ),
     Action(
+        name="get_group_file_url",
+        category=CAT_MESSAGE,
+        summary="用入站 file 段的 file_id 换下载地址",
+        params=(P("file_id", "string", required=True), P("group_id", "id")),
+        read_only=True,
+    ),
+    Action(
+        name="get_private_file_url",
+        category=CAT_MESSAGE,
+        summary="用入站 file 段的 file_id 换下载地址",
+        params=(P("file_id", "string", required=True),),
+        read_only=True,
+    ),
+    Action(
         name="can_send_record",
         category=CAT_INFO,
         summary="是否支持发送语音",

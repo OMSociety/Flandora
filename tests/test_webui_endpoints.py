@@ -82,7 +82,12 @@ def test_request_body_over_the_limit_is_refused(client):
 
 def test_route_table_matches_the_app():
     """双向对账：少了是路由被删；多了是有人加了端点却没决定它归哪一档。"""
-    expected = {(path, method) for path, methods in ROUTES.items() for method in methods}
+    expected = {
+        (path, method)
+        for path, methods in ROUTES.items()
+        if path.startswith("/api/")
+        for method in methods
+    }
     registered = _registered()
 
     assert sorted(expected - registered) == [], "路由表里有面板已不存在的端点"

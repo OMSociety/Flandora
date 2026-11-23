@@ -86,8 +86,13 @@ async def api_send(payload: dict):
         return JSONResponse({"ok": False, "error": "联系人和内容不能为空"}, 400)
 
     sender = deps.sender()
-    if not LIFECYCLE.snapshot().is_active or sender is None:
+    if not LIFECYCLE.snapshot().is_active:
         return JSONResponse({"ok": False, "error": "桥接未运行，请先启动"}, 400)
+    if sender is None:
+        # 桥接在跑但发送器没建起来：这一态此前一律报「桥接未运行」，与实况不符
+        return JSONResponse(
+            {"ok": False, "error": "发送器未就绪（桥接运行中，但尚未定位到微信窗口）"}, 400
+        )
 
     log.info(f"[面板] 测试发送 -> {contact}: {text[:50]}")
     # 与 OneBot 的 send_msg 走同一个执行入口：规划、逐段发送、失败记账只有一份

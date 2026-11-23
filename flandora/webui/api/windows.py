@@ -62,7 +62,7 @@ def api_select_window(payload: dict):
 
     sender = deps.sender()
     if sender is None:
-        return JSONResponse({"ok": False, "error": "发送器未就绪（桥接未运行）"}, 400)
+        return JSONResponse({"ok": False, "error": "发送器未就绪（尚未定位到微信窗口）"}, 400)
 
     if not sender.rebind_window(hwnd):
         return JSONResponse({"ok": False, "error": f"绑定失败，窗口句柄无效: {hwnd}"}, 400)

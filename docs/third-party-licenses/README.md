@@ -32,6 +32,7 @@
 | certifi | 2026.10.23 | MPL-2.0 | `certifi.txt` |
 | charset-normalizer | 3.5.2 | MIT | `charset_normalizer.txt` |
 | zstandard | 0.25.0 | BSD-3-Clause | `zstandard.txt` |
+| silk-python | 0.2.9 | BSD（封装层），内含 Skype Limited 许可的 SILK v3 解码器 | `silk.txt` |
 | opentelemetry-api | 1.45.1 | Apache-2.0 | `opentelemetry_api.txt` |
 | six | 1.17.0 | MIT | `six.txt` |
 
@@ -55,7 +56,7 @@ exe 与动态库，不被嵌进任何 Flandora 可执行文件）。
 
 | 组件 | 版本 | 许可证 | 许可文件 |
 |---|---|---|---|
-| FFmpeg（BtbN 的 win64 LGPL 共享构建，autobuild-2026-10-26-14-25） | n8.1.3-24-g92611900bb | LGPL-3.0 | `ffmpeg-LGPL-3.0.txt` |
+| FFmpeg（BtbN 的 win64 LGPL 共享构建，autobuild-2026-11-11-12-39） | n8.1.3-35-gf1acb0a266 | LGPL-3.0 | `ffmpeg-LGPL-3.0.txt` |
 
 FFmpeg 本体的许可是 LGPL-2.1-or-later，这份构建以 LGPL-3.0 分发并附上许可原文；
 它的源码可从 <https://ffmpeg.org/download.html> 取得。构建脚本与校验值记在

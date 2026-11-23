@@ -39,6 +39,7 @@
 | `data/msg_ids.db` | 消息号表（`message_id` 与微信库行号的对应） |
 | `data/messages.db` | 事件存档（收件与发出），供 `get_msg`、历史检索与仪表盘统计 |
 | `data/wx_cache/` | 解密副本与游标，可随时删 |
+| `data/emoticon/` | 还原出来的表情图片，按表情 md5 命名，可随时删；解码方式改变时整批重新生成 |
 | `data/updates/` | 更新用的安装包、暂存目录、备份与替换脚本，可随时删 |
 | `data/flandora.pid` | 当前进程号，只作人工排查用，可随时删 |
 | `data/wizard.json` | 取钥向导的免责声明确认状态，删了会要求重新确认一次 |

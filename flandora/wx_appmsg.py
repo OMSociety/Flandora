@@ -280,7 +280,7 @@ def parse_appmsg(sub_type: int, body) -> Card | None:
     return Card(
         kind="app",
         label=label,
-        title=_clip(title, 200),
+        title=_clip(" ".join(title.split()), 200),
         desc=desc,
         url=url,
         source=source,

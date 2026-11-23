@@ -21,21 +21,14 @@
 
 这些动作在 OneBot 侧一律返回 `status=failed`、`retcode=1404`，`message` 写明具体原因；不会回空对象假装成功。
 
-## 二、媒体本体在 CDN 上，不在本地磁盘
+## 二、媒体本体取本机已有的，不做 CDN 下载
 
-2026-10-24 让测试账号私聊发了一条语音和一个视频，实测结论：
+语音、文件、视频的本体由微信自己下载并落盘，桥接只读取本机已有的数据：
 
-- 语音是 `local_type=34`，内容是 `<voicemsg voiceformat="4" voicelength="3642" length="5699"
-  aeskey="…" voiceurl="7f0c0006…" />`。音频本体由微信 CDN 托管，本地目录里没有对应文件
-  （全盘 `*.silk`/`*.amr`/`*.mp4` 计数为 0），要拿本体得实现微信的 CDN 下载与 AES 解密。
-- 视频是 `local_type=43`，内容里同样只有 `cdnvideourl`/`aeskey`/`length="2757987"`/`md5`，
-  本地只落了缩略图：`msg/video/<月>/<hash>_thumb.jpg`（未加密，可直接读）。
-- 所以「媒体本体」不是定位一下文件就能解决的，属于新工程（CDN 协议 + 解密 + silk 转码），
-  短期按占位文本上报：`[语音]`、`[视频]`。
-- 文件消息同理：`local_type=49` 的 appmsg 里只有 `<appattach>` 的 `attachid="@cdn_…"`、
-  `aeskey`、`totallen`，本机不留本体，收件按占位文本上报 `[文件] 名字`。
-- 这三类都不做 CDN 下载：那是替微信客户端实现它自己的取件流程，不属于「把本机已有的
-  数据如实映射成 OneBot」。
+- 语音（`local_type=34`）：SILK 数据在 `media_0.db` 的 `VoiceInfo`，转成 WAV 后推送。
+- 文件（`local_type=49`、appmsg 类型 6）：明文落在 `msg/file/<月>/<文件名>`，按名字与大小核对。
+- 视频（`local_type=43`）：`message_resource.db` 的 `packed_info` 末尾给出文件名，本体在 `msg/video/<月>/`。
+- 微信没有下载的本体（大文件、没点开的视频）只按文字上报，不实现微信的 CDN 取件与解密流程。
 
 ## 三、可以绕道，但形态受限
 

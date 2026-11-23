@@ -167,12 +167,21 @@ def test_wxgf_without_any_copy_returns_none(tmp_path):
     assert _store(root).extract_image(MD5) is None
 
 
-def test_plain_main_is_used_even_when_a_copy_exists(tmp_path):
+def test_high_quality_copy_wins_over_a_plain_main(tmp_path):
+    """主文件是中图，`_h.dat` 才是原图：两份都能看时取原图。"""
     root = _account(tmp_path)
     _write(_main_path(root), _make_dat(PNG))
     _write(_sibling(root, "_h.dat"), _make_dat(JPEG))
     out = _store(root).extract_image(MD5)
-    assert out.endswith(".png"), out
+    assert out.endswith(".jpg"), out
+    assert _extracted_bytes(out) == JPEG
+
+
+def test_plain_main_is_used_when_the_high_quality_copy_is_unreadable(tmp_path):
+    root = _account(tmp_path)
+    _write(_main_path(root), _make_dat(PNG))
+    _write(_sibling(root, "_h.dat"), b"not an image")
+    out = _store(root).extract_image(MD5)
     assert _extracted_bytes(out) == PNG
 
 

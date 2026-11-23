@@ -9,6 +9,7 @@ OneBot v11 协议处理模块（对接 OneBot v11 客户端）。
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import tempfile
@@ -875,6 +876,45 @@ def _video_file(file_val: str, prep: _OutboundPrep) -> str | None:
     return None
 
 
+_CARD_URL_KEYS = ("jumpUrl", "qqdocurl", "pcJumpUrl", "url")
+_CARD_TITLE_KEYS = ("title", "desc", "prompt")
+
+
+def _first_string(node, keys) -> str:
+    """在嵌套的 JSON 里按键名优先级找第一个非空字符串。"""
+    for key in keys:
+        stack = [node]
+        while stack:
+            cur = stack.pop()
+            if isinstance(cur, dict):
+                val = cur.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+                stack.extend(cur.values())
+            elif isinstance(cur, list):
+                stack.extend(cur)
+    return ""
+
+
+def _card_as_text(seg_type: str, data: dict) -> str:
+    """``share`` / ``json`` 卡片段 → 「标题 + 链接」文本；没有链接返回空串。"""
+    if seg_type == "share":
+        url = str(data.get("url") or "").strip()
+        title = str(data.get("title") or "").strip()
+        content = str(data.get("content") or "").strip()
+    else:
+        try:
+            doc = json.loads(str(data.get("data") or ""))
+        except ValueError:
+            return ""
+        url = _first_string(doc, _CARD_URL_KEYS)
+        title = _first_string(doc, _CARD_TITLE_KEYS)
+        content = ""
+    if not url:
+        return ""
+    return "\n".join(part for part in (title, content, url) if part)
+
+
 def _prepare_message(message: list) -> _OutboundPrep:
     """OneBot 消息段 → 领域段，并把需要落盘的媒体先写成本地文件。
 
@@ -933,6 +973,14 @@ def _prepare_message(message: list) -> _OutboundPrep:
             path = _video_file(str(data.get("file") or ""), prep)
             if path:
                 prep.segments.append(Video(path=path))
+        elif seg_type in ("share", "json"):
+            # 微信 PC 端没有「发卡片」的入口，卡片降级成「标题 + 链接」文本发出；
+            # 取不到链接就如实记失败，免得客户端以为卡片发出去了
+            text = _card_as_text(seg_type, data)
+            if text:
+                prep.segments.append(Text(text=text))
+            else:
+                prep.failures.append(f"{seg_type} 段里没有可发的链接")
         else:
             log.warning(f"[OB11] 不支持的消息段类型: {seg_type!r}")
             prep.failures.append(f"不支持的消息段 {seg_type or '（空类型）'}")

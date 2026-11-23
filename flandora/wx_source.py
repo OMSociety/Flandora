@@ -87,6 +87,37 @@ def load_passphrase(path: str = None) -> bytes:
     return stored.passphrase
 
 
+#: 带本体文件的消息类别：语音（解成 WAV）、文件、视频
+MEDIA_KINDS = ("voice", "file", "video")
+
+
+def resolve_attachment(store, data: dict) -> dict:
+    """按收件字典找语音、文件、视频的本体；还没有返回空字典。
+
+    返回 ``{"kind": "voice|file|video", "path": 路径, "name": 展示名}``。
+    """
+    kind = data.get("msgType")
+    talker = str(data.get("sessionId") or "")
+    local_id = int(data.get("localId") or 0)
+    try:
+        if kind == "voice":
+            path = store.voice_wav(talker, local_id, data.get("serverId", ""))
+            name = ""
+        elif kind == "video":
+            path = store.video_path(talker, local_id)
+            name = ""
+        elif kind == "file":
+            card = data.get("card") or {}
+            name = str(card.get("title") or "")
+            path = store.file_path(name, data.get("timestamp"), int(card.get("size") or 0))
+        else:
+            return {}
+    except Exception as exc:  # noqa: BLE001 - 取不到本体只是退回文字，不该拦住这条消息
+        log.debug("取 %s 本体失败：%s", kind, exc)
+        return {}
+    return {"kind": kind, "path": path, "name": name or os.path.basename(path)} if path else {}
+
+
 class WxLocalSource:
     """轮询本地库，产出统一形态的消息字典。"""
 
@@ -303,7 +334,16 @@ class WxLocalSource:
             # 撤回与拍一拍带结构化字段，桥接据此发 notice 而不是当聊天正文
             "revoke": msg.get("revoke") or {},
             "pat": msg.get("pat") or {},
+            # 卡片、文件、位置、名片的结构化内容；正文里已有同样信息的文字版
+            "card": msg.get("card") or {},
         }
+
+        # 语音、文件、视频：本体在就带上路径。文件与视频常比消息晚几秒才落盘，
+        # 此时拿不到不要紧，桥接会在独立线程里再等（见 resolve_attachment）。
+        if msg["kind"] in MEDIA_KINDS:
+            attachment = resolve_attachment(self.store, data)
+            if attachment:
+                data["attachment"] = attachment
 
         # 图片与表情：能解出文件就把路径带上，下游据此读图；解不出就保留占位符文本。
         # 图片的正文换成路径（分派与展示都用得到），表情的正文保留占位符+md5，

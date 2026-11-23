@@ -31,7 +31,7 @@ import sqlite3
 import time
 from urllib.parse import quote
 
-from . import wechat_account, wx_crypto, wx_image
+from . import wechat_account, wx_appmsg, wx_crypto, wx_image, wx_voice
 from .domain.content import EMOJI_PLACEHOLDER, IMAGE_PLACEHOLDER
 
 log = logging.getLogger("flandora")
@@ -83,6 +83,7 @@ DBS = (
     ("message", "message_0.db"),
     ("contact", "contact.db"),
     ("message", "message_resource.db"),
+    ("message", "media_0.db"),
     ("hardlink", "hardlink.db"),
 )
 
@@ -90,7 +91,7 @@ DBS = (
 #: 图片行、刚改的昵称长期不可见，图片只能报 ``[图片]``，改名后 @ 识别不到自己。
 #: 三者都很小，把 ``-wal`` 一起纳入变更判据的代价可以忽略；
 #: 10 MB 的 ``message_0.db`` 不在此列。
-WAL_TRACKED = frozenset({"hardlink.db", "message_resource.db", "contact.db"})
+WAL_TRACKED = frozenset({"hardlink.db", "message_resource.db", "media_0.db", "contact.db"})
 
 # local_type 的低 32 位是消息大类，高 32 位是 49（appmsg）的子类型
 BASE_IMAGE = 3
@@ -107,6 +108,7 @@ BASE_REVOKE = 10002
 # appmsg 子类型
 APP_FILE = 6
 APP_LINK = 5
+APP_EMOTICON = 8
 APP_MERGED = 19
 APP_QUOTE = 57
 APP_PAT = 62
@@ -239,6 +241,25 @@ def pat_info(body) -> dict | None:
     }
 
 
+#: appmsg 子类型 → 类别；没登记的归 "app"
+_APP_KINDS = {APP_FILE: "file", APP_LINK: "link", APP_MERGED: "merged"}
+
+
+def card_of(local_type, body):
+    """富消息的结构化内容（给事件的 card 字段）；不是富消息返回 None。"""
+    base = local_type & 0xFFFFFFFF
+    sub = local_type >> 32
+    if base == BASE_APPMSG and sub not in (APP_QUOTE, APP_PAT, APP_EMOTICON):
+        card = wx_appmsg.parse_appmsg(sub, body)
+    elif base == BASE_LOCATION:
+        card = wx_appmsg.parse_location(body)
+    elif base == BASE_CARD:
+        card = wx_appmsg.parse_namecard(body)
+    else:
+        return None
+    return card.to_dict() if card else None
+
+
 def classify(local_type, body):
     """按 local_type 给出 (类别, 送给上游的文本)。
 
@@ -270,13 +291,21 @@ def classify(local_type, body):
             f'{EMOJI_PLACEHOLDER} md5="{m.group(1).lower()}"' if m else EMOJI_PLACEHOLDER
         )
     if base == BASE_VOICE:
-        return "voice", "[语音]"
+        info = wx_appmsg.voice_info(body)
+        millis = info.get("millis") or 0
+        return "voice", f"[语音] {max(1, round(millis / 1000))} 秒" if millis else "[语音]"
     if base == BASE_VIDEO:
-        return "video", "[视频]"
+        info = wx_appmsg.video_info(body)
+        parts = [f"{info['seconds']} 秒" if info.get("seconds") else ""]
+        parts.append(wx_appmsg.human_size(info.get("size")))
+        detail = " ".join(x for x in parts if x)
+        return "video", f"[视频] {detail}" if detail else "[视频]"
     if base == BASE_CARD:
-        return "card", "[名片]"
+        card = wx_appmsg.parse_namecard(body)
+        return "card", card.text() if card else "[名片]"
     if base == BASE_LOCATION:
-        return "location", "[位置]"
+        card = wx_appmsg.parse_location(body)
+        return "location", card.text() if card else "[位置]"
     if base == BASE_VOIP:
         return "voip", "[音视频通话]"
     if base == BASE_SYSTEM:
@@ -286,17 +315,18 @@ def classify(local_type, body):
         return "revoke", "[撤回了一条消息]"
     if base == BASE_APPMSG:
         title = _xml_value(body, "title")
-        if sub == APP_FILE:
-            return "file", f"[文件] {title}".rstrip()
-        if sub == APP_LINK:
-            return "link", f"[链接] {title}".rstrip()
-        if sub == APP_MERGED:
-            return "merged", f"[合并转发] {title}".rstrip()
         if sub == APP_QUOTE:
             return "quote", title or "[引用消息]"
         if sub == APP_PAT:
             return "pat", title or "[拍一拍]"
-        return "app", f"[卡片消息] {title}".rstrip()
+        if sub == APP_EMOTICON:
+            md5 = wx_appmsg.emoticon_md5(body)
+            if md5:
+                return "emoji", f'{EMOJI_PLACEHOLDER} md5="{md5}"'
+        card = wx_appmsg.parse_appmsg(sub, body)
+        if card is None:
+            return "app", f"[卡片消息] {title}".rstrip()
+        return _APP_KINDS.get(sub, "app"), card.text()
     return "unknown", f"[未支持的消息类型 {local_type}]"
 
 
@@ -336,6 +366,7 @@ def payload_of(
         "quote": quote or {},
         "revoke": revoke or {},
         "pat": pat or {},
+        "card": card_of(local_type, body) or {},
         "outgoing": bool(my_wxid) and sender == my_wxid,
     }
 
@@ -815,6 +846,100 @@ class WxStore:
         finally:
             con.close()
 
+    # ---------- 语音、文件、视频 ----------
+
+    def voice_wav(self, talker: str, local_id: int, server_id="") -> str | None:
+        """语音消息 → 解好的 WAV 路径；库里没有或解不开返回 None。
+
+        本体在 ``media_0.db`` 的 ``VoiceInfo``（会话内的 ``local_id`` 或全局 ``svr_id``
+        定位）。解出的 WAV 放在工作目录的 ``voice/`` 下，同一条只解一次。
+        """
+        if not talker or not local_id:
+            return None
+        out = os.path.join(
+            self.work_dir,
+            "voice",
+            f"{hashlib.md5(talker.encode()).hexdigest()}_{int(local_id)}.wav",
+        )
+        if os.path.isfile(out):
+            return out
+        try:
+            con = self._con("media_0.db")
+        except WxStoreError:
+            return None
+        try:
+            row = con.execute("SELECT rowid FROM Name2Id WHERE user_name=?", (talker,)).fetchone()
+            blob = None
+            if row is not None:
+                hit = con.execute(
+                    "SELECT voice_data FROM VoiceInfo WHERE chat_name_id=? AND local_id=?",
+                    (int(row[0]), int(local_id)),
+                ).fetchone()
+                blob = hit[0] if hit else None
+            if blob is None and str(server_id or "").isdigit():
+                hit = con.execute(
+                    "SELECT voice_data FROM VoiceInfo WHERE svr_id=?", (int(server_id),)
+                ).fetchone()
+                blob = hit[0] if hit else None
+        except sqlite3.Error as e:
+            log.debug("读取语音失败：%s", e)
+            return None
+        finally:
+            con.close()
+        if not blob:
+            return None
+        try:
+            wav = wx_voice.silk_to_wav(blob)
+        except wx_voice.VoiceDecodeError as e:
+            log.warning("语音解码失败（talker=%s, local_id=%s）：%s", talker, local_id, e)
+            return None
+        os.makedirs(os.path.dirname(out), exist_ok=True)
+        with open(out, "wb") as fh:
+            fh.write(wav)
+        return out
+
+    def file_path(self, name: str, create_time=None, size: int = 0) -> str | None:
+        """文件消息 → 微信自动落盘的本地路径；还没下载返回 None。
+
+        文件明文放在 ``msg/file/<年-月>/<原文件名>``，同名时微信改成 ``名(1).ext``。
+        先看消息当月，再看其他月份；给了 ``size`` 就要求字节数一致，免得把同名的别的
+        文件当成这一份（或把没下完的当成完整的）。
+        """
+        name = os.path.basename((name or "").strip())
+        if not name:
+            return None
+        root = os.path.join(self.data_dir, "msg", "file")
+        if not os.path.isdir(root):
+            return None
+        stem, ext = os.path.splitext(name)
+        months = []
+        if create_time:
+            months.append(time.strftime("%Y-%m", time.localtime(int(create_time))))
+        months.extend(sorted((m for m in os.listdir(root) if m not in months), reverse=True))
+        for month in months:
+            folder = os.path.join(root, month)
+            dupes = glob.glob(os.path.join(folder, f"{glob.escape(stem)}(*){glob.escape(ext)}"))
+            for path in (os.path.join(folder, name), *sorted(dupes)):
+                try:
+                    actual = os.path.getsize(path)
+                except OSError:
+                    continue
+                if not size or actual == int(size):
+                    return path
+        return None
+
+    def video_path(self, talker: str, local_id: int) -> str | None:
+        """视频消息 → ``msg/video/<年-月>/<md5>.mp4``；还没下载返回 None。
+
+        文件名的 md5 取自资源库里这条消息的 ``packed_info`` 尾部，不等于消息 XML 里的 md5。
+        """
+        video = os.path.join(self.data_dir, "msg", "video")
+        for md5 in self._resource_md5s(int(local_id or 0), talker=talker):
+            hits = sorted(glob.glob(os.path.join(video, "*", f"{md5}.mp4")))
+            if hits:
+                return hits[-1]
+        return None
+
     # ---------- 图片 ----------
 
     #: 能直接交给客户端看图的格式。``wxgf`` 是微信私有的 HEVC 容器，不在其列。
@@ -847,6 +972,19 @@ class WxStore:
             if img.ext in self._PLAIN_IMAGE_EXTS:
                 return cand, img
         return None
+
+    def _high_quality(self, main: str):
+        """主文件旁边的 ``_h.dat``（原图）解得出来就返回 ``(路径, 解码结果)``，否则 None。"""
+        stem = main[: -len(".dat")] if main.lower().endswith(".dat") else main
+        high = f"{stem}_h.dat"
+        if not os.path.isfile(high):
+            return None
+        try:
+            img = wx_image.decode_file(high, self.image_key, self._ensure_xor_key())
+        except (wx_image.ImageDecodeError, WxStoreError) as e:
+            log.debug("原图 %s 解不开：%s", os.path.basename(high), e)
+            return None
+        return (high, img) if img.ext in self._PLAIN_IMAGE_EXTS else None
 
     def _image_variants(self, main: str) -> list[str]:
         """主文件旁边可能存在的明文副本，按画质从高到低排。"""
@@ -990,12 +1128,17 @@ class WxStore:
                 e,
             )
             return None
-        try:
-            xor_key = self._ensure_xor_key()
-            img = wx_image.decode_file(src, self.image_key, xor_key)
-        except (wx_image.ImageDecodeError, WxStoreError) as e:
-            log.warning("图片解码失败（md5=%s）：%s", msg_md5, e)
-            return None
+        # 主文件通常是中图（约原图十分之一）；`_h.dat` 在就是原图，优先用它
+        high = self._high_quality(src)
+        if high is not None:
+            src, img = high
+        else:
+            try:
+                xor_key = self._ensure_xor_key()
+                img = wx_image.decode_file(src, self.image_key, xor_key)
+            except (wx_image.ImageDecodeError, WxStoreError) as e:
+                log.warning("图片解码失败（md5=%s）：%s", msg_md5, e)
+                return None
         if img.ext not in self._PLAIN_IMAGE_EXTS:
             container = img.ext
             found = self._plain_image(src)

@@ -14,18 +14,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 修复
 
+- 修复图片「发糊」：存在高清原图 `_h.dat` 时优先使用它，不再只取微信给的中图主文件。
 - 修复微信重新登录后桥接把离线期间同步进本地库的旧消息逐条推给机器人的问题：这些消息的本地编号是新的、发送时间却是当初的，只看游标会把它们当成新消息。现在发送时间早于闸线的消息不再推送，日志按会话汇总一行。
 
 ### 新增
 
+- 新增语音、文件、视频的本体推送：语音由 SILK 转成 WAV 后以 `record` 段上报，文件与视频取微信已落盘的本体，分别附 `file`、`video` 段；本体还没到本机时等待至多 30 秒，仍没有就只按文字推送。
+- 新增卡片消息的解读：公众号文章、B 站与网易云分享、小程序、合并转发的聊天记录（逐行展开）、视频号、笔记、接龙、群公告、转账、红包、位置、名片都转成多行文字，链接去掉追踪参数，事件另带结构化的 `card` 字段；表情型卡片走表情通道。
+- 出站的 `share`、`json` 段降级为标题加链接的文本；没有链接的段计入失败。
+- 新增依赖 `silk-python`（语音转码）。
 - 新增 `wx_stale_seconds` 配置（默认 `600`，`0` 表示不过滤）：发送时间早于这么多秒的消息不推给机器人；开启 `wx_backfill_seconds` 时取两者中较大的一个，回填窗口内的消息不会被挡掉。
 
 ### Fixed
 
+- Fixed blurry images: when the full-resolution `_h.dat` exists it is used first instead of the medium-size main file.
 - Fixed the bridge pushing old messages to the bot one by one after WeChat logs in again: messages synced into the local database while offline carry fresh local ids but their original send times, so the cursor alone treated them as new. Messages sent before the cutoff are no longer pushed, and the log reports one summary line per chat.
 
 ### Added
 
+- Added delivery of voice, file and video bodies: voice is converted from SILK to WAV and reported as a `record` segment, files and videos are taken from what WeChat already saved locally and attached as `file` and `video` segments; when the body has not reached the machine yet the bridge waits up to 30 seconds and then pushes the text alone.
+- Added interpretation of card messages: official-account articles, Bilibili and NetEase Music shares, mini programs, forwarded chat records (expanded line by line), Channels posts, notes, group solitaires, group announcements, transfers, red packets, locations and contact cards become multi-line text with tracking parameters removed from links, and the event also carries a structured `card` field; sticker-type cards use the sticker channel.
+- Outgoing `share` and `json` segments are downgraded to text made of the title and link; segments without a link count as failed.
+- Added the `silk-python` dependency for voice transcoding.
 - Added the `wx_stale_seconds` setting (default `600`; `0` disables the filter): messages sent more than this many seconds ago are not pushed to the bot. When `wx_backfill_seconds` is enabled the larger of the two applies, so messages inside the backfill window are never dropped.
 
 ## [1.0.3] - 2026-11-17

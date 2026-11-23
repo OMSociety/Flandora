@@ -21,6 +21,7 @@ from .domain.message import (
     ChatKind,
     ChatRef,
     Emoji,
+    File,
     Image,
     InboundMessage,
     Message,
@@ -29,6 +30,8 @@ from .domain.message import (
     Segment,
     SenderRef,
     Text,
+    Video,
+    Voice,
 )
 from .ob_protocol import (
     make_poke_event,
@@ -37,16 +40,36 @@ from .ob_protocol import (
     render_message_event,
 )
 from .runtime import LIFECYCLE, RUNTIME, events
+from .wx_source import MEDIA_KINDS, resolve_attachment
 
 log = logging.getLogger("flandora")
 
 # 微信给群名挂的 "(3)" 人数后缀：搜索会话时用不上，推事件前剥掉
 _GROUP_COUNT_SUFFIX = re.compile(r"\s*\(\d+\)\s*$")
 
+
+def _attachment_segments(attachment) -> tuple:
+    """收件源给的附件描述 → 领域段；没有或类别不认识返回空元组。"""
+    if not attachment or not attachment.get("path"):
+        return ()
+    path = str(attachment["path"])
+    kind = attachment.get("kind")
+    if kind == "voice":
+        return (Voice(path=path),)
+    if kind == "video":
+        return (Video(path=path),)
+    if kind == "file":
+        return (File(path=path, name=str(attachment.get("name") or "")),)
+    return ()
+
+
 # 表情密钥只在微信渲染表情那几秒驻留内存，第一次遇到表情要现扫（本机实测约 3 秒）。
 # 表情消息本来就跑在独立线程上，所以这里等一会儿不会拖慢后面的消息；等到了就带图推送，
 # 等不到仍按占位文本上报——客户端只会看到一种结果，不会先收到文本再收到图。
 EMOJI_WAIT_SECONDS = 5.0
+# 文件与视频的本体比消息晚落盘：最多等这么久，每隔 MEDIA_POLL_SECONDS 看一次
+MEDIA_WAIT_SECONDS = 30
+MEDIA_POLL_SECONDS = 1.5
 
 
 def _quote_ref(quote) -> QuoteRef | None:
@@ -120,7 +143,6 @@ class Flandora:
         my_wxid = store.my_wxid if store is not None else ""
         if my_wxid and data.get("talkerId", "") == my_wxid:
             return True
-        # 语音消息的 content 是 "[语音]" 占位符，按普通文本上报，不走单独分支
         if not content or content.strip() == "":
             return True
         return False
@@ -183,6 +205,17 @@ class Flandora:
         if message.kind is ContentKind.EMOJI:
             threading.Thread(
                 target=self.process_emoji_message, args=(message,), daemon=True
+            ).start()
+            return
+
+        # 文件与视频常比消息晚几秒才落盘：本体没到就交给独立线程等一等
+        if (
+            data.get("msgType") in MEDIA_KINDS
+            and not data.get("attachment")
+            and not message.attachments
+        ):
+            threading.Thread(
+                target=self.process_media_message, args=(message,), daemon=True
             ).start()
             return
 
@@ -481,6 +514,7 @@ class Flandora:
             local_id=int(data.get("localId") or 0),
             server_id=str(data.get("serverId") or ""),
             timestamp=int(data.get("timestamp") or 0),
+            attachments=_attachment_segments(data.get("attachment")),
             raw=data,  # 原始数据，供 @ 检测等必须看原文的地方使用
         )
 
@@ -507,8 +541,12 @@ class Flandora:
             # 客户端据此把它与普通图片分开显示。
             media_cls = Emoji if message.kind is ContentKind.EMOJI else Image
             images = [media_cls(path=path) for path in message.media]
-            segments = self._inbound_segments(message, "" if images else message.text)
+            # 语音与视频同理：有了本体，「[语音] 2 秒」这类占位文字就不再重复；
+            # 文件的正文带着文件名与大小，保留
+            bare = bool(images) or any(isinstance(a, (Voice, Video)) for a in message.attachments)
+            segments = self._inbound_segments(message, "" if bare else message.text)
             segments.extend(images)
+            segments.extend(message.attachments)
 
             event = render_message_event(
                 Message(
@@ -522,6 +560,9 @@ class Flandora:
                 ),
                 config.OB_MESSAGE_FORMAT,
             )
+            card = message.raw.get("card")
+            if card:
+                event["card"] = card
             if is_group:
                 ob_ids.remember_name(ob_ids.contact_id(session_handle), contact)
                 ob_ids.remember_name(user_id, message.sender.nickname)
@@ -615,6 +656,29 @@ class Flandora:
         group_name = str(message.raw.get("groupName") or "")
         log.info(f"收到图片: {source_name}" + (f" (群:{group_name})" if group_name else ""))
 
+        self._push_entry(message)
+
+    def process_media_message(self, message: InboundMessage):
+        """处理语音、文件、视频：等本体落盘（最多 MEDIA_WAIT_SECONDS），到了就带上，超时按文字推。
+
+        跑在独立线程上，不挡收件轮询。等不到不是错误：大文件没自动下载、视频还没点开，
+        正文里仍有文件名与大小。
+        """
+        raw = dict(message.raw)
+        deadline = time.monotonic() + MEDIA_WAIT_SECONDS
+        while True:
+            store = RUNTIME.store
+            if store is not None:
+                attachment = resolve_attachment(store, raw)
+                if attachment:
+                    message = replace(message, attachments=_attachment_segments(attachment))
+                    break
+            if time.monotonic() >= deadline or not LIFECYCLE.should_continue():
+                log.info(
+                    "[%s] 本体 %d 秒内没到，按文字推送", raw.get("msgType"), MEDIA_WAIT_SECONDS
+                )
+                break
+            time.sleep(MEDIA_POLL_SECONDS)
         self._push_entry(message)
 
     def process_emoji_message(self, message: InboundMessage):

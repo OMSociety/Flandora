@@ -143,8 +143,8 @@ class InboundMessage:
     """一条从微信本地库读出来的消息。
 
     ``raw`` 是解码出来的原始字典，只给「必须看原文」的地方用（例如 @ 检测），
-    其余字段都已类型化。``media`` 是解码器解出的本地媒体文件路径，正文里的
-    占位符保持原样（图片的路径不进正文）。
+    其余字段都已类型化。``media`` 是解码器解出的本地图片与表情文件路径，正文里的
+    占位符保持原样（图片的路径不进正文）；``attachments`` 是语音、文件、视频段。
     """
 
     chat: ChatRef
@@ -157,6 +157,9 @@ class InboundMessage:
     server_id: str
     timestamp: int
     raw: Mapping[str, Any] = field(repr=False)
+    # 语音、文件、视频的本体（已在本地的才有）；与 media（图片、表情）分开，
+    # 因为它们渲染成不同的段
+    attachments: tuple["Segment", ...] = ()
 
 
 @dataclass(frozen=True)

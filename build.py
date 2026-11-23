@@ -387,6 +387,9 @@ def bridge_extras() -> list[str]:
             "flandora.webui.app",
             "--hidden-import",
             "flandora.webui.monitor",
+            # pysilk 按解释器种类在运行期二选一导入后端，静态追踪看不到 Cython 那一支
+            "--hidden-import",
+            "pysilk.backends.cython",
             # uvicorn 用字符串动态选择事件循环、HTTP 与 WebSocket 实现，静态追踪不到
             "--hidden-import",
             "uvicorn.logging",

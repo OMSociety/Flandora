@@ -219,6 +219,74 @@ def test_decode_hevc_reports_a_timeout(monkeypatch, tmp_path):
         wx_emoticon.decode_hevc(b"\x00" * 64)
 
 
+def test_decode_gif_asks_ffmpeg_for_a_gif_with_the_source_timing(monkeypatch, tmp_path):
+    """动图整段交给 ffmpeg 合成，命令行里不能出现自定的帧间隔。"""
+    exe = tmp_path / "ffmpeg.exe"
+    exe.write_bytes(b"stub")
+    seen = []
+
+    def fake_run(command, **kwargs):
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0, b"GIF89a" + b"\x00" * 16, b"")
+
+    monkeypatch.setattr(wx_emoticon, "ffmpeg_path", lambda: exe)
+    monkeypatch.setattr(wx_emoticon.subprocess, "run", fake_run)
+    blob = wx_emoticon.decode_gif(b"\x00" * 64)
+    assert blob.startswith(b"GIF89a")
+    assert seen[0][-7:] == [
+        "-filter_complex",
+        wx_emoticon.GIF_PALETTE,
+        "-loop",
+        "0",
+        "-f",
+        "gif",
+        "pipe:1",
+    ]
+    assert "-r" not in seen[0]
+
+
+def test_decode_gif_says_when_ffmpeg_output_is_not_a_gif(monkeypatch, tmp_path):
+    exe = tmp_path / "ffmpeg.exe"
+    exe.write_bytes(b"stub")
+    monkeypatch.setattr(wx_emoticon, "ffmpeg_path", lambda: exe)
+    monkeypatch.setattr(
+        wx_emoticon.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a[0], 0, b"\x89PNG", b""),
+    )
+    with pytest.raises(wx_emoticon.EmoticonError, match="GIF"):
+        wx_emoticon.decode_gif(b"\x00" * 64)
+
+
+def test_to_image_bytes_makes_a_gif_from_a_multi_frame_container(monkeypatch):
+    gif = b"GIF89a" + b"\x00" * 16
+    monkeypatch.setattr(wx_emoticon, "decode_gif", lambda hevc: gif)
+    monkeypatch.setattr(
+        wx_emoticon, "decode_hevc", lambda hevc: pytest.fail("多帧不该再逐帧取 PNG")
+    )
+    data, ext = wx_emoticon.to_image_bytes(_wxgf(240, 240, 6, 0x81))
+    assert (data, ext) == (gif, "gif")
+
+
+def test_to_image_bytes_keeps_a_single_frame_as_png(monkeypatch):
+    frame = Image.new("RGB", (8, 6), (10, 20, 30))
+    monkeypatch.setattr(wx_emoticon, "decode_hevc", lambda hevc: [frame])
+    monkeypatch.setattr(wx_emoticon, "decode_gif", lambda hevc: pytest.fail("单帧不该走 GIF"))
+    data, ext = wx_emoticon.to_image_bytes(_wxgf(8, 6, 0, 0x40))
+    assert ext == "png"
+    assert Image.open(io.BytesIO(data)).size == (8, 6)
+
+
+def test_to_image_bytes_falls_back_to_a_gif_when_the_header_undercounts(monkeypatch):
+    """头部标一帧、码流里其实多帧：不能把后面的帧丢掉。"""
+    gif = b"GIF89a" + b"\x00" * 16
+    frames = [Image.new("RGB", (8, 6)), Image.new("RGB", (8, 6))]
+    monkeypatch.setattr(wx_emoticon, "decode_hevc", lambda hevc: frames)
+    monkeypatch.setattr(wx_emoticon, "decode_gif", lambda hevc: gif)
+    data, ext = wx_emoticon.to_image_bytes(_wxgf(8, 6, 0, 0x40))
+    assert (data, ext) == (gif, "gif")
+
+
 def test_image_for_refuses_a_md5_that_is_not_32_hex():
     with pytest.raises(wx_emoticon.EmoticonError, match="md5"):
         wx_emoticon.image_for("abc", cache_dir=".")

@@ -6,7 +6,8 @@
     plaintext = AES-128-CBC-decrypt(key, iv=key, ciphertext)   # PKCS#7
 
 解出来的明文有两种：GIF/PNG/JPEG 本体，或 ``wxgf`` 容器（HEVC 帧，交给随包的
-``tools\ffmpeg\ffmpeg.exe`` 解码）。
+``tools\ffmpeg\ffmpeg.exe`` 解码）。``wxgf`` 里是多帧就整段交给 ffmpeg 合成 GIF，
+码流自带的帧间隔原样保留；单帧则只取一帧出 PNG。
 `HttpResource` 下的小图不带加密外壳，读到明文图片直接用。
 seed 是 32 位整数，只活在微信进程内存里，重登后可能变，所以按账号缓存、解不开时重扫。
 """
@@ -38,12 +39,17 @@ MAGICS = (b"\x89PNG", b"GIF8", b"\xff\xd8", b"RIFF", b"wxgf")
 CACHE_SUBDIR = "cache"
 CACHE_KINDS = ("Emoticon", "HttpResource")
 BUSINESS_SUBDIR = os.path.join("business", "emoticon")
-FRAME_MS = 100
 
 # 解一帧表情的 HEVC 走这一步；随包的 ffmpeg 是 LGPL 构建，只做解码与图片输出
 FFMPEG_RELATIVE = os.path.join("tools", "ffmpeg", "ffmpeg.exe")
 DECODE_TIMEOUT = 20.0
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+
+# 多帧合成 GIF 的调色板参数：stats_mode=diff 让调色板侧重帧间差异，
+# bayer 抖动避免大面积渐变色带，bayer_scale 越大越不抖
+GIF_PALETTE = (
+    "[0:v]split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer:bayer_scale=4"
+)
 
 _SEED_LOCK = threading.Lock()
 _SEEDS: dict[str, int] = {}
@@ -270,12 +276,8 @@ def _png_frames(blob: bytes) -> list:
     return frames
 
 
-def decode_hevc(hevc: bytes) -> list:
-    """用随包的 ffmpeg 把 HEVC 码流解成 PIL 帧。
-
-    `wxgf` 里的码流只带 VPS/SPS/PPS 与若干 IDR 片，按裸码流喂给解码器最省事：
-    `-f hevc` 让它认这套参数集，帧从管道里以 PNG 序列吐回来。
-    """
+def _run_ffmpeg(hevc: bytes, args: list[str]) -> bytes:
+    """把 HEVC 裸码流喂给随包的 ffmpeg，返回它在标准输出里给出的字节。"""
     exe = ffmpeg_path()
     if not exe.is_file():
         raise EmoticonError(
@@ -290,11 +292,7 @@ def decode_hevc(hevc: bytes) -> list:
         "hevc",
         "-i",
         "pipe:0",
-        "-f",
-        "image2pipe",
-        "-vcodec",
-        "png",
-        "pipe:1",
+        *args,
     ]
     try:
         done = subprocess.run(
@@ -307,7 +305,28 @@ def decode_hevc(hevc: bytes) -> list:
     if done.returncode != 0:
         reason = done.stderr.decode("utf-8", "replace").strip().splitlines()
         raise EmoticonError(f"HEVC 解码失败：{reason[-1] if reason else done.returncode}")
-    return _png_frames(done.stdout)
+    return done.stdout
+
+
+def decode_hevc(hevc: bytes) -> list:
+    """用随包的 ffmpeg 把 HEVC 码流解成 PIL 帧。
+
+    `wxgf` 里的码流只带 VPS/SPS/PPS 与若干 IDR 片，按裸码流喂给解码器最省事：
+    `-f hevc` 让它认这套参数集，帧从管道里以 PNG 序列吐回来。
+    """
+    return _png_frames(_run_ffmpeg(hevc, ["-f", "image2pipe", "-vcodec", "png", "pipe:1"]))
+
+
+def decode_gif(hevc: bytes) -> bytes:
+    """用随包的 ffmpeg 把 HEVC 码流直接合成 GIF。
+
+    码流自带每帧的时间戳（表情多为 30 fps），交给 ffmpeg 合成能原样保留帧间隔；
+    自己逐帧取出来再拼 GIF 只能写死一个间隔，快慢就与原图对不上了。
+    """
+    blob = _run_ffmpeg(hevc, ["-filter_complex", GIF_PALETTE, "-loop", "0", "-f", "gif", "pipe:1"])
+    if not blob.startswith(b"GIF8"):
+        raise EmoticonError("ffmpeg 没有输出 GIF")
+    return blob
 
 
 def to_image_bytes(plain: bytes) -> tuple[bytes, str]:
@@ -322,20 +341,15 @@ def to_image_bytes(plain: bytes) -> tuple[bytes, str]:
     if plain.startswith(b"RIFF"):
         return plain, "webp"
     info = parse_wxgf(plain)
+    if info["frames"] > 1:
+        return decode_gif(info["hevc"]), "gif"
     frames = decode_hevc(info["hevc"])
+    if len(frames) > 1:
+        # 头部标的是单帧、码流里其实不止一帧：按动图补齐，别悄悄丢掉后面的帧
+        return decode_gif(info["hevc"]), "gif"
     buffer = io.BytesIO()
-    if len(frames) == 1:
-        frames[0].save(buffer, format="PNG")
-        return buffer.getvalue(), "png"
-    frames[0].save(
-        buffer,
-        format="GIF",
-        save_all=True,
-        append_images=frames[1:],
-        duration=FRAME_MS,
-        loop=0,
-    )
-    return buffer.getvalue(), "gif"
+    frames[0].save(buffer, format="PNG")
+    return buffer.getvalue(), "png"
 
 
 def image_for(

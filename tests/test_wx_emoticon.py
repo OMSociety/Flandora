@@ -114,6 +114,7 @@ def test_cache_files_also_sees_the_business_store(tmp_path):
 
 
 def test_image_for_returns_an_existing_decoded_file_without_touching_memory(tmp_path, monkeypatch):
+    (tmp_path / wx_emoticon.CACHE_MARKER).write_text(f"{wx_emoticon.CACHE_REVISION}\n")
     decoded = tmp_path / f"{MD5}.gif"
     decoded.write_bytes(b"GIF89a" + b"\x00" * 16)
     monkeypatch.setattr(wx_emoticon, "find_cache", lambda name, root=None: None)
@@ -285,6 +286,39 @@ def test_to_image_bytes_falls_back_to_a_gif_when_the_header_undercounts(monkeypa
     monkeypatch.setattr(wx_emoticon, "decode_gif", lambda hevc: gif)
     data, ext = wx_emoticon.to_image_bytes(_wxgf(8, 6, 0, 0x40))
     assert (data, ext) == (gif, "gif")
+
+
+def test_retire_stale_cache_clears_old_results_and_keeps_other_files(tmp_path):
+    old = tmp_path / f"{MD5}.gif"
+    old.write_bytes(b"GIF89a")
+    keep = tmp_path / "notes.txt"
+    keep.write_text("keep")
+    wx_emoticon.retire_stale_cache(tmp_path)
+    assert not old.exists()
+    assert keep.exists()
+    assert (tmp_path / wx_emoticon.CACHE_MARKER).read_text().strip() == str(
+        wx_emoticon.CACHE_REVISION
+    )
+
+
+def test_retire_stale_cache_leaves_current_results_alone(tmp_path):
+    (tmp_path / wx_emoticon.CACHE_MARKER).write_text(f"{wx_emoticon.CACHE_REVISION}\n")
+    fresh = tmp_path / f"{MD5}.gif"
+    fresh.write_bytes(b"GIF89a")
+    wx_emoticon.retire_stale_cache(tmp_path)
+    assert fresh.exists()
+
+
+def test_retire_stale_cache_tolerates_a_missing_directory(tmp_path):
+    wx_emoticon.retire_stale_cache(tmp_path / "nope")
+
+
+def test_image_for_does_not_reuse_a_result_from_an_older_revision(tmp_path, monkeypatch):
+    (tmp_path / f"{MD5}.gif").write_bytes(b"GIF89a-old")
+    monkeypatch.setattr(wx_emoticon, "find_cache", lambda name, root=None: None)
+    monkeypatch.setattr(wx_emoticon.wx_image_key, "current_wxid", lambda root=None: WXID)
+    with pytest.raises(wx_emoticon.EmoticonError, match="缓存"):
+        wx_emoticon.image_for(MD5, cache_dir=str(tmp_path))
 
 
 def test_image_for_refuses_a_md5_that_is_not_32_hex():

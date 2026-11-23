@@ -55,6 +55,11 @@ _SEED_LOCK = threading.Lock()
 _SEEDS: dict[str, int] = {}
 _SCAN_THREAD: threading.Thread | None = None
 
+# 解码结果缓存的格式版本：合成方式改变后旧结果不能再用，靠这个标记整批作废
+CACHE_REVISION = 2
+CACHE_MARKER = ".revision"
+CACHED_NAME = re.compile(r"^[0-9a-f]{32}\.(?:gif|png|jpg|webp)$")
+
 
 class EmoticonError(Exception):
     """表情还原失败；调用方据此退回占位文本。"""
@@ -352,6 +357,38 @@ def to_image_bytes(plain: bytes) -> tuple[bytes, str]:
     return buffer.getvalue(), "png"
 
 
+def retire_stale_cache(target_dir: Path) -> None:
+    """解码结果的缓存版本不是当前版本时，清掉整批旧结果。
+
+    合成方式一改，旧文件按老规则生成，留着就会被当成现成结果直接复用。
+    只删本模块按 md5 命名的那些文件，目录里的其他东西不碰。
+    """
+    marker = target_dir / CACHE_MARKER
+    if not target_dir.is_dir():
+        return
+    try:
+        current = marker.read_text(encoding="ascii").strip()
+    except OSError:
+        current = ""
+    if current == str(CACHE_REVISION):
+        return
+    removed = 0
+    try:
+        for item in target_dir.iterdir():
+            if item.is_file() and CACHED_NAME.match(item.name):
+                try:
+                    item.unlink()
+                    removed += 1
+                except OSError:
+                    continue
+        marker.write_text(f"{CACHE_REVISION}\n", encoding="ascii")
+    except OSError as exc:
+        log.warning("[表情] 清理旧版本解码缓存失败：%s", exc)
+        return
+    if removed:
+        log.info("[表情] 解码方式有变，已清掉 %d 个旧的表情缓存", removed)
+
+
 def image_for(
     md5: str,
     *,
@@ -372,6 +409,7 @@ def image_for(
         raise EmoticonError("消息里没有可用的表情 md5")
     wxid = wx_image_key.current_wxid(root)
     target_dir = Path(cache_dir or os.path.join(config.data_dir(), "emoticon"))
+    retire_stale_cache(target_dir)
     for ext in ("gif", "png", "jpg", "webp"):
         cached = target_dir / f"{name}.{ext}"
         if cached.is_file() and cached.stat().st_size > 0:

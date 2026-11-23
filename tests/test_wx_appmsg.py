@@ -123,3 +123,8 @@ def test_payload_carries_card_dict():
         body=BILI,
     )
     assert payload["card"]["url"] == "https://b23.tv/AbCd"
+
+
+def test_clean_url_netease_keeps_only_song_id():
+    url = "https://y.music.163.com/ur/abc?songId=27&vipToken=SECRET&vipLevel=6"
+    assert wx_appmsg.clean_url(url) == "https://y.music.163.com/ur/abc?songId=27"

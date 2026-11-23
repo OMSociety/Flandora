@@ -136,6 +136,11 @@ def clean_url(url: str) -> str:
         kept = [(k, query[k]) for k in _MP_KEEP if k in query]
         if kept:
             return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), ""))
+    if host.endswith("music.163.com") and parts.query:
+        # vipToken 等参数带账号凭据，只保留歌曲 id
+        query = dict(parse_qsl(parts.query, keep_blank_values=True))
+        kept = [(k, query[k]) for k in ("songId", "id") if k in query]
+        return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(kept), ""))
     if host in ("b23.tv", "www.bilibili.com", "m.bilibili.com") and parts.query:
         return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
     return url

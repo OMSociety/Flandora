@@ -476,3 +476,12 @@ def test_image_path_with_a_quote_survives_powershell(monkeypatch):
     script = seen["script"]
     assert "it''s.png" in script, script
     assert "it's.png" not in script, script
+
+
+def test_emoji_codes_may_read_back_as_object_marks():
+    want = "你说「说起来[旺柴]」，[不存在表情]结束"
+    assert uia_sender.staged_text_matches(want, want)
+    assert uia_sender.staged_text_matches(want, "你说「说起来\ufffc」，[不存在表情]结束")
+    assert uia_sender.staged_text_matches(want, "你说「说起来\ufffc」，\ufffc结束")
+    assert not uia_sender.staged_text_matches(want, "你说「说起来\ufffc」，结束")
+    assert not uia_sender.staged_text_matches("纯文字", "纯\ufffc字")

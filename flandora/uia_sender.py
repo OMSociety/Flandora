@@ -28,6 +28,7 @@ import ctypes
 import logging
 import os
 import random
+import re
 import subprocess
 import threading
 import time
@@ -102,6 +103,30 @@ def _looks_like_pil_repr(text: str) -> bool:
     拦下，那种消息没有任何理由发不出去。
     """
     return "<PIL." in text
+
+
+_OBJECT_MARK = "\ufffc"  # 输入框里内嵌对象的占位符
+_EMOJI_CODE = re.compile(r"\[[^\[\]\s]{1,8}\]")
+
+
+def staged_text_matches(want: str, got: str) -> bool:
+    """输入框读回的值是否等于要发的文本。
+
+    微信会把能认出的 `[旺柴]` 这类表情码就地换成内嵌对象，输入框的值里表现为
+    U+FFFC；认不出的仍是原样文字。所以每个表情码位置，两种读法都算对得上。
+    """
+    if got == want:
+        return True
+    if _OBJECT_MARK not in got:
+        return False
+    pattern = ""
+    last = 0
+    for m in _EMOJI_CODE.finditer(want):
+        pattern += re.escape(want[last : m.start()])
+        pattern += f"(?:{re.escape(m.group(0))}|{_OBJECT_MARK})"
+        last = m.end()
+    pattern += re.escape(want[last:])
+    return re.fullmatch(pattern, got, re.DOTALL) is not None
 
 
 def mismatch_window(want: str, got: str) -> str:
@@ -1551,7 +1576,7 @@ class UiaSender(BaseSender):
         if not self._paste_clipboard(expect_image=False):
             return False
         got = read()
-        if got == text:
+        if staged_text_matches(text, got):
             return True
         log.warning(f"粘贴后回读不符（{mismatch_window(text, got)}）")
         return False

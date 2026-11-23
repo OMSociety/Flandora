@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - 修复网易云分享链接里的 `vipToken` 等账号凭据参数被原样发给机器人的问题，现在只保留歌曲 id。
 - 修复笔记等卡片的标题带换行的问题。
+- 修复带 `[旺柴]` 这类表情码的文字发送失败：微信把表情码就地换成内嵌对象，输入框回读到的是对象占位符，被误判为文字没进到输入框。
 - 修复图片「发糊」：存在高清原图 `_h.dat` 时优先使用它，不再只取微信给的中图主文件。
 - 修复微信重新登录后桥接把离线期间同步进本地库的旧消息逐条推给机器人的问题：这些消息的本地编号是新的、发送时间却是当初的，只看游标会把它们当成新消息。现在发送时间早于闸线的消息不再推送，日志按会话汇总一行。
 
@@ -32,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Fixed account-credential parameters such as `vipToken` in NetEase Music share links being passed to the bot; only the song id is kept.
 - Fixed card titles such as notes containing line breaks.
+- Fixed text containing emoji codes such as `[旺柴]` failing to send: WeChat turns the code into an embedded object, so reading the input box back returned an object placeholder that was mistaken for text that never made it in.
 - Fixed blurry images: when the full-resolution `_h.dat` exists it is used first instead of the medium-size main file.
 - Fixed the bridge pushing old messages to the bot one by one after WeChat logs in again: messages synced into the local database while offline carry fresh local ids but their original send times, so the cursor alone treated them as new. Messages sent before the cutoff are no longer pushed, and the log reports one summary line per chat.
 

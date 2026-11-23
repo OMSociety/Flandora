@@ -166,6 +166,8 @@ run_bridge.py -> flandora.main
   `strict=True` 拒绝、否则按规则回退），面板侧只留请求编排（密码换哈希、PEM 落文件、绑全网卡前要有密码）。
 - 改 `/api/status`、`/api/desktop/status` 等响应字段：同步 `webui-frontend/tests/fixtures.js` 的夹具，
   否则前端断言与后端字段脱节，测试仍会绿。
+- 入站媒体段（`image`/`record`/`video`/`file`）一律只给本机路径加面板下载地址（`file`/`file_id`/`url`），不要把二进制内联进 `base64://`
+  —— 客户端会把它当正文计费。跨机取件的地址由 `file_share.url_for` 拼，主机名取 `web_public_host`。
 - 改 OneBot 事件字段或协议行为：改 `flandora/ob_protocol.py`，并跑 `tests/test_ob_server.py`；动通知事件或心跳时另跑 `tests/test_ob_notice.py`、`tests/test_ob_heartbeat.py`、`tests/test_ob_network.py`（后两者起真端口，meta_event 会混进会话，等事件要跳过它）。
   群历史里的发言人名字走 `bridge_core.resolve_names()` 这个公开方法，直接调用即可；改名由导入期报错暴露，
   不会静默把 wxid 当名字传下去。
@@ -226,13 +228,8 @@ run_bridge.py -> flandora.main
 
 ## 待办与未实现
 
-- 语音与视频本体：真机实测（2026-10-24 私聊收到一条语音 + 一个视频）后确认，本体**不在本地磁盘**：
-  语音是 `local_type=34`，XML 只给 `voiceurl`/`aeskey`/`length`（5699 字节，`voiceformat=4`）；
-  视频是 `local_type=43`，XML 只给 `cdnvideourl`/`aeskey`/`length`（2.7 MB）/`md5`，本地仅落
-  未加密缩略图 `msg/video/<月>/<hash>_thumb.jpg`。全盘 `*.silk`/`*.amr`/`*.mp4` 计数为 0。
-  要做等于实现微信 CDN 下载协议 + AES 解密 + silk 转码，是独立工程。**决定（2026-10-24）：暂不实现，
-  继续按 `[语音]`/`[视频]` 占位文本上报**。真要推进时先试最便宜的一步——让人在客户端里播放一次，
-  再看内容有没有落到本地缓存；落盘了就不必碰 CDN 协议。证据与字段见 `docs/wip.md` 第二节。
+- 语音、视频、文件本体：语音取 `media_0.db` 的 SILK 转 WAV，文件与视频取微信已落盘的明文（`msg/file`、`msg/video`）。
+  视频只有缩略图落盘、mp4 还没下载时（对方未点开）等 30 秒后按文字推送；不做微信 CDN 下载协议。细节见 `docs/wip.md` 第二节。
 - 撤回（`delete_msg`）：气泡能定位（聊天区里是 `ListItemControl`，Name 就是正文；会话列表里也有同名条目，靠 x 坐标区分），
   但聊天区是自绘渲染子窗 `MMUIRenderSubWindowHW`，向主窗与它分别投 `WM_RBUTTONDOWN/UP`、`WM_CONTEXTMENU` 都不出菜单。
   对照：同样往主窗投右键点会话列表能弹出会话菜单，说明投递本身有效，是这块子窗不认合成消息；非活动桌面上

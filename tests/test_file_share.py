@@ -54,3 +54,23 @@ def test_download_serves_only_registered_files(tmp_path):
     assert client.get("/files/nope/a.txt").status_code == 404
     p.unlink()
     assert client.get(f"/files/{token}/a.txt").status_code == 404
+
+
+def test_url_uses_public_host_and_scheme(monkeypatch):
+    monkeypatch.setattr(config, "WEB_PUBLIC_HOST", "192.168.1.20")
+    monkeypatch.setattr(config, "WEB_BIND_HOST", "0.0.0.0")
+    assert (
+        file_share.url_for("tok", "a b.png")
+        == f"http://192.168.1.20:{config.WEB_PORT}/files/tok/a%20b.png"
+    )
+    monkeypatch.setattr(config, "WEBUI_TLS", True)
+    assert file_share.url_for("tok", "x").startswith("https://192.168.1.20:")
+
+
+def test_public_host_rejects_urls():
+    from flandora.config import fields
+
+    assert fields.clean_field("web_public_host", "10.0.0.2", False, context={}).value == "10.0.0.2"
+    assert fields.clean_field("web_public_host", "http://x", False, context={}).value == ""
+    with pytest.raises(fields.ConfigError):
+        fields.clean_field("web_public_host", "http://x", True, context={})

@@ -217,8 +217,10 @@ def test_image_with_a_file_is_one_segment(isolated_ids, monkeypatch, tmp_path):
         },
     )
     assert [seg["type"] for seg in event["message"]] == ["image"], event["message"]
-    # 小图走 base64 内联，大图才给 file://；这里只关心「只有一个 image 段」
-    assert event["message"][0]["data"]["file"].startswith(("base64://", "file://"))
+    # 只给引用，不内联 base64
+    data = event["message"][0]["data"]
+    assert data["file"].startswith("file://") and data["url"].startswith("http")
+    assert "base64" not in event["raw_message"]
     # 普通图片不带表情包标记
     assert "sub_type" not in event["message"][0]["data"]
 

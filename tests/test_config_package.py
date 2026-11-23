@@ -48,6 +48,7 @@ HOT_KEYS = {
     "ob_message_format",
     "ob_heartbeat_seconds",
     "client_attachments",
+    "web_public_host",
 }
 
 

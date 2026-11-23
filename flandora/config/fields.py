@@ -206,6 +206,17 @@ def _clean_bind_host(value: Any, strict: bool, context: Mapping) -> Cleaned:
     )
 
 
+def _clean_public_host(value: Any, strict: bool, context: Mapping) -> Cleaned:
+    raw = _as_text(value).strip()
+    if not raw:
+        return Cleaned("")
+    if "://" in raw or "/" in raw or any(c.isspace() for c in raw):
+        if strict:
+            raise ConfigError("web_public_host 只填主机名或 IP，不要带协议、路径与空格")
+        return Cleaned("", warnings=(f"web_public_host={raw!r} 只能是主机名或 IP，已忽略",))
+    return Cleaned(raw)
+
+
 def _clean_message_format(value: Any, strict: bool, context: Mapping) -> Cleaned:
     raw = _as_text(value).strip().lower() or "array"
     if raw in MESSAGE_FORMATS:
@@ -412,6 +423,16 @@ FIELDS: tuple[Field, ...] = (
         clean=_clean_bind_host,
         desc="面板监听地址。127.0.0.1 = 只有本机能打开（默认）；0.0.0.0 = 局域网里其它机器"
         "也能打开，此时必须先设面板密码，否则谁都能改这份配置。改这里需要重启桥接。",
+    ),
+    Field(
+        key="web_public_host",
+        attr="WEB_PUBLIC_HOST",
+        kinds=_HOT,
+        default="",
+        clean=_clean_public_host,
+        desc="入站图片、语音、视频与文件的下载地址里写的主机名或 IP。客户端与桥接不在同一台"
+        "机器时填桥接的局域网地址（如 192.168.1.20），同时把 web_bind_host 设为 0.0.0.0；"
+        "留空 = 用 127.0.0.1（仅同机客户端可取）。不要带协议与端口。",
     ),
     Field(
         key="webui_password",

@@ -3,7 +3,7 @@
 AstrBot 等客户端收到 ``file`` 段后只认 ``http(s)`` 的 ``url`` 或能换出 url 的
 ``file_id``，不会去读桥接所在机器上的路径。每个文件登记一枚随机令牌，面板的
 ``/files/<令牌>/<文件名>`` 只服务登记过的路径，令牌不可猜、数量有上限，
-不接受任何由请求给出的路径。
+不接受任何由请求给出的路径。客户端与桥接分处两台机器时，设 ``web_public_host`` 让地址可达。
 """
 
 import collections
@@ -48,10 +48,15 @@ def lookup(token: str) -> tuple[str, str] | None:
 
 
 def url_for(token: str, name: str) -> str:
-    """面板上服务这枚令牌的地址；监听全部网卡时用回环地址，远端客户端需自行换主机名。"""
-    host = (config.WEB_BIND_HOST or "").strip()
+    """面板上服务这枚令牌的地址。
+
+    主机取 ``web_public_host``（客户端在别的机器上时填桥接的局域网地址），留空时用面板
+    绑定地址；绑定全部网卡或未设时回落 127.0.0.1。
+    """
+    host = (config.WEB_PUBLIC_HOST or config.WEB_BIND_HOST or "").strip()
     if host in ("", "0.0.0.0", "::"):
         host = "127.0.0.1"
     if ":" in host and not host.startswith("["):
         host = f"[{host}]"
-    return f"http://{host}:{config.WEB_PORT}/files/{token}/{quote(name or 'file')}"
+    scheme = "https" if config.WEBUI_TLS else "http"
+    return f"{scheme}://{host}:{config.WEB_PORT}/files/{token}/{quote(name or 'file')}"

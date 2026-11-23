@@ -26,7 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 新增卡片消息的解读：公众号文章、B 站与网易云分享、小程序、合并转发的聊天记录（逐行展开）、视频号、笔记、接龙、群公告、转账、红包、位置、名片都转成多行文字，链接去掉追踪参数，事件另带结构化的 `card` 字段；表情型卡片走表情通道。
 - 出站的 `share`、`json` 段降级为标题加链接的文本；没有链接的段计入失败。
 - 入站 `file` 段新增 `url` 与 `file_id`，面板新增 `/files/<令牌>/<文件名>` 下载地址；新增 `get_group_file_url`、`get_private_file_url` 动作。AstrBot 只认 `http` 地址或能换出地址的 `file_id`，此前读不到桥接机器上的路径。
-- 新增依赖 `silk-python`（语音转码）。
+- 入站图片、语音、视频段与文件一样带 `url` 与 `file_id`，客户端与桥接不在一台机器时按地址取件；图片不再内联 `base64`。新增 `web_public_host` 配置：媒体下载地址用它拼主机名，留空按 `web_bind_host` 推断，跨机部署时把 `web_bind_host` 改成 `0.0.0.0`。
 - 新增 `wx_stale_seconds` 配置（默认 `600`，`0` 表示不过滤）：发送时间早于这么多秒的消息不推给机器人；开启 `wx_backfill_seconds` 时取两者中较大的一个，回填窗口内的消息不会被挡掉。
 
 ### Fixed
@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added interpretation of card messages: official-account articles, Bilibili and NetEase Music shares, mini programs, forwarded chat records (expanded line by line), Channels posts, notes, group solitaires, group announcements, transfers, red packets, locations and contact cards become multi-line text with tracking parameters removed from links, and the event also carries a structured `card` field; sticker-type cards use the sticker channel.
 - Outgoing `share` and `json` segments are downgraded to text made of the title and link; segments without a link count as failed.
 - Inbound `file` segments now carry `url` and `file_id`, the panel serves them at `/files/<token>/<name>`, and the `get_group_file_url` and `get_private_file_url` actions were added. AstrBot only accepts an `http` address or a `file_id` it can exchange for one, so it could not read paths on the bridge machine before.
-- Added the `silk-python` dependency for voice transcoding.
+- Inbound image, voice and video segments now carry `url` and `file_id` like files do, so a client on another machine can fetch them; images are no longer inlined as `base64`. Added the `web_public_host` setting: media download addresses take their host from it, fall back to `web_bind_host`, and a cross-machine deployment sets `web_bind_host` to `0.0.0.0`.
 - Added the `wx_stale_seconds` setting (default `600`; `0` disables the filter): messages sent more than this many seconds ago are not pushed to the bot. When `wx_backfill_seconds` is enabled the larger of the two applies, so messages inside the backfill window are never dropped.
 
 ## [1.0.3] - 2026-11-17

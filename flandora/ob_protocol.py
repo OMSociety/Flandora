@@ -535,31 +535,25 @@ async def _handle_ob_api(data: dict):
     return resp_data
 
 
-# 超过这个大小就走 file:// 引用：几 MB 的 base64 会把一条事件撑到没有客户端愿意解析
-MAX_INLINE_IMAGE_BYTES = 4 * 1024 * 1024
-
-
 def _image_data(image_path: str) -> dict | None:
     """把本地图片文件编成 OneBot image 段的 data。
 
-    小图内联成 base64://，客户端不必再读盘；大图退回 file:// 引用——几 MB 的
-    base64 会把一条事件撑到没有客户端愿意解析。文件读不出来时返回 None。
+    一律给引用（本机 ``file://``、``file_id``、http ``url``），不内联 base64：
+    内联会让 ``raw_message`` 与事件体膨胀到数 MB，客户端若把它当文本处理就会整段进模型上下文。
+    文件读不出来时返回 None。
     """
     try:
-        if not image_path or not os.path.isfile(image_path):
+        if not image_path or not os.path.isfile(image_path) or os.path.getsize(image_path) <= 0:
             return None
-        size = os.path.getsize(image_path)
-        if size <= 0:
-            return None
-        if size <= MAX_INLINE_IMAGE_BYTES:
-            with open(image_path, "rb") as fh:
-                encoded = base64.b64encode(fh.read()).decode("ascii")
-            return {"file": f"base64://{encoded}"}
-        # 过大时改用本地文件引用，文件名取原名，便于客户端缓存与显示
-        return {"file": Path(image_path).as_uri()}
     except OSError as exc:
         log.warning(f"读取图片失败，已跳过图片段: {exc}")
         return None
+    token = file_share.register(image_path)
+    return {
+        "file": Path(image_path).as_uri(),
+        "file_id": token,
+        "url": file_share.url_for(token, os.path.basename(image_path)),
+    }
 
 
 def to_segment_dict(segment: Segment) -> dict | None:
@@ -587,11 +581,18 @@ def to_segment_dict(segment: Segment) -> dict | None:
         return {"type": "image", "data": data}
     if isinstance(segment, Face):
         return {"type": "face", "data": {"id": segment.face_id}}
-    if isinstance(segment, Voice):
-        return {"type": "record", "data": {"file": segment.path}}
-    if isinstance(segment, Video):
-        return {"type": "video", "data": {"file": segment.path}}
     # 客户端读不到桥接机器上的路径：同时给出 http 地址与能换出地址的 file_id
+    if isinstance(segment, (Voice, Video)):
+        token = file_share.register(segment.path)
+        kind = "record" if isinstance(segment, Voice) else "video"
+        return {
+            "type": kind,
+            "data": {
+                "file": segment.path,
+                "file_id": token,
+                "url": file_share.url_for(token, os.path.basename(segment.path)),
+            },
+        }
     token = file_share.register(segment.path, segment.name)
     return {
         "type": "file",

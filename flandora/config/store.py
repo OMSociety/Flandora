@@ -42,6 +42,7 @@ class Settings:
     # 控制面板
     WEB_PORT: int = 4950
     WEB_BIND_HOST: str = "127.0.0.1"
+    WEB_PUBLIC_HOST: str = ""
     WEBUI_PASSWORD: str = ""
     WEBUI_TLS: bool = False
     WEBUI_TLS_CERT_FILE: str = ""
